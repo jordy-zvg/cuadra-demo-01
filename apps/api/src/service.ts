@@ -413,6 +413,53 @@ export class CuadraService {
   }
 
   /** true si el recordatorio salió. Con scheduled, los rechazos no se le avisan uno por uno al comercio. */
+  /** Vuelve a mandar al banco del cliente la solicitud CoDi de un cobro que sigue abierto. */
+  private async resendPush(
+    proposalId: string,
+    c: typeof schema.customers.$inferSelect,
+    open: typeof schema.charges.$inferSelect,
+    now: Date,
+  ): Promise<boolean> {
+    const amount = formatMXN(open.amountCents!);
+    const phone = await customerPhone10(this.d.db, c.id);
+    const [merchant] = await this.d.db.select().from(schema.merchants).where(eq(schema.merchants.id, this.d.merchantId));
+    if (!phone) {
+      await setProposalStatus(this.d.db, proposalId, "rejected", { resend_of: open.id, reason: "sin celular" });
+      await this.say("comercio", `${c.name} no tiene un celular válido para CoDi. Cóbrale con “QR para ${c.name}”.`);
+      return false;
+    }
+    try {
+      const pn = await this.d.gateway.requestPayment({
+        amount_cents: open.amountCents!,
+        phone10: phone,
+        concept: `Fiado ${merchant?.name ?? ""}`.slice(0, 40),
+        num_ref: open.reference,
+        metadata: { cuadra_charge_id: open.id },
+        ...(merchant?.peyBankAccountId ? { bank_account_id: merchant.peyBankAccountId } : {}),
+      });
+      await attachProviderCharge(this.d.db, open.id, {
+        provider: this.d.gateway.name,
+        providerChargeId: pn.provider_charge_id,
+        channel: "codi_pn",
+        expiresAt: new Date(now.getTime() + PN_TTL_S * 1000),
+      });
+      await setProposalStatus(this.d.db, proposalId, "done", { resend_of: open.id });
+      this.d.log({ msg: "pey_pn_resent", merchant_id: this.d.merchantId, proposal_id: proposalId, charge_id: open.id, transaction_id: pn.provider_charge_id });
+      await this.say(
+        "comercio",
+        `🔁 Le reenvié a ${c.name} la solicitud CoDi de ${amount} (misma ref. ${open.reference}, no es un cobro nuevo). ` +
+          `Si llegara a aprobar las dos, lo de más le queda como saldo a favor. Te aviso cuando pague.`,
+      );
+      return true;
+    } catch (e) {
+      const failure = e instanceof Error ? e.message : String(e);
+      this.d.log({ msg: "pey_pn_resend_failed", merchant_id: this.d.merchantId, proposal_id: proposalId, charge_id: open.id, error: failure });
+      await setProposalStatus(this.d.db, proposalId, "rejected", { resend_of: open.id, push_failed: failure });
+      await this.say("comercio", `⚠️ No pude reenviar la solicitud CoDi a ${c.name}: ${failure}. Puedes cobrarle con “QR para ${c.name}”.`);
+      return false;
+    }
+  }
+
   private async sendReminder(proposalId: string, customerId: string, opts: { scheduled?: boolean } = {}): Promise<boolean> {
     const now = this.d.now();
     const [c] = await this.d.db.select().from(schema.customers).where(eq(schema.customers.id, customerId));
@@ -444,6 +491,20 @@ export class CuadraService {
       ...(this.d.reminderMinIntervalMs ? { min_interval_ms: this.d.reminderMinIntervalMs } : {}),
     });
     const open = await this.openCharge(customerId);
+    // Reenvío: si el banco del cliente no mostró la solicitud, el comercio puede volver a mandarla.
+    // Es el mismo cobro (misma referencia y monto), no uno nuevo; si el cliente aprobara las dos, el
+    // segundo pago se concilia contra el mismo cobro y lo de más queda como saldo a favor (2100).
+    // La espera entre recordatorios (P03) no aplica a un reenvío; horario y opt-in sí.
+    if (
+      open &&
+      !opts.scheduled &&
+      open.channel === "codi_pn" &&
+      open.provider === this.d.gateway.name &&
+      open.amountCents === balance &&
+      policy.rules_failed.every((f) => f.rule_id === "P03")
+    ) {
+      return this.resendPush(proposalId, c, open, now);
+    }
     if (policy.allow && open) {
       await setProposalStatus(this.d.db, proposalId, "rejected", { open_charge: open.id });
       if (!opts.scheduled) await this.say("comercio", `${c.name} ya tiene un cobro abierto (ref. ${open.reference}). No mando otro para que no pague doble.`);

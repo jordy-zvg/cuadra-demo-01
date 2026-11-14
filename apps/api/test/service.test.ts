@@ -187,6 +187,31 @@ describe("QR en mostrador y un solo cobro abierto", () => {
     expect(await ledgerBalance(f.db, M, "1200", "c_lupe")).toBe(0n);
   });
 
+  it("reenvío: misma solicitud CoDi (misma ref y cobro); si paga las dos, lo de más queda a favor", async () => {
+    const f = await setup();
+    const gw = f.gw as FakePey;
+    await f.svc.handleMerchantMessage("Doña Lupe se llevó $10");
+    await f.svc.confirm(await f.lastAction());
+    await f.svc.handleMerchantMessage("Cóbrale a Doña Lupe");
+    await f.svc.confirm(await f.lastAction());
+    await f.svc.handleMerchantMessage("Cóbrale a Doña Lupe");
+    await f.svc.confirm(await f.lastAction());
+    expect((await f.msgs()).at(-1)!.body).toMatch(/reenvié.*misma ref/i);
+    expect(gw.pushes).toHaveLength(2);
+    expect(gw.pushes[1]).toMatchObject({ amount_cents: 1000n, num_ref: gw.pushes[0]!.num_ref, metadata: gw.pushes[0]!.metadata });
+    const charges = await f.db.select().from(schema.charges).where(eq(schema.charges.customerId, "c_lupe"));
+    expect(charges.filter((c) => c.status === "open")).toHaveLength(1);
+
+    // Aprueba las dos solicitudes: la deuda queda en cero y el segundo pago, como saldo a favor.
+    for (const [i, tx] of ["01TX1", "01TX2"].entries()) {
+      gw.pay(tx);
+      const [raw, h] = webhook({ type: "codi.pn.payment_received", transactionId: tx, amount: 10 }, `msg_r${i}`);
+      await f.svc.handlePeyWebhook(raw, h);
+    }
+    expect(await ledgerBalance(f.db, M, "1200", "c_lupe")).toBe(0n);
+    expect(await ledgerBalance(f.db, M, "2100", "c_lupe")).toBe(1000n);
+  });
+
   it("cobro a la cuenta receptora del comercio (bankAccountId)", async () => {
     const f = await setup();
     await f.db.update(schema.merchants).set({ peyBankAccountId: "01JBAVWE4NS5TGXHWGMX3KH23Q" }).where(eq(schema.merchants.id, M));
