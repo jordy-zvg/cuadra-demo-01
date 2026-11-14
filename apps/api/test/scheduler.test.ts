@@ -4,6 +4,7 @@ import { createTestDb } from "@cuadra/db/testing";
 import { eq } from "drizzle-orm";
 import { describe, expect, it } from "vitest";
 import { SimulatedGateway } from "../src/gateway.js";
+import { parseMinIntervalMinutes } from "../src/reminder-config.js";
 import { mxWeekday, parseReminderSchedule, reminderTick } from "../src/scheduler.js";
 import { CuadraService } from "../src/service.js";
 
@@ -82,5 +83,19 @@ describe("reminderTick", () => {
     const thu = new Date("2026-11-12T10:30:00-06:00");
     const ran = await reminderTick({ db: f.db, merchantId: M, schedule: { days: [5], hour: 10 }, now: () => thu, log: () => {}, run: async () => ({ sent: 0, skipped: 0 }) });
     expect(ran).toBe(false);
+  });
+});
+
+describe("REMINDER_MIN_INTERVAL_MINUTES", () => {
+  it("solo números no negativos escritos tal cual; vacío = sin definir; lo demás es inválido", () => {
+    expect(parseMinIntervalMinutes(undefined)).toEqual({ ms: undefined, invalid: false });
+    expect(parseMinIntervalMinutes("")).toEqual({ ms: undefined, invalid: false });
+    expect(parseMinIntervalMinutes("  ")).toEqual({ ms: undefined, invalid: false }); // un espacio no cambia la regla
+    expect(parseMinIntervalMinutes("0")).toEqual({ ms: 0, invalid: false });
+    expect(parseMinIntervalMinutes(" 1 ")).toEqual({ ms: 60_000, invalid: false });
+    expect(parseMinIntervalMinutes("1.5")).toEqual({ ms: 90_000, invalid: false });
+    for (const bad of ["abc", "-1", "0x10", "1e3", "Infinity", "NaN", "\t0\t0"]) {
+      expect(parseMinIntervalMinutes(bad)).toEqual({ ms: undefined, invalid: true });
+    }
   });
 });

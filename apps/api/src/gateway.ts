@@ -3,8 +3,11 @@ import type { Centavos } from "@cuadra/core";
 import { type Db, schema } from "@cuadra/db";
 import { eq } from "drizzle-orm";
 
-/** Vigencia de una solicitud CoDi al celular y de un QR de mostrador (segundos). */
-export const PN_TTL_S = 3600;
+/**
+ * Vigencia de la solicitud CoDi al celular por un fiado: el mínimo de pey (360 s), para poder
+ * reenviarla pronto si no se pagó (decisión 14-nov-2026). QR de mostrador: 30 min.
+ */
+export const PN_TTL_S = 360;
 export const QR_TTL_S = 1800;
 
 /** Cobro al cliente final. pey en vivo; simulado cuando no hay llave (se dice en la UI). */
@@ -18,6 +21,8 @@ export interface ChargeGateway {
     num_ref: string;
     metadata: Record<string, string>;
     bank_account_id?: string;
+    /** Vigencia en el proveedor (segundos, mínimo de pey 360). Quien llama la usa para saber cuándo venció. */
+    ttl_s: number;
   }): Promise<{ provider_charge_id: string; codi_id?: string | null }>;
   /** QR CoDi para cobrar en mostrador. image: PNG base64 si el proveedor lo da. */
   createQr(r: {
@@ -43,7 +48,7 @@ export class PeyGateway implements ChargeGateway {
   readonly simulated = false;
   constructor(private readonly pey: PeyClient) {}
   async requestPayment(r: Parameters<ChargeGateway["requestPayment"]>[0]) {
-    const pn = await this.pey.createPushNotification({ ...r, expiration_s: PN_TTL_S });
+    const pn = await this.pey.createPushNotification({ ...r, expiration_s: r.ttl_s });
     // codiId: folio de Banxico; es lo que pey necesita para rastrear una solicitud que no llegó.
     return { provider_charge_id: pn.transactionId, codi_id: pn.codiId };
   }

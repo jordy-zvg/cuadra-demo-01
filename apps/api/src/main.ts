@@ -9,6 +9,7 @@ import { seedHistory } from "./seed-history.js";
 import { buildServer } from "./server.js";
 import { CuadraService } from "./service.js";
 import { WhatsAppChannel } from "./whatsapp.js";
+import { parseMinIntervalMinutes } from "./reminder-config.js";
 import { parseReminderSchedule, startReminderScheduler } from "./scheduler.js";
 
 const env = (k: string) => process.env[k] || undefined;
@@ -67,6 +68,15 @@ async function main(): Promise<void> {
         }
       : undefined;
 
+  // Política de recordatorios: 72 h entre cobros al mismo cliente. Solo en desarrollo se baja
+  // (REMINDER_MIN_INTERVAL_MINUTES=0) para probar seguido; un valor inválido deja la política normal.
+  const interval = parseMinIntervalMinutes(process.env.REMINDER_MIN_INTERVAL_MINUTES);
+  const reminderMinIntervalMs = interval.ms;
+  if (interval.invalid) log({ msg: "config_invalid", variable: "REMINDER_MIN_INTERVAL_MINUTES" });
+  if (reminderMinIntervalMs !== undefined && !gateway.simulated) {
+    log({ msg: "reminder_interval_override", minutes: reminderMinIntervalMs / 60_000, warning: "solo para desarrollo; en producción debe quedar sin definir" });
+  }
+
   const service = new CuadraService({
     db,
     merchantId: demo.merchantId,
@@ -79,8 +89,8 @@ async function main(): Promise<void> {
     peyWebhookSecret: env("PEY_WEBHOOK_SECRET") ?? null,
     bankSim,
     udi: env("UDI_VALOR") ? parseUdiValue(env("UDI_VALOR")!) : null,
-    // Solo demo: REMINDER_MIN_INTERVAL_MINUTES=1 permite repetir el recordatorio al minuto (normal: 72 h).
-    ...(Number(env("REMINDER_MIN_INTERVAL_MINUTES")) > 0 ? { reminderMinIntervalMs: Number(env("REMINDER_MIN_INTERVAL_MINUTES")) * 60_000 } : {}),
+    // Solo desarrollo/demo: REMINDER_MIN_INTERVAL_MINUTES=0 o 1 permite repetir el recordatorio (normal: 72 h).
+    ...(reminderMinIntervalMs !== undefined ? { reminderMinIntervalMs } : {}),
     log,
     ...(whatsapp ? { channels: [whatsapp.channel] } : {}),
   });
@@ -113,7 +123,7 @@ async function main(): Promise<void> {
   }
   const port = Number(env("PORT") ?? 3000);
   await app.listen({ port, host: "0.0.0.0" });
-  log({ msg: "api_started", port, migrations: applied, gateway: gateway.name, simulated: gateway.simulated, interpreter: interpreters[0]!.name, whatsapp: Boolean(whatsapp), reminders: schedule });
+  log({ msg: "api_started", port, migrations: applied, gateway: gateway.name, simulated: gateway.simulated, interpreter: interpreters[0]!.name, whatsapp: Boolean(whatsapp), reminders: schedule, reminder_interval_minutes: reminderMinIntervalMs === undefined ? 72 * 60 : reminderMinIntervalMs / 60_000 });
 }
 
 main().catch((e: unknown) => {

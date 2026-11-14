@@ -174,10 +174,11 @@ describe("QR en mostrador y un solo cobro abierto", () => {
     expect(msg.actions?.[0]).toMatchObject({ kind: "qr", url: expect.stringMatching(/^data:image\/png;base64,/) });
 
     await f.svc.handleMerchantMessage("QR para Doña Lupe");
-    expect((await f.msgs()).at(-1)!.body).toMatch(/ya tiene un cobro abierto/);
+    expect((await f.msgs()).at(-1)!.body).toMatch(/ya tiene un QR abierto de \$185\.00 \(ref\. \d{7}\) que vence hoy a las 11:32/);
     await f.svc.handleMerchantMessage("Cóbrale a Doña Lupe");
-    await f.svc.confirm(await f.lastAction());
-    expect((await f.msgs()).at(-1)!.body).toMatch(/No mando/);
+    const last = (await f.msgs()).at(-1)!;
+    expect(last.body).toMatch(/ya tiene un QR abierto/);
+    expect(last.actions ?? []).toHaveLength(0); // no pide "Confirmar" para algo que no va a salir
     expect(gw.pushes).toHaveLength(0);
 
     const qrTx = [...gw.txs.keys()][0]!;
@@ -187,7 +188,7 @@ describe("QR en mostrador y un solo cobro abierto", () => {
     expect(await ledgerBalance(f.db, M, "1200", "c_lupe")).toBe(0n);
   });
 
-  it("reenvío: misma solicitud CoDi (misma ref y cobro); si paga las dos, lo de más queda a favor", async () => {
+  it("“Cóbrale” otra vez con la solicitud viva no manda otra: se reenvía solo cuando venció (decisión 14-nov)", async () => {
     const f = await setup();
     const gw = f.gw as FakePey;
     await f.svc.handleMerchantMessage("Doña Lupe se llevó $10");
@@ -195,21 +196,13 @@ describe("QR en mostrador y un solo cobro abierto", () => {
     await f.svc.handleMerchantMessage("Cóbrale a Doña Lupe");
     await f.svc.confirm(await f.lastAction());
     await f.svc.handleMerchantMessage("Cóbrale a Doña Lupe");
-    await f.svc.confirm(await f.lastAction());
-    expect((await f.msgs()).at(-1)!.body).toMatch(/reenvié.*misma ref/i);
-    expect(gw.pushes).toHaveLength(2);
-    expect(gw.pushes[1]).toMatchObject({ amount_cents: 1000n, num_ref: gw.pushes[0]!.num_ref, metadata: gw.pushes[0]!.metadata });
+    const last = (await f.msgs()).at(-1)!;
+    expect(last.body).toMatch(/ya tiene una solicitud CoDi abierta de \$10\.00/);
+    expect(last.body).toMatch(/cuando venza pídeme “vuélvele a mandar la notificación” y se la reenvío \(reenvío 1 de 3\)/);
+    expect(last.actions ?? []).toHaveLength(0);
+    expect(gw.pushes).toHaveLength(1);
     const charges = await f.db.select().from(schema.charges).where(eq(schema.charges.customerId, "c_lupe"));
     expect(charges.filter((c) => c.status === "open")).toHaveLength(1);
-
-    // Aprueba las dos solicitudes: la deuda queda en cero y el segundo pago, como saldo a favor.
-    for (const [i, tx] of ["01TX1", "01TX2"].entries()) {
-      gw.pay(tx);
-      const [raw, h] = webhook({ type: "codi.pn.payment_received", transactionId: tx, amount: 10 }, `msg_r${i}`);
-      await f.svc.handlePeyWebhook(raw, h);
-    }
-    expect(await ledgerBalance(f.db, M, "1200", "c_lupe")).toBe(0n);
-    expect(await ledgerBalance(f.db, M, "2100", "c_lupe")).toBe(1000n);
   });
 
   it("cobro a la cuenta receptora del comercio (bankAccountId)", async () => {

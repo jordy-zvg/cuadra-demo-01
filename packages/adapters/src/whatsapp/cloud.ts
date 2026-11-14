@@ -116,7 +116,11 @@ export interface WhatsAppConfig {
   version?: string;
   baseUrl?: string;
   fetch?: typeof fetch;
+  /** Tiempo máximo por llamada (ms); default WHATSAPP_TIMEOUT_MS. */
+  timeoutMs?: number;
 }
+
+export const WHATSAPP_TIMEOUT_MS = 15_000;
 
 export interface WhatsAppButton {
   id: string;
@@ -136,6 +140,7 @@ export class WhatsAppClient {
       method: "POST",
       headers: { Authorization: `Bearer ${this.cfg.token}`, "content-type": "application/json" },
       body: JSON.stringify({ messaging_product: "whatsapp", recipient_type: "individual", to, ...payload }),
+      signal: AbortSignal.timeout(this.cfg.timeoutMs ?? WHATSAPP_TIMEOUT_MS),
     });
     const json = (await res.json().catch(() => null)) as
       | { messages?: Array<{ id?: string }>; error?: { message?: string; code?: number } }
@@ -173,7 +178,12 @@ export class WhatsAppClient {
     form.append("type", mime);
     form.append("file", new Blob([bytes], { type: mime }), mime === "image/png" ? "qr.png" : "imagen.jpg");
     const url = `${this.cfg.baseUrl ?? WHATSAPP_GRAPH_URL}/${this.cfg.version ?? WHATSAPP_GRAPH_VERSION}/${encodeURIComponent(this.cfg.phoneNumberId)}/media`;
-    const res = await this.http(url, { method: "POST", headers: { Authorization: `Bearer ${this.cfg.token}` }, body: form });
+    const res = await this.http(url, {
+      method: "POST",
+      headers: { Authorization: `Bearer ${this.cfg.token}` },
+      body: form,
+      signal: AbortSignal.timeout(this.cfg.timeoutMs ?? WHATSAPP_TIMEOUT_MS),
+    });
     const json = (await res.json().catch(() => null)) as { id?: string; error?: { message?: string; code?: number } } | null;
     if (!res.ok || !json?.id) throw new WhatsAppApiError(res.status, json?.error?.code ?? null, json?.error?.message ?? `WhatsApp media ${res.status}`);
     return json.id;
