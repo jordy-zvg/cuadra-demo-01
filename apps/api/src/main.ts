@@ -91,6 +91,10 @@ async function main(): Promise<void> {
     gateway,
     bankSim,
     demoPassword: env("DEMO_PASSWORD") ?? null,
+    // Registro en el portal: si PORTAL_SHOP_CODE existe, pedirlo (lo da el dueño); si no, registro abierto.
+    portalAuth: { shopCode: env("PORTAL_SHOP_CODE") ?? null, secureCookies: publicUrl?.startsWith("https://") ?? false,
+      // Llave CDMX: solo modo demo (simulado) mientras no haya alta con la ADIP. LLAVE_CDMX=off lo quita.
+      llave: env("LLAVE_CDMX") === "off" ? "off" : "demo" },
     passkey: { gateway, db, merchantId: demo.merchantId, ownerId: demo.ownerId, rpID, origins, now: () => new Date() },
     log,
     ...(whatsapp ? { whatsapp } : {}),

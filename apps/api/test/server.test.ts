@@ -16,9 +16,15 @@ async function app(demoPassword: string | null) {
   });
   return buildServer({
     db, service, merchantId: DEMO.merchantId, gateway, bankSim: false, demoPassword, log: () => {},
+    portalAuth: { shopCode: null, secureCookies: false },
     passkey: { gateway, db, merchantId: DEMO.merchantId, ownerId: DEMO.ownerId, rpID: "localhost", origins: ["http://localhost"], now: () => new Date() },
   });
 }
+const registrar = async (a: Awaited<ReturnType<typeof app>>, headers: Record<string, string> = {}) => {
+  const r = await a.inject({ method: "POST", url: "/api/auth/register", headers, payload: { name: "Lupe", phone: "5512345678", pin: "2580" } });
+  expect(r.statusCode).toBe(200);
+  return String(r.headers["set-cookie"]).split(";")[0]!;
+};
 const basic = (p: string) => `Basic ${Buffer.from(`cuadra:${p}`).toString("base64")}`;
 
 describe("login mínimo de la demo", () => {
@@ -26,7 +32,12 @@ describe("login mínimo de la demo", () => {
     const a = await app("s3creta");
     expect((await a.inject({ url: "/api/state" })).statusCode).toBe(401);
     expect((await a.inject({ url: "/api/state", headers: { authorization: basic("mala") } })).statusCode).toBe(401);
-    expect((await a.inject({ url: "/api/state", headers: { authorization: basic("s3creta") } })).statusCode).toBe(200);
+    // Con la contraseña correcta pasa la capa básica; todavía falta la sesión del portal.
+    expect((await a.inject({ url: "/api/state", headers: { authorization: basic("s3creta") } })).statusCode).toBe(401);
+    const cookie = await registrar(a, { authorization: basic("s3creta") });
+    expect((await a.inject({ url: "/api/state", headers: { authorization: basic("s3creta"), cookie } })).statusCode).toBe(200);
+    // La sesión sola no basta: la contraseña básica sigue aplicando.
+    expect((await a.inject({ url: "/api/state", headers: { cookie } })).statusCode).toBe(401);
     expect((await a.inject({ method: "POST", url: "/api/chat", payload: { text: "hola" } })).statusCode).toBe(401);
     expect((await a.inject({ url: "/health" })).statusCode).toBe(200);
     // El aviso de privacidad es público (Meta lo revisa para publicar la app).
@@ -36,9 +47,11 @@ describe("login mínimo de la demo", () => {
     // El webhook no pide contraseña (trae su propia firma): sin secreto configurado responde 503.
     expect((await a.inject({ method: "POST", url: "/webhooks/pey", payload: "{}", headers: { "content-type": "application/json" } })).statusCode).toBe(503);
   });
-  it("sin DEMO_PASSWORD queda abierta", async () => {
+  it("sin DEMO_PASSWORD el estado exige sesión del portal", async () => {
     const a = await app(null);
-    expect((await a.inject({ url: "/api/state" })).statusCode).toBe(200);
+    expect((await a.inject({ url: "/api/state" })).statusCode).toBe(401);
+    const cookie = await registrar(a);
+    expect((await a.inject({ url: "/api/state", headers: { cookie } })).statusCode).toBe(200);
   });
   it("el portal y el logo se sirven; el portal exige contraseña si hay DEMO_PASSWORD", async () => {
     const open = await app(null);

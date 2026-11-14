@@ -39,6 +39,27 @@ export const merchantUsers = pgTable("merchant_users", {
   createdAt: ts("created_at").notNull().defaultNow(),
 });
 
+/** Cuentas del portal web: celular + NIP (hash scrypt). */
+export const portalAccounts = pgTable("portal_accounts", {
+  id: text("id").primaryKey(),
+  merchantId: text("merchant_id").notNull(),
+  name: text("name").notNull(),
+  phone: text("phone").notNull(),
+  pinHash: text("pin_hash"),
+  /** Identificador de Llave CDMX (en demo: hash de la CURP). */
+  llaveSub: text("llave_sub"),
+  failedAttempts: integer("failed_attempts").notNull().default(0),
+  lockedUntil: ts("locked_until"),
+  createdAt: ts("created_at").notNull().defaultNow(),
+});
+
+export const portalSessions = pgTable("portal_sessions", {
+  tokenHash: text("token_hash").primaryKey(),
+  accountId: text("account_id").notNull(),
+  expiresAt: ts("expires_at").notNull(),
+  createdAt: ts("created_at").notNull().defaultNow(),
+});
+
 export const passkeyCredentials = pgTable("passkey_credentials", {
   id: text("id").primaryKey(),
   merchantUserId: text("merchant_user_id").notNull(),
