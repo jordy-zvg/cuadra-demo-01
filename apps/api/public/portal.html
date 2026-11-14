@@ -1,0 +1,469 @@
+<!doctype html>
+<html lang="es-MX">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="theme-color" content="#611A2D">
+<title>Mi Cuadra</title>
+<link rel="icon" href="/logo.svg" type="image/svg+xml">
+<style>
+/* Portal para el comercio. Pensado para personas con poca práctica con el celular:
+   letra grande, botones grandes, una sola pregunta por pantalla y siempre un camino de regreso. */
+:root{
+  --vino:#611A2D; --vino-2:#4A1322; --oro:#B48D4E; --oro-claro:#F3E7D1;
+  --bg:#FBF7EF; --card:#FFFFFF; --ink:#1E1A17; --muted:#5A524A; --line:#E3D9C8;
+  --ok:#1C6B3F; --ok-bg:#E3F3E8; --bad:#9C1F1F; --bad-bg:#FBE6E3; --warn-bg:#FFF4DC;
+  --fs:20px;
+}
+@media (prefers-color-scheme: dark){:root:not([data-theme="light"]){
+  --vino:#C9566F; --vino-2:#E07A90; --oro:#D4AE6E; --oro-claro:#3A2E1C;
+  --bg:#161312; --card:#221D1B; --ink:#F5EFE6; --muted:#C4B9AC; --line:#3E3530;
+  --ok:#7FD6A1; --ok-bg:#16301F; --bad:#FF9C8F; --bad-bg:#3B1915; --warn-bg:#3A2E14;
+}}
+:root[data-size="xl"]{--fs:24px}
+*{box-sizing:border-box}
+html{font-size:var(--fs)}
+body{margin:0;background:var(--bg);color:var(--ink);font:1rem/1.45 system-ui,-apple-system,"Segoe UI",Roboto,sans-serif;-webkit-text-size-adjust:100%}
+.wrap{max-width:560px;margin:0 auto;padding:0 16px 40px}
+header{background:var(--vino);color:#fff}
+header .wrap{display:flex;align-items:center;gap:12px;padding-top:10px;padding-bottom:10px}
+header img{width:44px;height:44px;background:#fff;border-radius:12px;padding:3px}
+header .who{flex:1;min-width:0}
+header .who b{display:block;font-size:1.05rem;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+header .who span{font-size:.75rem;opacity:.9}
+.size{padding:4px 10px;font-size:.75rem;line-height:1.15;max-width:6.5em;background:transparent;border:2px solid rgba(255,255,255,.7);color:#fff;border-radius:12px;min-height:48px;min-width:56px;font:inherit;font-weight:700;cursor:pointer}
+h1{font-size:1.45rem;line-height:1.2;margin:22px 0 6px}
+p.lead{margin:0 0 16px;color:var(--muted);font-size:1rem}
+button{font:inherit;cursor:pointer;-webkit-tap-highlight-color:transparent}
+button:focus-visible,a:focus-visible{outline:4px solid var(--oro);outline-offset:3px}
+.nav{display:flex;gap:10px;margin-top:16px}
+.nav button{flex:1;min-height:56px;border-radius:14px;border:2px solid var(--line);background:var(--card);color:var(--ink);font-weight:600}
+
+/* Inicio */
+.total{background:var(--card);border:2px solid var(--line);border-left:10px solid var(--oro);border-radius:18px;padding:16px 18px;margin-top:18px}
+.total .l{color:var(--muted);font-size:.95rem}
+.total .v{font-size:2.2rem;font-weight:800;font-variant-numeric:tabular-nums;color:var(--vino);line-height:1.15}
+.total .s{font-size:.9rem;color:var(--muted)}
+.grid{display:grid;grid-template-columns:1fr 1fr;gap:12px;margin-top:16px}
+.big{display:flex;flex-direction:column;align-items:center;justify-content:center;gap:6px;text-align:center;min-height:132px;padding:14px 10px;border-radius:20px;border:0;background:var(--vino);color:#fff;font-weight:700;font-size:1.05rem;line-height:1.2;box-shadow:0 3px 0 var(--vino-2)}
+.big .ic{font-size:2.2rem;line-height:1}
+.big:active{transform:translateY(2px);box-shadow:0 1px 0 var(--vino-2)}
+.big.alt{background:var(--card);color:var(--ink);border:3px solid var(--vino);box-shadow:none}
+.wide{grid-column:1 / -1;flex-direction:row;min-height:84px;gap:14px}
+.sec-title{font-size:1.1rem;margin:26px 0 8px}
+.aviso{background:var(--card);border:2px solid var(--line);border-radius:14px;padding:12px 14px;margin-bottom:10px;white-space:pre-wrap;word-wrap:break-word}
+.aviso small{display:block;color:var(--muted);font-size:.75rem;margin-top:4px}
+.empty{color:var(--muted)}
+
+/* Listas para elegir */
+.list{display:flex;flex-direction:column;gap:10px}
+.opt{display:flex;align-items:center;gap:14px;width:100%;min-height:76px;padding:12px 16px;border-radius:16px;border:3px solid var(--line);background:var(--card);color:var(--ink);text-align:left;font-weight:600;font-size:1.1rem}
+.opt:active{border-color:var(--vino)}
+.opt .av{flex:none;width:52px;height:52px;border-radius:50%;background:var(--oro-claro);color:var(--vino);display:flex;align-items:center;justify-content:center;font-weight:800;font-size:1.1rem}
+.opt .t{flex:1;min-width:0}
+.opt .t small{display:block;font-weight:500;font-size:.85rem;color:var(--muted)}
+.opt .amt{font-variant-numeric:tabular-nums;font-weight:800;color:var(--vino);white-space:nowrap}
+.opt .amt.zero{color:var(--ok);font-weight:600;font-size:.9rem}
+.opt:disabled{opacity:.55}
+
+/* Teclado de monto */
+.amount{font-size:2.6rem;font-weight:800;text-align:center;font-variant-numeric:tabular-nums;background:var(--card);border:3px solid var(--vino);border-radius:18px;padding:10px;margin:6px 0 12px;min-height:84px;word-break:break-all}
+.amount.empty-v{color:var(--muted);font-weight:600}
+.keys{display:grid;grid-template-columns:repeat(3,1fr);gap:10px}
+.keys button{min-height:68px;border-radius:14px;border:2px solid var(--line);background:var(--card);color:var(--ink);font-size:1.6rem;font-weight:700}
+.keys button:active{background:var(--oro-claro)}
+.go{display:block;width:100%;min-height:72px;margin-top:14px;border:0;border-radius:18px;background:var(--vino);color:#fff;font-weight:800;font-size:1.2rem}
+.go:disabled{opacity:.4}
+.go.ok{background:var(--ok)}
+.go.soft{background:var(--card);color:var(--ink);border:3px solid var(--line);font-weight:700}
+
+/* Respuesta de Cuadra */
+.reply{background:var(--card);border:3px solid var(--oro);border-radius:20px;padding:18px;margin-top:14px;font-size:1.15rem;white-space:pre-wrap;word-wrap:break-word}
+.reply.ok{border-color:var(--ok);background:var(--ok-bg)}
+.reply.bad{border-color:var(--bad);background:var(--bad-bg)}
+.reply .from{display:flex;align-items:center;gap:8px;font-size:.8rem;color:var(--muted);font-weight:700;margin-bottom:6px;white-space:normal}
+.reply .from img{width:26px;height:26px}
+.listen{display:inline-flex;align-items:center;gap:8px;margin-top:12px;min-height:52px;padding:0 16px;border-radius:14px;border:2px solid var(--line);background:var(--card);color:var(--ink);font-weight:600;font-size:.95rem}
+.qr{display:block;width:100%;max-width:300px;aspect-ratio:1;margin:14px auto 0;background:#fff;border-radius:14px;padding:10px}
+.qr.sim{display:flex;align-items:center;justify-content:center;text-align:center;color:#1E1A17;border:3px dashed #999;font-weight:700}
+.wait{display:flex;flex-direction:column;align-items:center;gap:14px;padding:40px 0;color:var(--muted);font-size:1.1rem;text-align:center}
+.spin{width:56px;height:56px;border-radius:50%;border:6px solid var(--line);border-top-color:var(--vino);animation:sp 1s linear infinite}
+@keyframes sp{to{transform:rotate(360deg)}}
+@media (prefers-reduced-motion: reduce){.spin{animation-duration:3s}}
+
+/* Voz */
+.mic{display:flex;flex-direction:column;align-items:center;justify-content:center;gap:8px;width:190px;height:190px;margin:20px auto;border-radius:50%;border:0;background:var(--vino);color:#fff;font-weight:800;font-size:1.05rem;box-shadow:0 0 0 10px var(--oro-claro)}
+.mic .ic{font-size:3.4rem}
+.mic.on{background:var(--bad);animation:pulse 1.2s ease-in-out infinite}
+@keyframes pulse{50%{box-shadow:0 0 0 22px var(--oro-claro)}}
+.heard{background:var(--card);border:3px dashed var(--oro);border-radius:16px;padding:14px;font-size:1.2rem;text-align:center;margin-top:8px}
+.tip{background:var(--warn-bg);border-radius:14px;padding:12px 14px;margin-top:14px;font-size:.95rem}
+.alert{background:var(--bad-bg);color:var(--bad);border-radius:14px;padding:12px 14px;margin-top:14px;font-weight:600}
+.reply.warn{border-color:var(--oro);background:var(--warn-bg)}
+@media (max-width:480px){header .who span{display:none}}
+.sr{position:absolute;width:1px;height:1px;overflow:hidden;clip:rect(0 0 0 0)}
+</style>
+</head>
+<body>
+<header>
+  <div class="wrap">
+    <img src="/logo.svg" alt="">
+    <div class="who"><b id="shop">Mi Cuadra</b><span>Tu libreta de fiado, segura</span></div>
+    <button class="size" id="size" type="button" aria-pressed="false">Letra grande</button>
+  </div>
+</header>
+<main class="wrap" id="app"></main>
+<div class="sr" id="say" aria-live="assertive"></div>
+
+<script>
+"use strict";
+// ---------- utilidades ----------
+const $ = (s) => document.querySelector(s);
+const app = $("#app");
+const esc = (s) => String(s ?? "").replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
+const mxn = (c) => {
+  const n = BigInt(c); const neg = n < 0n; const a = neg ? -n : n;
+  const pesos = (a / 100n).toString().replace(/\B(?=(\d{3})+(?!\d))/g, ",");
+  const cts = a % 100n;
+  return (neg ? "-" : "") + "$" + pesos + (cts ? "." + cts.toString().padStart(2, "0") : "");
+};
+const initials = (name) => String(name).replace(/^(doña|don|sra\.?|sr\.?)\s+/i, "").split(/\s+/).slice(0, 2).map((w) => w[0] || "").join("").toUpperCase();
+const store = {
+  get(k) { try { return localStorage.getItem(k); } catch { return null; } },
+  set(k, v) { try { localStorage.setItem(k, v); } catch {} },
+};
+const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
+
+// Tamaño de letra: normal o grande, se recuerda en este teléfono.
+function applySize() {
+  const xl = store.get("cuadra.size") === "xl";
+  document.documentElement.dataset.size = xl ? "xl" : "";
+  $("#size").textContent = xl ? "Letra normal" : "Letra grande";
+  $("#size").setAttribute("aria-pressed", xl ? "true" : "false");
+}
+$("#size").onclick = () => { store.set("cuadra.size", store.get("cuadra.size") === "xl" ? "" : "xl"); applySize(); };
+applySize();
+
+// Leer en voz alta (para quien prefiere escuchar).
+const canSpeak = "speechSynthesis" in window;
+function speak(text) {
+  if (!canSpeak) return;
+  speechSynthesis.cancel();
+  const u = new SpeechSynthesisUtterance(String(text).replace(/[•🛡️🔐✅💰📎]/gu, ""));
+  u.lang = "es-MX"; u.rate = 0.9;
+  speechSynthesis.speak(u);
+}
+
+// ---------- datos ----------
+let state = null;
+async function load() {
+  const r = await fetch("/api/state", { cache: "no-store" });
+  if (!r.ok) throw new Error("estado " + r.status);
+  state = await r.json();
+  $("#shop").textContent = state.merchant?.name || "Mi Cuadra";
+  return state;
+}
+let payeesCache = null;
+async function payees() {
+  if (payeesCache) return payeesCache;
+  try { const r = await fetch("/api/payees"); payeesCache = r.ok ? await r.json() : []; } catch { payeesCache = []; }
+  return payeesCache;
+}
+const chat = () => (state?.messages || []).filter((m) => m.thread === "comercio");
+const lastId = () => { const c = chat(); return c.length ? c[c.length - 1].id : 0; };
+
+async function post(url, body) {
+  const r = await fetch(url, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify(body ?? {}) });
+  if (!r.ok) throw new Error(await r.text());
+}
+
+/** Espera la(s) respuesta(s) de Cuadra posteriores al mensaje `afterId`. */
+async function waitReply(afterId, ms = 25000) {
+  const t0 = Date.now();
+  while (Date.now() - t0 < ms) {
+    await sleep(700);
+    try { await load(); } catch { continue; }
+    const out = chat().filter((m) => m.id > afterId && m.direction === "out");
+    if (out.length) { await sleep(400); await load(); return chat().filter((m) => m.id > afterId && m.direction === "out"); }
+  }
+  return [];
+}
+
+// ---------- navegación ----------
+const history_ = [];
+let pollTimer = null;
+function go(screen, arg, push = true) {
+  if (push && current) history_.push(current);
+  current = { screen, arg };
+  clearInterval(pollTimer); pollTimer = null;
+  if (canSpeak) speechSynthesis.cancel();
+  SCREENS[screen](arg);
+  window.scrollTo(0, 0);
+  const h = app.querySelector("h1"); if (h) { h.tabIndex = -1; h.focus({ preventScroll: true }); }
+}
+let current = null;
+function back() { const p = history_.pop(); if (p) go(p.screen, p.arg, false); else go("home", null, false); }
+function home() { history_.length = 0; go("home", null, false); }
+const navHtml = (showBack = true) => `<div class="nav">${showBack ? `<button type="button" data-nav="back">← Regresar</button>` : ""}<button type="button" data-nav="home">🏠 Inicio</button></div>`;
+app.addEventListener("click", (e) => {
+  const n = e.target.closest("[data-nav]"); if (!n) return;
+  n.dataset.nav === "back" ? back() : home();
+});
+
+// ---------- pantallas ----------
+const SCREENS = {};
+
+SCREENS.home = async () => {
+  app.innerHTML = `<div class="wait"><div class="spin"></div>Cargando…</div>`;
+  try { await load(); } catch {
+    app.innerHTML = `<h1>No hay conexión</h1><p class="lead">Revisa tu internet y vuelve a intentar.</p><button class="go" type="button" id="retry">Intentar otra vez</button>`;
+    $("#retry").onclick = home; return;
+  }
+  const owes = state.customers.reduce((a, c) => a + BigInt(c.owes), 0n);
+  const debtors = state.customers.filter((c) => BigInt(c.owes) > 0n).length;
+  const frozen = state.risk?.kill_switch || state.risk?.frozen;
+  app.innerHTML = `
+    <h1>Hola 👋 ¿Qué quieres hacer?</h1>
+    <div class="total" aria-label="Te deben en total ${esc(mxn(owes))}">
+      <div class="l">Te deben en total</div>
+      <div class="v">${esc(mxn(owes))}</div>
+      <div class="s">${debtors === 0 ? "Nadie te debe. ¡Todo al corriente!" : debtors === 1 ? "1 cliente te debe" : `${debtors} clientes te deben`}</div>
+    </div>
+    ${frozen ? `<div class="alert">⛔ Por seguridad, los pagos a proveedores están detenidos. Los cobros siguen funcionando.</div>` : ""}
+    <div class="grid">
+      <button class="big" type="button" data-go="fiado"><span class="ic" aria-hidden="true">📝</span>Anotar fiado</button>
+      <button class="big" type="button" data-go="cobrar"><span class="ic" aria-hidden="true">💵</span>Cobrar</button>
+      <button class="big alt" type="button" data-go="deben"><span class="ic" aria-hidden="true">👥</span>¿Quién me debe?</button>
+      <button class="big alt" type="button" data-go="pagar"><span class="ic" aria-hidden="true">🚚</span>Pagar a proveedor</button>
+      <button class="big wide alt" type="button" data-go="voz"><span class="ic" aria-hidden="true">🎙️</span>Decirlo con mi voz</button>
+    </div>
+    <h2 class="sec-title">Últimos avisos</h2>
+    <div id="avisos"></div>`;
+  app.querySelectorAll("[data-go]").forEach((b) => (b.onclick = () => go(b.dataset.go)));
+  renderAvisos();
+  pollTimer = setInterval(async () => { try { await load(); renderAvisos(); } catch {} }, 4000);
+};
+function renderAvisos() {
+  const el = $("#avisos"); if (!el) return;
+  const out = chat().filter((m) => m.direction === "out" && !(m.actions || []).some((a) => a.kind === "confirm")).slice(-3).reverse();
+  el.innerHTML = out.length
+    ? out.map((m) => `<div class="aviso">${esc(m.body)}<small>${esc(new Date(m.at).toLocaleString("es-MX", { weekday: "long", hour: "numeric", minute: "2-digit" }))}</small></div>`).join("")
+    : `<p class="empty">Todavía no hay avisos.</p>`;
+}
+
+// Elegir cliente (para fiado o cobro)
+function customerList(onPick, { onlyDebtors = false } = {}) {
+  const cs = [...state.customers].sort((a, b) => (BigInt(b.owes) > BigInt(a.owes) ? 1 : BigInt(b.owes) < BigInt(a.owes) ? -1 : a.name.localeCompare(b.name)));
+  const html = cs.map((c) => {
+    const zero = BigInt(c.owes) <= 0n;
+    const dis = onlyDebtors && zero;
+    return `<button class="opt" type="button" data-id="${esc(c.id)}" ${dis ? "disabled" : ""}>
+      <span class="av" aria-hidden="true">${esc(initials(c.name))}</span>
+      <span class="t">${esc(c.name)}${dis ? "<small>No te debe nada</small>" : ""}</span>
+      <span class="amt ${zero ? "zero" : ""}">${zero ? "Al corriente ✓" : esc(mxn(c.owes))}</span></button>`;
+  }).join("");
+  setTimeout(() => app.querySelectorAll(".opt[data-id]").forEach((b) => (b.onclick = () => onPick(state.customers.find((c) => c.id === b.dataset.id)))));
+  return `<div class="list">${html || `<p class="empty">Todavía no tienes clientes.</p>`}</div>`;
+}
+
+SCREENS.fiado = async () => {
+  await load().catch(() => {});
+  app.innerHTML = `<h1>¿Quién se lo llevó?</h1><p class="lead">Toca el nombre del cliente.</p>${customerList((c) => go("monto", { mode: "fiado", who: c }))}${navHtml()}`;
+};
+
+SCREENS.cobrar = async () => {
+  await load().catch(() => {});
+  app.innerHTML = `<h1>¿A quién le cobras?</h1><p class="lead">Toca el nombre del cliente.</p>${customerList((c) => go("como", c), { onlyDebtors: true })}${navHtml()}`;
+};
+
+SCREENS.deben = async () => {
+  await load().catch(() => {});
+  app.innerHTML = `<h1>¿Quién me debe?</h1><p class="lead">Toca a alguien para cobrarle.</p>${customerList((c) => go("como", c), { onlyDebtors: true })}${navHtml()}`;
+};
+
+SCREENS.como = (c) => {
+  app.innerHTML = `
+    <h1>¿Cómo le cobras a ${esc(c.name)}?</h1>
+    <p class="lead">Te debe <b>${esc(mxn(c.owes))}</b>.</p>
+    <div class="list">
+      <button class="opt" type="button" id="cel"><span class="av" aria-hidden="true">📲</span><span class="t">Mandarle el cobro a su celular<small>Le llega a su banco y paga desde ahí</small></span></button>
+      <button class="opt" type="button" id="qr"><span class="av" aria-hidden="true">🔳</span><span class="t">Mostrarle un código QR aquí<small>Si está en la tienda contigo</small></span></button>
+    </div>${navHtml()}`;
+  $("#cel").onclick = () => send(`Cóbrale a ${c.name}`);
+  $("#qr").onclick = () => send(`QR para ${c.name}`);
+};
+
+SCREENS.pagar = async () => {
+  app.innerHTML = `<div class="wait"><div class="spin"></div>Cargando…</div>`;
+  const ps = await payees();
+  app.innerHTML = `<h1>¿A qué proveedor le pagas?</h1><p class="lead">Solo aparecen los proveedores que ya autorizaste.</p>
+    <div class="list">${ps.map((p) => `<button class="opt" type="button" data-p="${esc(p.id)}"><span class="av" aria-hidden="true">🚚</span><span class="t">${esc(p.alias)}<small>Cuenta que termina en ${esc(p.clabe_last4)}</small></span></button>`).join("") || `<p class="empty">No tienes proveedores autorizados.</p>`}</div>
+    <div class="tip">🔒 Para agregar un proveedor nuevo se necesita tu huella y esperar 24 horas. Así nadie te engaña con una cuenta falsa.</div>${navHtml()}`;
+  app.querySelectorAll("[data-p]").forEach((b) => (b.onclick = () => go("monto", { mode: "pago", who: ps.find((p) => p.id === b.dataset.p) })));
+};
+
+// Teclado de monto
+SCREENS.monto = (arg) => {
+  const { mode, who } = arg;
+  const name = mode === "fiado" ? who.name : who.alias;
+  let v = arg.v || "";
+  app.innerHTML = `
+    <h1>${mode === "fiado" ? `¿Cuánto se llevó ${esc(name)}?` : `¿Cuánto le pagas a ${esc(name)}?`}</h1>
+    <p class="lead">Escribe la cantidad en pesos.</p>
+    <div class="amount" id="amt" role="status" aria-live="polite"></div>
+    <div class="keys" id="keys">${["1","2","3","4","5","6","7","8","9",".","0","⌫"].map((k) =>
+      `<button type="button" data-k="${k}" aria-label="${k === "⌫" ? "Borrar" : k === "." ? "punto para centavos" : k}">${k}</button>`).join("")}</div>
+    <button class="go" type="button" id="ok" disabled>Listo</button>${navHtml()}`;
+  const show = () => {
+    const el = $("#amt");
+    const cents = toCents(v);
+    el.classList.toggle("empty-v", !v);
+    el.style.fontSize = v.length > 8 ? "2rem" : "";
+    el.textContent = v ? "$" + v.replace(/^(\d+)/, (d) => d.replace(/\B(?=(\d{3})+(?!\d))/g, ",")) : "$0";
+    $("#ok").disabled = !(cents > 0);
+    $("#ok").textContent = cents > 0 ? `Listo: ${mxn(cents)} pesos` : "Listo";
+    arg.v = v; // si regresa a esta pantalla, conserva lo que escribió
+  };
+  $("#keys").onclick = (e) => {
+    const b = e.target.closest("[data-k]"); if (!b) return;
+    const k = b.dataset.k;
+    if (k === "⌫") v = v.slice(0, -1);
+    else if (k === ".") { if (!v.includes(".")) v = (v || "0") + "."; }
+    else {
+      const [i, d] = v.split(".");
+      if (d !== undefined ? d.length < 2 : (i || "").length < 6) v = v === "0" ? k : v + k;
+    }
+    show();
+  };
+  $("#ok").onclick = () => {
+    const cents = toCents(v); if (!(cents > 0)) return;
+    const amount = mxnPlain(cents);
+    send(mode === "fiado" ? `${name} se llevó ${amount}` : `Paga a ${name} ${amount}`);
+  };
+  show();
+};
+function toCents(v) {
+  if (!v) return 0;
+  const [i, d = ""] = v.split(".");
+  return Number(i || "0") * 100 + Number(d.padEnd(2, "0") || "0");
+}
+// Monto en formato que entiende el intérprete: "$1200" o "$185.50" (sin comas).
+const mxnPlain = (c) => "$" + Math.floor(c / 100) + (c % 100 ? "." + String(c % 100).padStart(2, "0") : "");
+
+// Voz
+SCREENS.voz = () => {
+  const SR = window.SpeechRecognition || window.webkitSpeechRecognition;
+  if (!SR) {
+    app.innerHTML = `<h1>Tu teléfono no permite usar la voz aquí</h1><p class="lead">Usa los botones grandes del inicio, es igual de fácil.</p>${navHtml(false)}`;
+    return;
+  }
+  app.innerHTML = `
+    <h1>Dímelo con tu voz</h1>
+    <p class="lead">Toca el botón y habla. Por ejemplo: <b>“Doña Lupe se llevó 185 pesos”</b>.</p>
+    <button class="mic" type="button" id="mic"><span class="ic" aria-hidden="true">🎙️</span><span id="micl">Tocar y hablar</span></button>
+    <div id="heard"></div>${navHtml()}`;
+  let text = "";
+  $("#mic").onclick = () => {
+    const r = new SR(); r.lang = "es-MX"; r.interimResults = false; r.maxAlternatives = 1;
+    $("#mic").classList.add("on"); $("#micl").textContent = "Te escucho…";
+    r.onresult = (ev) => {
+      text = ev.results[0][0].transcript.trim();
+      $("#heard").innerHTML = `<p class="lead" style="margin-top:10px">Escuché:</p><div class="heard">“${esc(text)}”</div>
+        <button class="go ok" type="button" id="sendv">✅ Sí, eso es</button>
+        <button class="go soft" type="button" id="again">🔁 Decirlo otra vez</button>`;
+      $("#sendv").onclick = () => send(text, "user_voice");
+      $("#again").onclick = () => $("#mic").click();
+    };
+    const off = () => { $("#mic")?.classList.remove("on"); const l = $("#micl"); if (l) l.textContent = "Tocar y hablar"; };
+    r.onend = off;
+    r.onerror = () => { off(); $("#heard").innerHTML = `<div class="tip">No te escuché bien. Toca el botón y vuelve a intentar.</div>`; };
+    r.start();
+  };
+};
+
+// ---------- enviar a Cuadra y mostrar su respuesta ----------
+async function send(text, provenance = "user_direct") {
+  go("respuesta", { pending: true });
+  try {
+    await load();
+    const before = lastId();
+    await post("/api/chat", { text, provenance });
+    const replies = await waitReply(before);
+    go("respuesta", { replies }, false);
+  } catch {
+    go("respuesta", { error: true }, false);
+  }
+}
+
+async function act(a) {
+  if (a.kind === "confirm" || a.kind === "cancel") {
+    go("respuesta", { pending: true }, false);
+    try {
+      await load();
+      const before = lastId();
+      await post(a.kind === "confirm" ? "/api/confirm" : "/api/cancel", { proposal_id: a.proposal_id });
+      const replies = await waitReply(before, 12000);
+      go("respuesta", { replies, done: true, cancelled: a.kind === "cancel" }, false);
+    } catch { go("respuesta", { error: true }, false); }
+  } else if (a.url) {
+    window.open(a.url, "_blank", "noopener");
+  }
+}
+
+function tone(body) {
+  if (/^(🛡️|⛔|❌)|No (envío|pago|te entendí)|no está en tu lista/.test(body)) return "bad";
+  if (/^(⚠️|🔐)|ya tiene un cobro abierto|necesito tu aprobación/.test(body)) return "warn";
+  if (/^(✅|💰|🎉)|Listo|Anotado|Recib/.test(body)) return "ok";
+  return "";
+}
+function actionHtml(a, i, body = "") {
+  if (a.kind === "qr") return a.url ? `<img class="qr" alt="Código QR para pagar" src="${esc(a.url)}">` : `<div class="qr sim">Código QR<br>(de prueba)</div>`;
+  const label = a.kind === "confirm" ? (/^Anoto/.test(body) ? "✅ Sí, anotar" : /^Le mando/.test(body) ? "✅ Sí, mandar el cobro" : "✅ Sí, está bien")
+    : a.kind === "cancel" ? "✖ No, cancelar"
+    : a.kind === "approve" ? "🔐 Aprobar con mi huella"
+    : esc(a.label);
+  const cls = a.kind === "confirm" ? "go ok" : a.kind === "cancel" ? "go soft" : "go";
+  return `<button class="${cls}" type="button" data-a="${i}">${label}</button>`;
+}
+
+// Quita los códigos de regla “(R05)”: sirven al equipo, no a quien usa el portal.
+const plain = (body) => String(body).replace(/\s*\(R\d{2}\)/g, "");
+
+SCREENS.respuesta = ({ pending, replies, error, done, cancelled } = {}) => {
+  if (pending) { app.innerHTML = `<div class="wait"><div class="spin"></div>Un momento, Cuadra está revisando…</div>${navHtml(false)}`; return; }
+  if (error) {
+    app.innerHTML = `<h1>Algo salió mal</h1><p class="lead">No se movió dinero. Revisa tu internet y vuelve a intentar.</p>${navHtml(false)}`;
+    return;
+  }
+  if (!replies || !replies.length) {
+    app.innerHTML = done
+      ? `<h1>${cancelled ? "Cancelado" : "Listo ✅"}</h1><p class="lead">${cancelled ? "No se hizo nada." : "Te avisaremos aquí mismo cuando haya novedades."}</p>${navHtml(false)}`
+      : `<h1>Cuadra está tardando</h1><p class="lead">Tu mensaje sí llegó. Revisa “Últimos avisos” en el inicio en un momento.</p>${navHtml(false)}`;
+    return;
+  }
+  const actions = [];
+  const cards = replies.map((m) => {
+    const acts = (m.actions || []).map((a) => { actions.push(a); return actionHtml(a, actions.length - 1, m.body); }).join("");
+    return `<div class="reply ${tone(m.body)}"><div class="from"><img src="/logo.svg" alt="">Cuadra dice:</div>${esc(plain(m.body))}${acts ? `<div>${acts}</div>` : ""}</div>`;
+  }).join("");
+  const asks = actions.some((a) => a.kind === "confirm");
+  const tones = replies.map((m) => tone(m.body));
+  const title = asks ? "¿Está bien así?"
+    : tones.includes("bad") ? "No se pudo hacer"
+    : tones.includes("warn") ? "Revisa esto"
+    : cancelled ? "Cancelado" : "Listo ✅";
+  // Mientras haya una pregunta abierta, la única salida es Sí o No (así no quedan propuestas colgadas).
+  app.innerHTML = `
+    <h1>${title}</h1>
+    ${cards}
+    ${canSpeak ? `<button class="listen" type="button" id="listen">🔊 Escuchar</button>` : ""}
+    ${asks ? "" : `<button class="go" type="button" data-nav="home" style="margin-top:20px">🏠 Volver al inicio</button>`}`;
+  app.querySelectorAll("[data-a]").forEach((b) => (b.onclick = () => { b.disabled = true; act(actions[Number(b.dataset.a)]); }));
+  const l = $("#listen"); if (l) l.onclick = () => speak(replies.map((m) => plain(m.body)).join(". "));
+  $("#say").textContent = replies.map((m) => plain(m.body)).join(". ");
+};
+
+home();
+</script>
+</body>
+</html>
