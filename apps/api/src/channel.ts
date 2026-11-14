@@ -4,6 +4,7 @@
  */
 import { type Db, type MessageAction, realPhone10, schema } from "@cuadra/db";
 import { and, eq } from "drizzle-orm";
+import type { TemplateRef } from "./whatsapp-templates.js";
 
 export interface OutboundMessage {
   merchantId: string;
@@ -14,6 +15,8 @@ export interface OutboundMessage {
   body: string;
   /** Botones: confirm/cancel llevan proposal_id; pay/approve/link llevan url; qr lleva imagen. */
   actions: MessageAction[];
+  /** Plantilla aprobada para cuando el mensaje lo inicia el negocio (fuera de la ventana de 24 h). */
+  template?: TemplateRef;
 }
 
 export interface OutboundChannel {

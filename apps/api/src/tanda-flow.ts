@@ -1,4 +1,5 @@
 import { randomInt, randomUUID } from "node:crypto";
+import type { TemplateRef } from "./whatsapp-templates.js";
 import type { PeyTransaction } from "@cuadra/adapters";
 import { formatMXN, maskClabe, potCents, recipientOf } from "@cuadra/core";
 import {
@@ -30,7 +31,7 @@ export interface TandaDeps {
   gateway: ChargeGateway;
   verify: AssertionVerifier;
   now: () => Date;
-  say: (thread: string, body: string, actions?: MessageAction[]) => Promise<void>;
+  say: (thread: string, body: string, actions?: MessageAction[], template?: TemplateRef) => Promise<void>;
   log: (r: Record<string, unknown>) => void;
 }
 
@@ -106,7 +107,12 @@ export class TandaFlow {
     let sent = 0;
     for (const m of members) {
       if (m.position === recipient.position) {
-        await this.d.say(memberThread(t.id, m.position), `🎉 ${m.name}, esta ronda de “${t.name}” te toca a ti: ${formatMXN(pot)} llegarán directo a tu cuenta ${maskClabe(m.clabe)} conforme paguen los demás.`);
+        await this.d.say(
+          memberThread(t.id, m.position),
+          `🎉 ${m.name}, esta ronda de “${t.name}” te toca a ti: ${formatMXN(pot)} llegarán directo a tu cuenta ${maskClabe(m.clabe)} conforme paguen los demás.`,
+          undefined,
+          { name: "cuadra_tanda_turno", params: [m.name, t.name, formatMXN(pot), maskClabe(m.clabe)] },
+        );
         continue;
       }
       if (await this.requestContribution(t, round, m, recipient)) sent++;
@@ -144,6 +150,7 @@ export class TandaFlow {
       memberThread(t.id, payer.position),
       `Hola ${payer.name} 👋 Ronda ${round} de “${t.name}”: le toca a ${recipient.name}. Te llegó una solicitud CoDi de ${formatMXN(t.contributionCents)} a tu celular; al aprobarla, el dinero va directo a la cuenta de ${recipient.name}.`,
       actions,
+      { name: "cuadra_tanda_aportacion", params: [payer.name, String(round), t.name, recipient.name, formatMXN(t.contributionCents)] },
     );
     return true;
   }
@@ -224,15 +231,29 @@ export class TandaFlow {
       );
       return true;
     }
-    await this.d.say(memberThread(charge.tandaId, payer.position), `🧾 Recibo: aportaste ${formatMXN(charge.amountCents)} a la ronda ${charge.round} de “${t?.name}”, directo a ${recipient.name}. ¡Gracias!`);
+    await this.d.say(
+      memberThread(charge.tandaId, payer.position),
+      `🧾 Recibo: aportaste ${formatMXN(charge.amountCents)} a la ronda ${charge.round} de “${t?.name}”, directo a ${recipient.name}. ¡Gracias!`,
+      undefined,
+      { name: "cuadra_tanda_recibo", params: [formatMXN(charge.amountCents), String(charge.round), t?.name ?? "tu tanda", recipient.name] },
+    );
     const name = (p: number) => members[p - 1]?.name ?? `#${p}`;
     if (out.status.complete) {
       const pot = potCents(charge.amountCents, members.length);
       await this.d.say("comercio", `🎉 ¡Pozo completo! ${formatMXN(pot)} llegaron directo a la cuenta de ${recipient.name} (${maskClabe(recipient.clabe)}). Ronda ${charge.round} cerrada.`);
       for (const m of members) {
-        await this.d.say(memberThread(charge.tandaId, m.position), m.position === recipient.position
-          ? `🎉 ${m.name}, ya te llegaron los ${formatMXN(pot)} de tu ronda. ¡Felicidades!`
-          : `✅ La ronda ${charge.round} de “${t?.name}” se completó: ${recipient.name} ya recibió su pozo.`);
+        const mine = m.position === recipient.position;
+        const aviso = mine
+          ? `${m.name}, ya te llegaron los ${formatMXN(pot)} de tu ronda.`
+          : `La ronda ${charge.round} se completó y ${recipient.name} ya recibió su pozo.`;
+        await this.d.say(
+          memberThread(charge.tandaId, m.position),
+          mine
+            ? `🎉 ${m.name}, ya te llegaron los ${formatMXN(pot)} de tu ronda. ¡Felicidades!`
+            : `✅ La ronda ${charge.round} de “${t?.name}” se completó: ${recipient.name} ya recibió su pozo.`,
+          undefined,
+          { name: "cuadra_tanda_aviso", params: [t?.name ?? "tu tanda", aviso] },
+        );
       }
       if (charge.round >= members.length) {
         await this.d.db.update(schema.tandas).set({ status: "done" }).where(eq(schema.tandas.id, charge.tandaId));

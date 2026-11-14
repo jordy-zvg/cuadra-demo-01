@@ -40,8 +40,10 @@ import { and, desc, eq } from "drizzle-orm";
 import type { ChargeGateway } from "./gateway.js";
 import { type OutboundChannel, resolveThreadPhone } from "./channel.js";
 import { TandaFlow } from "./tanda-flow.js";
+import type { TemplateRef } from "./whatsapp-templates.js";
 
-export const REMINDER_TEMPLATE = "cobro_amable";
+/** Debe coincidir con la plantilla aprobada en Meta (whatsapp-templates.ts). */
+export const REMINDER_TEMPLATE = "cuadra_cobro_fiado";
 
 export interface ServiceDeps {
   db: Db;
@@ -77,14 +79,14 @@ export class CuadraService {
       gateway: d.gateway,
       verify: d.verify,
       now: d.now,
-      say: (thread, body, actions) => this.say(thread, body, actions),
+      say: (thread, body, actions, template) => this.say(thread, body, actions, undefined, template),
       log: d.log,
     });
   }
 
   // ---------- mensajes ----------
 
-  private async say(thread: string, body: string, actions?: MessageAction[], proposalId?: string): Promise<void> {
+  private async say(thread: string, body: string, actions?: MessageAction[], proposalId?: string, template?: TemplateRef): Promise<void> {
     await this.d.db.insert(schema.messages).values({
       merchantId: this.d.merchantId,
       thread,
@@ -94,18 +96,18 @@ export class CuadraService {
       proposalId: proposalId ?? null,
       createdAt: this.d.now(),
     });
-    await this.deliver(thread, body, actions ?? []);
+    await this.deliver(thread, body, actions ?? [], template);
   }
 
   /** Entrega a los canales configurados; un canal caído no rompe el flujo del dinero. */
-  private async deliver(thread: string, body: string, actions: MessageAction[]): Promise<void> {
+  private async deliver(thread: string, body: string, actions: MessageAction[], template?: TemplateRef): Promise<void> {
     const channels = this.d.channels ?? [];
     if (channels.length === 0) return;
     const phone10 = await resolveThreadPhone(this.d.db, this.d.merchantId, this.d.ownerId, thread);
     if (!phone10) return;
     for (const ch of channels) {
       try {
-        await ch.send({ merchantId: this.d.merchantId, thread, phone10, body, actions });
+        await ch.send({ merchantId: this.d.merchantId, thread, phone10, body, actions, ...(template ? { template } : {}) });
       } catch (e) {
         this.d.log({ msg: "channel_send_failed", channel: ch.name, merchant_id: this.d.merchantId, error: e instanceof Error ? e.message : String(e) });
       }
@@ -372,10 +374,39 @@ export class CuadraService {
     await this.say("comercio", "Cancelado. No anoté nada.");
   }
 
-  private async sendReminder(proposalId: string, customerId: string): Promise<void> {
+  /**
+   * Recordatorios programados (reglas del comercio, p. ej. viernes 10:00): un SendReminder por cada
+   * cliente con saldo y opt-in. La política (72 h, horario, opt-in, un cobro abierto) se aplica igual
+   * que en el chat; los que no pasan se omiten en silencio y al final va un solo resumen al comercio.
+   */
+  async runScheduledReminders(): Promise<{ sent: number; skipped: number }> {
+    const rows = await this.d.db
+      .select({ id: schema.customers.id })
+      .from(schema.customers)
+      .where(and(eq(schema.customers.merchantId, this.d.merchantId), eq(schema.customers.optIn, true)));
+    let sent = 0;
+    let skipped = 0;
+    for (const r of rows) {
+      if ((await ledgerBalance(this.d.db, this.d.merchantId, "1200", r.id)) <= 0n) continue;
+      const p = await this.newProposal({ type: "SendReminder", customer_id: r.id }, "user_direct");
+      if (await this.sendReminder(p.id, r.id, { scheduled: true })) sent++;
+      else skipped++;
+    }
+    if (sent + skipped > 0) {
+      await this.say(
+        "comercio",
+        `🔔 Recordatorios programados: mandé ${sent} cobro${sent === 1 ? "" : "s"}` +
+          (skipped ? `; ${skipped} no salieron (cobro abierto, recordatorio en las últimas 72 h o fuera de horario).` : "."),
+      );
+    }
+    return { sent, skipped };
+  }
+
+  /** true si el recordatorio salió. Con scheduled, los rechazos no se le avisan uno por uno al comercio. */
+  private async sendReminder(proposalId: string, customerId: string, opts: { scheduled?: boolean } = {}): Promise<boolean> {
     const now = this.d.now();
     const [c] = await this.d.db.select().from(schema.customers).where(eq(schema.customers.id, customerId));
-    if (!c) return;
+    if (!c) return false;
     const balance = await ledgerBalance(this.d.db, this.d.merchantId, "1200", customerId);
     const [last] = await this.d.db
       .select({ at: schema.charges.createdAt })
@@ -395,13 +426,13 @@ export class CuadraService {
     const open = await this.openCharge(customerId);
     if (policy.allow && open) {
       await setProposalStatus(this.d.db, proposalId, "rejected", { open_charge: open.id });
-      await this.say("comercio", `${c.name} ya tiene un cobro abierto (ref. ${open.reference}). No mando otro para que no pague doble.`);
-      return;
+      if (!opts.scheduled) await this.say("comercio", `${c.name} ya tiene un cobro abierto (ref. ${open.reference}). No mando otro para que no pague doble.`);
+      return false;
     }
     if (!policy.allow) {
       await setProposalStatus(this.d.db, proposalId, "rejected", policy);
-      await this.say("comercio", `No mando el cobro:\n• ${policy.rules_failed.map((f) => f.reason).join("\n• ")}`);
-      return;
+      if (!opts.scheduled) await this.say("comercio", `No mando el cobro:\n• ${policy.rules_failed.map((f) => f.reason).join("\n• ")}`);
+      return false;
     }
     const chargeId = id("ch");
     const reference = await newChargeReference(this.d.db, this.d.merchantId);
@@ -441,6 +472,8 @@ export class CuadraService {
           : `Ref. ${reference}.\n`) +
         "Si hoy no se puede, no pasa nada: dinos cuándo te queda bien. ¡Gracias por tu confianza!",
       actions,
+      undefined,
+      { name: "cuadra_cobro_fiado", params: [c.name, merchant?.name ?? "tu tienda", amount, reference] },
     );
     await this.say(
       "comercio",
@@ -448,6 +481,7 @@ export class CuadraService {
         ? `📨 Cobro de ${amount} enviado a ${c.name} por CoDi${this.d.gateway.simulated ? " (simulado)" : " vía pey"}. Te aviso cuando pague.`
         : `⚠️ No pude mandar la solicitud CoDi a ${c.name}${failure ? `: ${failure}` : " (no tiene celular)"}. Le dejé el recordatorio con la referencia ${reference}.`,
     );
+    return true;
   }
 
   private async openCharge(customerId: string) {
@@ -568,7 +602,11 @@ export class CuadraService {
       const bal = await ledgerBalance(this.d.db, out.merchant_id, "1200", cid);
       const fav = await ledgerBalance(this.d.db, out.merchant_id, "2100", cid);
       const rest = bal > 0n ? `Te falta ${formatMXN(bal)}.` : fav > 0n ? `Quedas al corriente y con ${formatMXN(fav)} a favor.` : "Quedas al corriente. ¡Gracias!";
-      await this.say(cid, `🧾 Recibo: pagaste ${amount}. ${rest}`);
+      const [store] = await this.d.db.select({ name: schema.merchants.name }).from(schema.merchants).where(eq(schema.merchants.id, this.d.merchantId));
+      await this.say(cid, `🧾 Recibo: pagaste ${amount}. ${rest}`, undefined, undefined, {
+        name: "cuadra_recibo_fiado",
+        params: [store?.name ?? "tu tienda", amount, rest],
+      });
       await this.say("comercio", `💰 ${c?.name} pagó ${amount} por CoDi. Conciliado solo${bal > 0n ? `; aún debe ${formatMXN(bal)}` : "; queda en ceros"}.`);
       const s = await this.n2bis();
       if (s && s.level !== "ok") await this.say("comercio", `📈 ${s.message}`);

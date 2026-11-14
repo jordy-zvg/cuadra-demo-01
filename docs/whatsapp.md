@@ -55,6 +55,25 @@ Usa el tono del chat web (“Si hoy no se puede, no pasa nada…”). La políti
 ## Variables (Railway, servicio `api`)
 Tokens y secretos de Meta van como variables de entorno; nunca en el repo ni en logs.
 
+| Variable | De dónde sale |
+|---|---|
+| `WHATSAPP_TOKEN` | Token de acceso (usuario del sistema) de la app de Meta |
+| `WHATSAPP_PHONE_NUMBER_ID` | WhatsApp → Configuración de la API, ID del número |
+| `WHATSAPP_APP_SECRET` | Configuración básica de la app → Clave secreta (firma `X-Hub-Signature-256`) |
+| `WHATSAPP_VERIFY_TOKEN` | Texto que inventamos y pegamos igual en Meta al registrar el webhook |
+| `WHATSAPP_WABA_ID` | Solo para `pnpm --filter @cuadra/api templates:create` |
+| `DEMO_OWNER_PHONE` | Celular real del comercio: el único que da instrucciones por WhatsApp |
+
+Webhook en Meta: `<PUBLIC_URL>/webhooks/whatsapp`, suscrito al campo `messages`. Sin las cuatro primeras
+variables la ruta no existe y la app sigue con el chat web.
+
+## Estado (14-nov)
+- Hecho: webhook con firma y verificación, deduplicación por id, solo el comercio da instrucciones,
+  reenviados como `third_party_content`, botones Confirmar/Cancelar, **QR de cobro como imagen** (se sube
+  con `POST /{phone-number-id}/media` y se manda con pie de foto), plantillas (7, ver
+  `apps/api/src/whatsapp-templates.ts`) y aviso genérico al comercio si su ventana de 24 h cerró.
+- Falta: probar contra Meta con llaves reales, aprobación de plantillas, notas de voz (#9) y fotos (#10).
+
 ## Listo cuando…
 - Escribir “Doña Lupe se llevó $185” al número de prueba devuelve la propuesta con botones, y “Confirmar”
   registra el fiado (se ve en el panel).

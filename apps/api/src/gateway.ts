@@ -65,7 +65,7 @@ export class SimulatedGateway implements ChargeGateway {
   async requestPayment(r: Parameters<ChargeGateway["requestPayment"]>[0]) {
     return { provider_charge_id: `simtx_${r.metadata.cuadra_charge_id ?? r.metadata.cuadra_tanda_charge_id}` };
   }
-  async createQr(r: Parameters<ChargeGateway["createQr"]>[0]) {
+  async createQr(r: Parameters<ChargeGateway["createQr"]>[0]): ReturnType<ChargeGateway["createQr"]> {
     return { provider_charge_id: `simqr_${r.metadata.cuadra_charge_id}`, image_png_base64: null };
   }
   async registerAccount(r: { clabe: string }) {

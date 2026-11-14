@@ -1,0 +1,28 @@
+/**
+ * Da de alta en Meta las plantillas de Cuadra (POST /{WABA_ID}/message_templates).
+ * Uso: pnpm --filter @cuadra/api templates:create
+ * Requiere WHATSAPP_TOKEN y WHATSAPP_WABA_ID. Meta revisa cada una (minutos a horas); el estado se ve
+ * en el Administrador de WhatsApp. Si una ya existe, Meta responde error y se informa sin detener el resto.
+ */
+import { WHATSAPP_GRAPH_URL, WHATSAPP_GRAPH_VERSION } from "@cuadra/adapters";
+import { TEMPLATES, type TemplateName, templateCreateBody } from "./whatsapp-templates.js";
+
+const token = process.env.WHATSAPP_TOKEN;
+const waba = process.env.WHATSAPP_WABA_ID;
+if (!token || !waba) {
+  process.stderr.write("Faltan WHATSAPP_TOKEN y WHATSAPP_WABA_ID en el entorno.\n");
+  process.exit(1);
+}
+const version = process.env.WHATSAPP_GRAPH_VERSION || WHATSAPP_GRAPH_VERSION;
+
+for (const name of Object.keys(TEMPLATES) as TemplateName[]) {
+  const res = await fetch(`${WHATSAPP_GRAPH_URL}/${version}/${encodeURIComponent(waba)}/message_templates`, {
+    method: "POST",
+    headers: { Authorization: `Bearer ${token}`, "content-type": "application/json" },
+    body: JSON.stringify(templateCreateBody(name)),
+  });
+  const json = (await res.json().catch(() => null)) as { id?: string; status?: string; error?: { message?: string } } | null;
+  process.stdout.write(
+    res.ok ? `OK     ${name}: ${json?.status ?? "enviada"} (${json?.id ?? "sin id"})\n` : `ERROR  ${name}: ${json?.error?.message ?? res.status}\n`,
+  );
+}

@@ -8,6 +8,7 @@
     "test": "vitest run",
     "typecheck": "tsc --noEmit",
     "start": "tsx src/main.ts",
+    "templates:create": "tsx src/create-templates.ts",
     "pey:check": "tsx src/tools/pey-check.ts"
   },
   "dependencies": {

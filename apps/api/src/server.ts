@@ -9,6 +9,8 @@ import { and, eq } from "drizzle-orm";
 import type { CuadraService } from "./service.js";
 import { type PasskeyOpts, registerPasskeyRoutes } from "./passkey.js";
 import { panelState, tandaState } from "./state.js";
+import type { WhatsAppChannel } from "./whatsapp.js";
+import { parseWhatsAppWebhook, verifyWhatsAppSignature, verifyWhatsAppSubscription } from "@cuadra/adapters";
 
 export interface ServerOpts {
   db: Db;
@@ -20,6 +22,7 @@ export interface ServerOpts {
   /** Si existe, toda la app (salvo /health y /webhooks/*) pide esta contraseña (HTTP Basic). */
   demoPassword?: string | null;
   log: (r: Record<string, unknown>) => void;
+  whatsapp?: { channel: WhatsAppChannel; appSecret: string; verifyToken: string };
 }
 
 const ChatBody = z.object({
@@ -93,6 +96,26 @@ export function buildServer(o: ServerOpts): FastifyInstance {
       return reply.code(500).send({ error: "reintentar" });
     }
   });
+
+  const wa = o.whatsapp;
+  if (wa) {
+    // Meta verifica la URL con un GET antes de mandar eventos.
+    app.get("/webhooks/whatsapp", async (req, reply) => {
+      const challenge = verifyWhatsAppSubscription(req.query as Record<string, unknown>, wa.verifyToken);
+      return challenge === null ? reply.code(403).send() : reply.type("text/plain").send(challenge);
+    });
+    app.post("/webhooks/whatsapp", async (req, reply) => {
+      const raw = typeof req.body === "string" ? req.body : "";
+      const sig = req.headers["x-hub-signature-256"];
+      if (!verifyWhatsAppSignature(raw, Array.isArray(sig) ? sig[0] : sig, wa.appSecret)) return reply.code(401).send();
+      const msgs = parseWhatsAppWebhook(json(raw));
+      // Se responde 200 de inmediato; el intérprete puede tardar y Meta reintenta (el id evita duplicados).
+      void wa.channel.handleInbound(msgs, o.service).catch((e: unknown) => {
+        o.log({ msg: "whatsapp_inbound_error", error: e instanceof Error ? e.message : String(e) });
+      });
+      return reply.code(200).send();
+    });
+  }
 
   // Solo en modo simulado: el cliente "aprueba" el cobro CoDi en su banco.
   app.post("/api/sim/pay/:chargeId", async (req, reply) => {
