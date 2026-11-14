@@ -27,6 +27,7 @@ import {
   depositsSince,
   globalKillSwitch,
   insertCharge,
+  openChargeFor,
   ledgerBalance,
   loadOutflowContext,
   newChargeReference,
@@ -36,9 +37,10 @@ import {
   schema,
   setProposalStatus,
 } from "@cuadra/db";
-import { and, desc, eq } from "drizzle-orm";
-import type { ChargeGateway } from "./gateway.js";
+import { and, desc, eq, isNull, ne, or } from "drizzle-orm";
+import { type ChargeGateway, PN_TTL_S, QR_TTL_S } from "./gateway.js";
 import { type OutboundChannel, resolveThreadPhone } from "./channel.js";
+import { type ReconResult, reconcileWithProvider } from "./provider-reconciliation.js";
 import { TandaFlow } from "./tanda-flow.js";
 import type { TemplateRef } from "./whatsapp-templates.js";
 
@@ -408,10 +410,19 @@ export class CuadraService {
     const [c] = await this.d.db.select().from(schema.customers).where(eq(schema.customers.id, customerId));
     if (!c) return false;
     const balance = await ledgerBalance(this.d.db, this.d.merchantId, "1200", customerId);
+    // Recordatorio previo = cobro que sí le llegó al cliente por este canal: no cuentan los QR
+    // de mostrador, los cancelados ni los simulados cuando el cobro es real (y viceversa).
     const [last] = await this.d.db
       .select({ at: schema.charges.createdAt })
       .from(schema.charges)
-      .where(eq(schema.charges.customerId, customerId))
+      .where(
+        and(
+          eq(schema.charges.customerId, customerId),
+          ne(schema.charges.status, "cancelled"),
+          or(isNull(schema.charges.channel), ne(schema.charges.channel, "codi_qr")),
+          or(isNull(schema.charges.provider), eq(schema.charges.provider, this.d.gateway.name)),
+        ),
+      )
       .orderBy(desc(schema.charges.createdAt))
       .limit(1);
     const policy = evaluateReminder({
@@ -453,7 +464,12 @@ export class CuadraService {
           metadata: { cuadra_charge_id: chargeId },
           ...(merchant?.peyBankAccountId ? { bank_account_id: merchant.peyBankAccountId } : {}),
         });
-        await attachProviderCharge(this.d.db, chargeId, { provider: this.d.gateway.name, providerChargeId: pn.provider_charge_id, channel: "codi_pn" });
+        await attachProviderCharge(this.d.db, chargeId, {
+          provider: this.d.gateway.name,
+          providerChargeId: pn.provider_charge_id,
+          channel: "codi_pn",
+          expiresAt: new Date(now.getTime() + PN_TTL_S * 1000),
+        });
         pushed = true;
       } catch (e) {
         failure = e instanceof Error ? e.message : String(e);
@@ -484,13 +500,9 @@ export class CuadraService {
     return true;
   }
 
+  /** Cobro vigente del cliente; los vencidos en el proveedor ya no bloquean uno nuevo. */
   private async openCharge(customerId: string) {
-    const [open] = await this.d.db
-      .select()
-      .from(schema.charges)
-      .where(and(eq(schema.charges.customerId, customerId), eq(schema.charges.status, "open")))
-      .limit(1);
-    return open ?? null;
+    return openChargeFor(this.d.db, customerId, this.d.now());
   }
 
   /** Cobro en mostrador: QR CoDi por el saldo exacto, que el cliente escanea con su banco. */
@@ -520,13 +532,18 @@ export class CuadraService {
         metadata: { cuadra_charge_id: chargeId },
         ...(merchant?.peyBankAccountId ? { bank_account_id: merchant.peyBankAccountId } : {}),
       });
-      await attachProviderCharge(this.d.db, chargeId, { provider: this.d.gateway.name, providerChargeId: qr.provider_charge_id, channel: "codi_qr" });
+      await attachProviderCharge(this.d.db, chargeId, {
+        provider: this.d.gateway.name,
+        providerChargeId: qr.provider_charge_id,
+        channel: "codi_qr",
+        expiresAt: new Date(now.getTime() + QR_TTL_S * 1000),
+      });
       const amount = formatMXN(balance);
       const actions: MessageAction[] = [
         { kind: "qr", label: "QR CoDi", ...(qr.image_png_base64 ? { url: `data:image/png;base64,${qr.image_png_base64}` } : {}) },
       ];
       if (this.d.gateway.simulated) actions.push({ kind: "pay", label: `${c.name} escanea y paga (simulado)`, url: `/api/sim/pay/${chargeId}` });
-      await this.say("comercio", `📱 Que ${c.name} escanee este QR con la app de su banco: ${amount}, ref. ${reference}. Vale 30 min.`, actions);
+      await this.say("comercio", `📱 Que ${c.name} escanee este QR con la app de su banco: ${amount}, ref. ${reference}. Vale ${QR_TTL_S / 60} min.`, actions);
     } catch (e) {
       await this.d.db.update(schema.charges).set({ status: "cancelled" }).where(eq(schema.charges.id, chargeId));
       await this.say("comercio", `⚠️ No pude generar el QR: ${e instanceof Error ? e.message : String(e)}`);
@@ -613,6 +630,24 @@ export class CuadraService {
     } else {
       await this.say("comercio", `💰 Llegó un pago de ${amount} que no pude asignar. Quedó en “por identificar” (1300) para revisión.`);
     }
+  }
+
+  private reconciling: Promise<ReconResult> | null = null;
+
+  /** Conciliación contra el proveedor de cobro. Una sola corrida a la vez. */
+  async reconcileProvider(): Promise<ReconResult> {
+    this.reconciling ??= reconcileWithProvider({
+      db: this.d.db,
+      merchantId: this.d.merchantId,
+      gateway: this.d.gateway,
+      applyPayment: (tx) => this.applyPayment(tx),
+      now: this.d.now,
+      say: (body) => this.say("comercio", body),
+      log: this.d.log,
+    }).finally(() => {
+      this.reconciling = null;
+    });
+    return this.reconciling;
   }
 
   /** Tope mensual Nivel 2 Bis con los abonos digitales del mes (CDMX). */

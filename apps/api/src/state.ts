@@ -1,6 +1,6 @@
 import { type AccountCode, ACCOUNTS, checkBalance, potCents } from "@cuadra/core";
 import { type Db, bankSimBalance, inFlightCents, ledgerBalance, schema, tandaMembersOf, tandaRoundStatus } from "@cuadra/db";
-import { desc, eq, sql } from "drizzle-orm";
+import { and, desc, eq, sql } from "drizzle-orm";
 
 const s = (v: bigint) => v.toString();
 
@@ -133,4 +133,15 @@ export async function tandaState(db: Db, service: { tanda: { activeTanda(): Prom
       state: !st ? "esperando" : m.position === st.recipient ? "recibe" : st.paid.includes(m.position) ? "pagó" : "falta",
     })),
   };
+}
+
+/** Última conciliación contra el proveedor de cobro. */
+export async function providerReconState(db: Db, merchantId: string, provider: string) {
+  const [r] = await db
+    .select()
+    .from(schema.providerReconciliationRuns)
+    .where(and(eq(schema.providerReconciliationRuns.merchantId, merchantId), eq(schema.providerReconciliationRuns.provider, provider)))
+    .orderBy(desc(schema.providerReconciliationRuns.runAt))
+    .limit(1);
+  return r ? { at: r.runAt.toISOString(), ok: r.ok, checked: r.checked, recovered: r.recovered, discrepancies: r.discrepancies.length } : null;
 }

@@ -3,6 +3,10 @@ import type { Centavos } from "@cuadra/core";
 import { type Db, schema } from "@cuadra/db";
 import { eq } from "drizzle-orm";
 
+/** Vigencia de una solicitud CoDi al celular y de un QR de mostrador (segundos). */
+export const PN_TTL_S = 3600;
+export const QR_TTL_S = 1800;
+
 /** Cobro al cliente final. pey en vivo; simulado cuando no hay llave (se dice en la UI). */
 export interface ChargeGateway {
   readonly name: string;
@@ -24,6 +28,11 @@ export interface ChargeGateway {
     bank_account_id?: string;
   }): Promise<{ provider_charge_id: string; image_png_base64: string | null }>;
   getTransaction(id: string): Promise<PeyTransaction>;
+  /**
+   * Transacciones recientes del proveedor (más nuevas primero) hasta `since`. coveredSince es
+   * null si se leyó toda la ventana; si se cortó antes, la fecha más vieja que sí se leyó.
+   */
+  listRecentTransactions?(since: Date): Promise<{ items: PeyTransaction[]; coveredSince: Date | null }>;
   /** Alta de una CLABE como cuenta receptora (pey: POST /bank-account). */
   registerAccount(r: { clabe: string; name: string; alias: string }): Promise<{ id: string; status: string }>;
   accountStatus(id: string): Promise<string>;
@@ -34,16 +43,28 @@ export class PeyGateway implements ChargeGateway {
   readonly simulated = false;
   constructor(private readonly pey: PeyClient) {}
   async requestPayment(r: Parameters<ChargeGateway["requestPayment"]>[0]) {
-    const pn = await this.pey.createPushNotification({ ...r, expiration_s: 3600 });
+    const pn = await this.pey.createPushNotification({ ...r, expiration_s: PN_TTL_S });
     return { provider_charge_id: pn.transactionId };
   }
   async createQr(r: Parameters<ChargeGateway["createQr"]>[0]) {
     // 30 min de vigencia (mínimo de pey: 360 s).
-    const qr = await this.pey.createQr({ ...r, expiration_s: 1800, generate_image: true });
+    const qr = await this.pey.createQr({ ...r, expiration_s: QR_TTL_S, generate_image: true });
     return { provider_charge_id: qr.id, image_png_base64: qr.qrImage ?? null };
   }
   getTransaction(id: string) {
     return this.pey.getTransaction(id);
+  }
+  async listRecentTransactions(since: Date, maxPages = 25) {
+    const items: PeyTransaction[] = [];
+    let token: string | undefined;
+    for (let page = 0; page < maxPages; page++) {
+      const r = await this.pey.listTransactions(token);
+      items.push(...r.items);
+      const oldest = r.items.at(-1)?.date_created ?? null;
+      if (!r.nextToken || (oldest && oldest.getTime() < since.getTime())) return { items, coveredSince: null };
+      token = r.nextToken;
+    }
+    return { items, coveredSince: items.at(-1)?.date_created ?? since };
   }
   async registerAccount(r: { clabe: string; name: string; alias: string }) {
     const a = await this.pey.registerBankAccount({ alias: r.alias.slice(0, 255), name: r.name.slice(0, 255), clabe: r.clabe, entity: "PERSON" });

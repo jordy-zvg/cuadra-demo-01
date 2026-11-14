@@ -16,7 +16,7 @@ Estado al 14-nov-2026. **Responsables:** Jordy (pey), Joi (WhatsApp); el resto p
 | # | Componente | Estado | Qué falta | Pri. | Esf. | Requiere | Responsable |
 |---|---|---|---|---|---|---|---|
 | 4 | **pey (cobros CoDi)** | ✅ Código y tests: push al celular, QR, cuenta receptora, webhooks, tanda | Llave real, secreto de webhook, URL del webhook en el portal, alta de CLABEs, prueba con $0.01. Agregar **link de pago** como alternativa (tarjeta o banco sin CoDi) | **P0** | S | Acceso a portal.pey.mx | **Jordy** (guía: `docs/pey.md`) |
-| 5 | **Conciliación contra pey** | — | Tarea periódica que compare las transacciones `PAID` de pey (`/transaction/api-key`) con los abonos registrados: recupera webhooks perdidos y marca diferencias | P1 | S | #4 | |
+| 5 | **Conciliación contra pey** | ✅ Cada 5 min y en `POST /api/reconcile/pey`: recupera webhooks perdidos y congela salidas ante diferencias | Tarea periódica que compare las transacciones `PAID` de pey (`/transaction/api-key`) con los abonos registrados: recupera webhooks perdidos y marca diferencias | P1 | S | #4 | |
 | 6 | **Pagos salientes** (proveedores, devoluciones) | Executor, guard, mandatos y adapter de Fintoc listos; hoy sale de una cuenta simulada | Elegir proveedor (Fintoc, STP u Openpay), llaves de prueba y llave JWS, probar contra el sandbox | P1 | M | Alta con el proveedor | |
 | 7 | Devolución de saldo a favor (flujo D) | Asientos y guard listos | Intención en el chat + aprobación + salida a la CLABE de origen del cliente | P2 | S | #6 | |
 

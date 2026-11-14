@@ -98,6 +98,13 @@ async function main(): Promise<void> {
   if (schedule) {
     startReminderScheduler({ db, merchantId: demo.merchantId, schedule, run: () => service.runScheduledReminders(), now: () => new Date(), log });
   }
+  // Conciliación por transacción contra pey: al arrancar y cada PEY_RECONCILE_MS (5 min).
+  if (!gateway.simulated) {
+    const run = () =>
+      service.reconcileProvider().catch((e: unknown) => log({ msg: "provider_reconciliation_error", error: e instanceof Error ? e.message : String(e) }));
+    setTimeout(run, 15_000);
+    setInterval(run, Number(env("PEY_RECONCILE_MS") ?? 5 * 60_000));
+  }
   const port = Number(env("PORT") ?? 3000);
   await app.listen({ port, host: "0.0.0.0" });
   log({ msg: "api_started", port, migrations: applied, gateway: gateway.name, simulated: gateway.simulated, interpreter: interpreters[0]!.name, whatsapp: Boolean(whatsapp), reminders: schedule });

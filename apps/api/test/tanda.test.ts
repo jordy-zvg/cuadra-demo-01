@@ -29,6 +29,8 @@ class FakePey implements ChargeGateway {
   async createQr(): Promise<never> { throw new Error("no"); }
   async getTransaction(id: string) { return this.txs.get(id)!; }
   async registerAccount(r: { clabe: string }) { return { id: `ba_${r.clabe.slice(-4)}`, status: "ACTIVE" }; }
+  hidden = new Set<string>();
+  async listRecentTransactions() { return { items: [...this.txs.values()].filter((t) => !this.hidden.has(t.id)).reverse(), coveredSince: null }; }
   async accountStatus() { return "ACTIVE"; }
 }
 
@@ -77,6 +79,19 @@ describe("tanda sin pozo", () => {
     await f.svc.handleMerchantMessage("Cobra la tanda");
     expect(f.gw.pushes.slice(2).every((p) => p.bank_account_id === "ba_6252")).toBe(true);
     expect(await f.last()).toMatch(/Ronda 2 de 3.*Bety/);
+  });
+
+  it("conciliación: aportaciones pagadas cuadran con pey; si pey no reporta una, se congela", async () => {
+    const f = await setup();
+    await f.svc.handleMerchantMessage("Cobra la tanda");
+    await f.pay("TX1");
+    await f.pay("TX2");
+    // Marca las aportaciones como pagadas hace 10 min para que la conciliación las exija en pey.
+    await f.pg.exec(`UPDATE tanda_charges SET paid_at = '${new Date(NOW.getTime() - 10 * 60_000).toISOString()}' WHERE status = 'paid'`);
+    expect(await f.svc.reconcileProvider()).toMatchObject({ checked: 2, recovered: [], ok: true });
+    f.gw.hidden.add("TX2");
+    const r = await f.svc.reconcileProvider();
+    expect(r.discrepancies).toEqual([expect.objectContaining({ kind: "no_existe_en_proveedor", transaction_id: "TX2" })]);
   });
 
   it("no arranca otra ronda mientras falte alguien; consulta de quién falta", async () => {

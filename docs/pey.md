@@ -52,3 +52,14 @@ logs del servicio `api` (`pey_webhook`).
   abonamos el `base`.
 - ¿Una CLABE pre-autorizada registrada por API (`POST /bank-account`) queda `ACTIVE` de inmediato?
 - ¿Hay sandbox o el plan es probar en producción con $0.01 (como dice la spec)?
+
+## Conciliación automática
+Con pey en vivo, la API compara cada 5 minutos (`PEY_RECONCILE_MS`) las transacciones de pey de los últimos
+7 días con lo que Cuadra registró:
+- Pagado en pey y no registrado (webhook perdido) → se aplica igual que el webhook y se avisa al comercio.
+- Registrado en Cuadra y no pagado en pey, o con otro monto → se congelan las salidas y se avisa.
+Corrida manual: `POST /api/reconcile/pey`. El panel muestra la última en la tarjeta “Conciliación”.
+
+## Vencimientos
+La solicitud al celular vence en 1 h y el QR en 30 min (más 2 min de margen); después el cliente puede recibir
+un cobro nuevo. Si el pago de un cobro vencido llega tarde, se aplica igual.

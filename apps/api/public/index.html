@@ -186,8 +186,15 @@ function render(s) {
   $("#k-bal").className = "kpi " + (balOk ? "ok" : "bad");
   $("#k-bal .v").textContent = balOk ? `✓ ${s.ledger.entries} asientos` : `✗ ${s.ledger.unbalanced} descuadrados`;
   const r = s.reconciliation;
-  $("#k-rec").className = "kpi " + (r ? (r.ok ? "ok" : "bad") : "");
-  $("#k-rec .v").textContent = r ? (r.ok ? "✓ 100%" : `✗ ${mxn(r.difference)}`) : "—";
+  const pr = s.provider_reconciliation;
+  const recOk = (r ? r.ok : true) && (pr ? pr.ok : true);
+  $("#k-rec").className = "kpi " + (r || pr ? (recOk ? "ok" : "bad") : "");
+  $("#k-rec .v").textContent = pr
+    ? (pr.ok ? `✓ pey · ${pr.checked} pago${pr.checked === 1 ? "" : "s"}` : `✗ ${pr.discrepancies} diferencia(s)`)
+    : r ? (r.ok ? "✓ 100%" : `✗ ${mxn(r.difference)}`) : "—";
+  $("#k-rec").title = pr
+    ? `Última conciliación con pey: ${new Date(pr.at).toLocaleTimeString("es-MX")}${pr.recovered ? ` · ${pr.recovered} recuperado(s)` : ""}`
+    : "Ledger 1100 contra la cuenta operativa simulada";
   $("#k-blk .v").textContent = `${s.blocks.count} · 0 salidas indebidas`;
   const n2 = s.n2bis;
   $("#k-n2").className = "kpi " + (!n2 ? "" : n2.level === "ok" ? "ok" : "bad");
