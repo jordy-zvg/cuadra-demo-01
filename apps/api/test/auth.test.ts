@@ -2,7 +2,7 @@ import { RuleInterpreter } from "@cuadra/agents";
 import { DEMO, schema, seedDemo } from "@cuadra/db";
 import { createTestDb } from "@cuadra/db/testing";
 import { describe, expect, it } from "vitest";
-import { cleanName, hashPin, isPublicPath, normalizePhone, pinProblem, readCookie, verifyPin } from "../src/auth.js";
+import { cleanName, hashPin, isPublicPath, normalizeCurp, normalizePhone, pinProblem, readCookie, verifyPin } from "../src/auth.js";
 import { SimulatedGateway } from "../src/gateway.js";
 import { buildServer } from "../src/server.js";
 import { CuadraService } from "../src/service.js";
@@ -105,7 +105,7 @@ describe("isPublicPath", () => {
 
 // ---------- flujo con servidor ----------
 
-async function app(opts: { shopCode?: string | null; secureCookies?: boolean; demoPassword?: string | null } = {}) {
+async function app(opts: { shopCode?: string | null; secureCookies?: boolean; demoPassword?: string | null; llave?: "demo" | "off" } = {}) {
   const clock = { t: new Date("2026-11-14T15:00:00Z") };
   const now = () => new Date(clock.t);
   const { db } = await createTestDb();
@@ -117,7 +117,7 @@ async function app(opts: { shopCode?: string | null; secureCookies?: boolean; de
   });
   const server = buildServer({
     db, service, merchantId: DEMO.merchantId, gateway, bankSim: false, demoPassword: opts.demoPassword ?? null, log: () => {},
-    portalAuth: { shopCode: opts.shopCode ?? null, secureCookies: opts.secureCookies ?? false, now },
+    portalAuth: { shopCode: opts.shopCode ?? null, secureCookies: opts.secureCookies ?? false, llave: opts.llave ?? "off", now },
     passkey: { gateway, db, merchantId: DEMO.merchantId, ownerId: DEMO.ownerId, rpID: "localhost", origins: ["http://localhost"], now },
   });
   return { server, db, advance: (ms: number) => { clock.t = new Date(clock.t.getTime() + ms); } };
@@ -247,7 +247,7 @@ describe("login del portal (servidor)", () => {
     await reg(server, { pin: "2580" });
     const rows = await db.select().from(schema.portalAccounts);
     expect(rows).toHaveLength(1);
-    expect(rows[0]!.pinHash.startsWith("scrypt$")).toBe(true);
+    expect(rows[0]!.pinHash?.startsWith("scrypt$")).toBe(true);
     expect(rows[0]!.pinHash).not.toContain("2580");
     expect(rows[0]!.phone).toBe("5512345678");
   });
@@ -262,5 +262,67 @@ describe("login del portal (servidor)", () => {
     expect((await server.inject({ url: "/aprobar/abc" })).statusCode).not.toBe(401);
     expect((await server.inject({ method: "POST", url: "/api/approve/options", payload: { proposal_id: "x" } })).statusCode).not.toBe(401);
     expect((await server.inject({ method: "POST", url: "/api/passkey/register/options", payload: {} })).statusCode).toBe(401);
+  });
+});
+
+describe("Llave CDMX (demo)", () => {
+  const CURP = "PELM550101MDFRPR09";
+  const start = async (s: Server) => {
+    const r = await s.inject({ url: "/api/auth/llave/start" });
+    expect(r.statusCode).toBe(200);
+    return new URL(r.json().url, "http://x").searchParams.get("state")!;
+  };
+  const cb = (s: Server, state: string, over: Record<string, unknown> = {}) =>
+    s.inject({ method: "POST", url: "/api/auth/llave/demo-callback", payload: { state, name: "María Pérez", curp: CURP, phone: "5587654321", ...over } });
+
+  it("normalizeCurp valida la forma de la CURP", () => {
+    expect(normalizeCurp(" pelm550101mdfrpr09 ")).toBe(CURP);
+    expect(normalizeCurp("PELM550101MDFRPR0")).toBeNull();
+    expect(normalizeCurp("PELM550101MXXRPR09")).toBeNull();
+  });
+
+  it("apagada: sin botón ni rutas", async () => {
+    const { server } = await app({ llave: "off" });
+    expect((await server.inject({ url: "/api/auth/llave/start" })).statusCode).toBe(404);
+    expect((await server.inject({ url: "/api/auth/me" })).json().llave).toBe("off");
+  });
+
+  it("crea la cuenta, abre sesión y no guarda la CURP; la segunda vez entra a la misma cuenta", async () => {
+    const { server, db } = await app({ llave: "demo" });
+    expect((await server.inject({ url: "/llave-cdmx/autorizar?state=x" })).body).toMatch(/SIMULACIÓN/);
+    const r = await cb(server, await start(server));
+    expect(r.statusCode).toBe(200);
+    expect((await server.inject({ url: "/api/state", headers: { cookie: cookieOf(r) } })).statusCode).toBe(200);
+    const rows = await db.select().from(schema.portalAccounts);
+    expect(rows).toHaveLength(1);
+    expect(rows[0]!.pinHash).toBeNull();
+    expect(JSON.stringify(rows[0])).not.toContain(CURP);
+    const again = await cb(server, await start(server), { phone: "5500000000" });
+    expect(again.statusCode).toBe(200);
+    expect(await db.select().from(schema.portalAccounts)).toHaveLength(1);
+    // Esa cuenta no tiene NIP: entrar con NIP no funciona.
+    expect((await login(server, "2580", "5587654321")).statusCode).toBe(409);
+  });
+
+  it("el state es de un solo uso y vence", async () => {
+    const { server } = await app({ llave: "demo" });
+    expect((await cb(server, "inventado")).statusCode).toBe(400);
+    const st = await start(server);
+    expect((await cb(server, st)).statusCode).toBe(200);
+    expect((await cb(server, st)).statusCode).toBe(400);
+  });
+
+  it("no se mete a una cuenta existente con NIP (mismo celular)", async () => {
+    const { server } = await app({ llave: "demo" });
+    await reg(server, { phone: "5587654321" });
+    const r = await cb(server, await start(server));
+    expect(r.statusCode).toBe(409);
+    expect(r.headers["set-cookie"]).toBeUndefined();
+  });
+
+  it("respeta el código de la tienda para cuentas nuevas", async () => {
+    const { server } = await app({ llave: "demo", shopCode: "4321" });
+    expect((await cb(server, await start(server))).statusCode).toBe(403);
+    expect((await cb(server, await start(server), { shop_code: "4321" })).statusCode).toBe(200);
   });
 });

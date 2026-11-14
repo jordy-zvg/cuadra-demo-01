@@ -499,6 +499,7 @@ SCREENS.respuesta = ({ pending, replies, error, done, cancelled } = {}) => {
 // para que la próxima vez solo pida el NIP.
 let me = null;
 let needsShopCode = false;
+let llaveMode = "off";
 const firstName = (n) => String(n || "").replace(/^(doña|don)\s+/i, "").split(" ")[0];
 const remembered = () => { try { return JSON.parse(store.get("cuadra.cuenta") || "null"); } catch { return null; } };
 const fmtPhone = (d) => String(d).replace(/^(\d{2})(\d{4})(\d{4})$/, "$1 $2 $3");
@@ -506,11 +507,13 @@ const fmtPhone = (d) => String(d).replace(/^(\d{2})(\d{4})(\d{4})$/, "$1 $2 $3")
 function signedOut() {
   me = null; history_.length = 0;
   const r = remembered();
-  go(r ? "nip" : "bienvenida", r ? { phone: r.phone, name: r.name } : null, false);
+  // Quien entra con Llave CDMX no tiene NIP: vuelve a la bienvenida.
+  go(r && !r.llave ? "nip" : "bienvenida", r && !r.llave ? { phone: r.phone, name: r.name } : null, false);
 }
 function signedIn(account, phone) {
   me = account;
-  store.set("cuadra.cuenta", JSON.stringify({ phone, name: account.name }));
+  const prev = remembered();
+  store.set("cuadra.cuenta", JSON.stringify({ phone: phone || prev?.phone || "", name: account.name, llave: !!(prev?.llave && !phone) }));
   const next = new URLSearchParams(location.search).get("next");
   if (next && next.startsWith("/") && !next.startsWith("//") && next !== "/login" && next !== "/portal") { location.href = next; return; }
   home();
@@ -552,7 +555,17 @@ SCREENS.bienvenida = () => {
     <h1>¡Hola! Esto es Cuadra</h1>
     <p class="lead">Tu libreta de fiado, en tu celular.</p></div>
     <button class="go" type="button" id="in">Entrar</button>
-    <button class="go soft" type="button" id="new">Soy nuevo, quiero registrarme</button>`;
+    <button class="go soft" type="button" id="new">Soy nuevo, quiero registrarme</button>
+    ${llaveMode === "demo" ? `<button class="go soft" type="button" id="llave">🔑 Entrar con Llave CDMX <small style="font-weight:600">(demo)</small></button>` : ""}`;
+  const lb = $("#llave");
+  if (lb) lb.onclick = async () => {
+    lb.disabled = true;
+    try {
+      const r = await fetch("/api/auth/llave/start"); const d = await r.json();
+      if (r.ok && d.url) { location.href = d.url; return; }
+    } catch {}
+    lb.disabled = false;
+  };
   $("#in").onclick = () => go("celular", { mode: "entrar" });
   $("#new").onclick = () => go("nombre", {});
 };
@@ -691,7 +704,8 @@ async function start() {
     const r = await fetch("/api/auth/me", { cache: "no-store" });
     const data = await r.json().catch(() => ({}));
     needsShopCode = !!data.needs_shop_code;
-    if (r.ok) return signedIn(data.account, remembered()?.phone || "");
+    llaveMode = data.llave || "off";
+    if (r.ok) return signedIn(data.account, "");
     signedOut();
   } catch {
     app.innerHTML = `<h1>No hay conexión</h1><p class="lead">Revisa tu internet y vuelve a intentar.</p><button class="go" type="button" id="retry">Intentar otra vez</button>`;

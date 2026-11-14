@@ -25,7 +25,7 @@ export interface ServerOpts {
   log: (r: Record<string, unknown>) => void;
   whatsapp?: { channel: WhatsAppChannel; appSecret: string; verifyToken: string };
   /** Login del portal (celular + NIP). Sin sesión solo quedan abiertas /login, webhooks y la aprobación con passkey. */
-  portalAuth: { shopCode: string | null; secureCookies: boolean; now?: () => Date };
+  portalAuth: { shopCode: string | null; secureCookies: boolean; llave?: "demo" | "off"; now?: () => Date };
 }
 
 const ChatBody = z.object({
@@ -62,6 +62,7 @@ export function buildServer(o: ServerOpts): FastifyInstance {
     merchantId: o.merchantId,
     shopCode: o.portalAuth.shopCode,
     secureCookies: o.portalAuth.secureCookies,
+    llave: o.portalAuth.llave ?? "off",
     now: o.portalAuth.now ?? (() => new Date()),
   });
   app.addHook("onRequest", (req, reply) => auth.guard(req, reply));

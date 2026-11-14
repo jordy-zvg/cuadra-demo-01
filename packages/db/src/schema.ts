@@ -45,7 +45,9 @@ export const portalAccounts = pgTable("portal_accounts", {
   merchantId: text("merchant_id").notNull(),
   name: text("name").notNull(),
   phone: text("phone").notNull(),
-  pinHash: text("pin_hash").notNull(),
+  pinHash: text("pin_hash"),
+  /** Identificador de Llave CDMX (en demo: hash de la CURP). */
+  llaveSub: text("llave_sub"),
   failedAttempts: integer("failed_attempts").notNull().default(0),
   lockedUntil: ts("locked_until"),
   createdAt: ts("created_at").notNull().defaultNow(),

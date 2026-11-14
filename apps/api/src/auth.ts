@@ -26,6 +26,8 @@ export interface AuthOpts {
   shopCode: string | null;
   /** Cookie con Secure (en producción, detrás de HTTPS). */
   secureCookies: boolean;
+  /** "demo": Llave CDMX simulada (página propia marcada como prueba). "off": sin botón. */
+  llave: "demo" | "off";
   now: () => Date;
 }
 
@@ -74,6 +76,12 @@ function sameSecret(a: string, b: string): boolean {
   return timingSafeEqual(x, y);
 }
 
+/** CURP: 18 caracteres con la estructura oficial (validación de forma, no de existencia). */
+export function normalizeCurp(raw: string): string | null {
+  const c = String(raw).trim().toUpperCase();
+  return /^[A-Z][AEIOUX][A-Z]{2}\d{6}[HMX](AS|BC|BS|CC|CL|CM|CS|CH|DF|DG|GT|GR|HG|JC|MC|MN|MS|NT|NL|OC|PL|QT|QR|SP|SL|SR|TC|TS|TL|VZ|YN|ZS|NE)[B-DF-HJ-NP-TV-Z]{3}[A-Z\d]\d$/.test(c) ? c : null;
+}
+
 export function readCookie(header: string | undefined, name: string): string | null {
   for (const part of (header ?? "").split(";")) {
     const i = part.indexOf("=");
@@ -100,6 +108,7 @@ export function isPublicPath(path: string, method: string): boolean {
   if (path === "/login" || path === "/portal" || path === "/sw.js" || path === "/manifest.webmanifest") return true;
   if (path === "/logo.svg" || path.startsWith("/icons/")) return true;
   if (path.startsWith("/api/auth/")) return true;
+  if (path === "/llave-cdmx/autorizar") return true; // página simulada de Llave CDMX (demo)
   // Aprobación con passkey (enlace de un solo uso que llega por WhatsApp).
   if (path.startsWith("/aprobar/") || path === "/aprobar.html") return true;
   if (method === "GET" && (path === "/api/passkey/status" || path.startsWith("/api/proposal/"))) return true;
@@ -154,8 +163,9 @@ export class PortalAuth {
 
     app.get("/api/auth/me", async (req, reply) => {
       const a = await this.accountFromRequest(req);
-      if (!a) return reply.code(401).send({ error: "Sin sesión", needs_shop_code: o.shopCode !== null });
-      return { account: { name: a.name, phone_last4: a.phone.slice(-4) }, needs_shop_code: o.shopCode !== null };
+      const flags = { needs_shop_code: o.shopCode !== null, llave: o.llave };
+      if (!a) return reply.code(401).send({ error: "Sin sesión", ...flags });
+      return { account: { name: a.name, phone_last4: a.phone.slice(-4) }, ...flags };
     });
 
     app.post("/api/auth/register", async (req, reply) => {
@@ -195,6 +205,9 @@ export class PortalAuth {
         const mins = Math.ceil((acc.lockedUntil.getTime() - now.getTime()) / 60_000);
         return reply.code(429).send({ field: "pin", error: `Por seguridad, espera ${mins} minuto${mins === 1 ? "" : "s"} y vuelve a intentar.` });
       }
+      if (!acc.pinHash) {
+        return reply.code(409).send({ field: "phone", error: "Esa cuenta entra con Llave CDMX. Usa el botón “Entrar con Llave CDMX”." });
+      }
       if (!(await verifyPin(b.data.pin, acc.pinHash))) {
         const failed = acc.failedAttempts + 1;
         const lock = failed >= MAX_FAILED;
@@ -213,6 +226,75 @@ export class PortalAuth {
       await o.db.update(schema.portalAccounts).set({ failedAttempts: 0, lockedUntil: null }).where(eq(schema.portalAccounts.id, acc.id));
       await this.startSession(reply, acc.id);
       return { ok: true, account: { name: acc.name, phone_last4: acc.phone.slice(-4) } };
+    });
+
+    // ---------- Llave CDMX (demo) ----------
+    // Imita el flujo OAuth: start → página de la Llave (aquí simulada) → regreso con `state`.
+    // La integración real requiere dar de alta la app con la ADIP (client_id y endpoints oficiales);
+    // hasta entonces solo existe este modo demo, que se identifica como tal en todas partes.
+    const states = new Map<string, number>();
+    const STATE_TTL_MS = 10 * 60_000;
+    const LlaveDemo = z.object({
+      state: z.string().max(100),
+      name: z.string().max(200),
+      curp: z.string().max(30),
+      phone: z.string().max(40),
+      shop_code: z.string().max(100).optional(),
+    });
+
+    app.get("/api/auth/llave/start", async (_req, reply) => {
+      if (o.llave !== "demo") return reply.code(404).send({ error: "Llave CDMX no está disponible." });
+      const now = Date.now();
+      for (const [k, at] of states) if (now - at > STATE_TTL_MS) states.delete(k);
+      if (states.size > 1000) return reply.code(429).send({ error: "Intenta en un momento." });
+      const state = randomBytes(16).toString("base64url");
+      states.set(state, now);
+      return { url: `/llave-cdmx/autorizar?state=${state}`, demo: true };
+    });
+
+    app.get("/llave-cdmx/autorizar", (_req, reply) =>
+      o.llave === "demo" ? reply.type("text/html; charset=utf-8").sendFile("llave-demo.html") : reply.code(404).send());
+
+    app.post("/api/auth/llave/demo-callback", async (req, reply) => {
+      if (o.llave !== "demo") return reply.code(404).send({ error: "Llave CDMX no está disponible." });
+      const b = LlaveDemo.safeParse(json(req.body));
+      if (!b.success) return reply.code(400).send({ error: "Faltan datos." });
+      const at = states.get(b.data.state);
+      if (at === undefined || Date.now() - at > STATE_TTL_MS) {
+        return reply.code(400).send({ error: "El enlace venció. Regresa a Cuadra y vuelve a tocar “Entrar con Llave CDMX”." });
+      }
+      const name = cleanName(b.data.name);
+      if (!name) return reply.code(400).send({ field: "name", error: "Escribe tu nombre." });
+      const curp = normalizeCurp(b.data.curp);
+      if (!curp) return reply.code(400).send({ field: "curp", error: "La CURP no tiene el formato correcto (18 caracteres)." });
+      const phone = normalizePhone(b.data.phone);
+      if (!phone) return reply.code(400).send({ field: "phone", error: "El celular debe tener 10 números." });
+      const sub = `demo:${sha256(curp)}`; // nunca se guarda la CURP
+
+      const [linked] = await o.db
+        .select()
+        .from(schema.portalAccounts)
+        .where(and(eq(schema.portalAccounts.merchantId, o.merchantId), eq(schema.portalAccounts.llaveSub, sub)));
+      if (linked) {
+        states.delete(b.data.state);
+        await this.startSession(reply, linked.id);
+        return { ok: true, account: { name: linked.name, phone_last4: linked.phone.slice(-4) } };
+      }
+      // Cuenta nueva: mismas reglas que el registro con NIP.
+      if (o.shopCode !== null && !sameSecret((b.data.shop_code ?? "").trim(), o.shopCode)) {
+        return reply.code(403).send({ field: "shop_code", error: "Ese código de la tienda no es correcto. Pídeselo al dueño." });
+      }
+      const [byPhone] = await o.db
+        .select({ id: schema.portalAccounts.id })
+        .from(schema.portalAccounts)
+        .where(and(eq(schema.portalAccounts.merchantId, o.merchantId), eq(schema.portalAccounts.phone, phone)));
+      // No se liga una Llave a una cuenta existente sin su NIP (evita que alguien entre a la cuenta de otro).
+      if (byPhone) return reply.code(409).send({ field: "phone", error: "Ese celular ya tiene cuenta en Cuadra. Entra con tu NIP." });
+      states.delete(b.data.state);
+      const id = randomUUID();
+      await o.db.insert(schema.portalAccounts).values({ id, merchantId: o.merchantId, name, phone, pinHash: null, llaveSub: sub });
+      await this.startSession(reply, id);
+      return { ok: true, account: { name, phone_last4: phone.slice(-4) } };
     });
 
     app.post("/api/auth/logout", async (req, reply) => {
