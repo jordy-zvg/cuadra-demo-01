@@ -4,8 +4,16 @@
  * Requiere WHATSAPP_TOKEN y WHATSAPP_WABA_ID. Meta revisa cada una (minutos a horas); el estado se ve
  * en el Administrador de WhatsApp. Si una ya existe, Meta responde error y se informa sin detener el resto.
  */
+import { fileURLToPath } from "node:url";
 import { WHATSAPP_GRAPH_URL, WHATSAPP_GRAPH_VERSION } from "@cuadra/adapters";
 import { TEMPLATES, type TemplateName, templateCreateBody } from "./whatsapp-templates.js";
+
+// Lee el .env de la raíz del repo si existe (en local); en Railway las variables ya vienen del entorno.
+try {
+  process.loadEnvFile(fileURLToPath(new URL("../../../.env", import.meta.url)));
+} catch {
+  // sin .env: se usan las variables del entorno
+}
 
 const token = process.env.WHATSAPP_TOKEN;
 const waba = process.env.WHATSAPP_WABA_ID;
