@@ -25,13 +25,13 @@
 html{font-size:var(--fs)}
 body{margin:0;background:var(--bg);color:var(--ink);font:1rem/1.45 system-ui,-apple-system,"Segoe UI",Roboto,sans-serif;-webkit-text-size-adjust:100%}
 .wrap{max-width:560px;margin:0 auto;padding:0 16px 40px}
-header{background:var(--vino);color:#fff;position:sticky;top:0;z-index:5}
+header{background:var(--vino);color:#fff}
 header .wrap{display:flex;align-items:center;gap:12px;padding-top:10px;padding-bottom:10px}
 header img{width:44px;height:44px;background:#fff;border-radius:12px;padding:3px}
 header .who{flex:1;min-width:0}
 header .who b{display:block;font-size:1.05rem;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 header .who span{font-size:.75rem;opacity:.9}
-.size{background:transparent;border:2px solid rgba(255,255,255,.7);color:#fff;border-radius:12px;min-height:48px;min-width:56px;font:inherit;font-weight:700;cursor:pointer}
+.size{padding:4px 10px;font-size:.75rem;line-height:1.15;max-width:6.5em;background:transparent;border:2px solid rgba(255,255,255,.7);color:#fff;border-radius:12px;min-height:48px;min-width:56px;font:inherit;font-weight:700;cursor:pointer}
 h1{font-size:1.45rem;line-height:1.2;margin:22px 0 6px}
 p.lead{margin:0 0 16px;color:var(--muted);font-size:1rem}
 button{font:inherit;cursor:pointer;-webkit-tap-highlight-color:transparent}
@@ -99,6 +99,8 @@ button:focus-visible,a:focus-visible{outline:4px solid var(--oro);outline-offset
 .heard{background:var(--card);border:3px dashed var(--oro);border-radius:16px;padding:14px;font-size:1.2rem;text-align:center;margin-top:8px}
 .tip{background:var(--warn-bg);border-radius:14px;padding:12px 14px;margin-top:14px;font-size:.95rem}
 .alert{background:var(--bad-bg);color:var(--bad);border-radius:14px;padding:12px 14px;margin-top:14px;font-weight:600}
+.reply.warn{border-color:var(--oro);background:var(--warn-bg)}
+@media (max-width:480px){header .who span{display:none}}
 .sr{position:absolute;width:1px;height:1px;overflow:hidden;clip:rect(0 0 0 0)}
 </style>
 </head>
@@ -107,10 +109,10 @@ button:focus-visible,a:focus-visible{outline:4px solid var(--oro);outline-offset
   <div class="wrap">
     <img src="/logo.svg" alt="">
     <div class="who"><b id="shop">Mi Cuadra</b><span>Tu libreta de fiado, segura</span></div>
-    <button class="size" id="size" type="button" aria-label="Cambiar tamaño de letra">A+</button>
+    <button class="size" id="size" type="button" aria-pressed="false">Letra grande</button>
   </div>
 </header>
-<main class="wrap" id="app" aria-live="polite"></main>
+<main class="wrap" id="app"></main>
 <div class="sr" id="say" aria-live="assertive"></div>
 
 <script>
@@ -136,7 +138,8 @@ const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 function applySize() {
   const xl = store.get("cuadra.size") === "xl";
   document.documentElement.dataset.size = xl ? "xl" : "";
-  $("#size").textContent = xl ? "A−" : "A+";
+  $("#size").textContent = xl ? "Letra normal" : "Letra grande";
+  $("#size").setAttribute("aria-pressed", xl ? "true" : "false");
 }
 $("#size").onclick = () => { store.set("cuadra.size", store.get("cuadra.size") === "xl" ? "" : "xl"); applySize(); };
 applySize();
@@ -242,7 +245,7 @@ SCREENS.home = async () => {
 };
 function renderAvisos() {
   const el = $("#avisos"); if (!el) return;
-  const out = chat().filter((m) => m.direction === "out").slice(-3).reverse();
+  const out = chat().filter((m) => m.direction === "out" && !(m.actions || []).some((a) => a.kind === "confirm")).slice(-3).reverse();
   el.innerHTML = out.length
     ? out.map((m) => `<div class="aviso">${esc(m.body)}<small>${esc(new Date(m.at).toLocaleString("es-MX", { weekday: "long", hour: "numeric", minute: "2-digit" }))}</small></div>`).join("")
     : `<p class="empty">Todavía no hay avisos.</p>`;
@@ -275,7 +278,7 @@ SCREENS.cobrar = async () => {
 
 SCREENS.deben = async () => {
   await load().catch(() => {});
-  app.innerHTML = `<h1>¿Quién me debe?</h1><p class="lead">Toca a alguien para cobrarle.</p>${customerList((c) => (BigInt(c.owes) > 0n ? go("como", c) : null))}${navHtml()}`;
+  app.innerHTML = `<h1>¿Quién me debe?</h1><p class="lead">Toca a alguien para cobrarle.</p>${customerList((c) => go("como", c), { onlyDebtors: true })}${navHtml()}`;
 };
 
 SCREENS.como = (c) => {
@@ -300,9 +303,10 @@ SCREENS.pagar = async () => {
 };
 
 // Teclado de monto
-SCREENS.monto = ({ mode, who }) => {
+SCREENS.monto = (arg) => {
+  const { mode, who } = arg;
   const name = mode === "fiado" ? who.name : who.alias;
-  let v = "";
+  let v = arg.v || "";
   app.innerHTML = `
     <h1>${mode === "fiado" ? `¿Cuánto se llevó ${esc(name)}?` : `¿Cuánto le pagas a ${esc(name)}?`}</h1>
     <p class="lead">Escribe la cantidad en pesos.</p>
@@ -314,9 +318,11 @@ SCREENS.monto = ({ mode, who }) => {
     const el = $("#amt");
     const cents = toCents(v);
     el.classList.toggle("empty-v", !v);
+    el.style.fontSize = v.length > 8 ? "2rem" : "";
     el.textContent = v ? "$" + v.replace(/^(\d+)/, (d) => d.replace(/\B(?=(\d{3})+(?!\d))/g, ",")) : "$0";
     $("#ok").disabled = !(cents > 0);
-    $("#ok").textContent = cents > 0 ? `Listo: ${mxn(cents)}` : "Listo";
+    $("#ok").textContent = cents > 0 ? `Listo: ${mxn(cents)} pesos` : "Listo";
+    arg.v = v; // si regresa a esta pantalla, conserva lo que escribió
   };
   $("#keys").onclick = (e) => {
     const b = e.target.closest("[data-k]"); if (!b) return;
@@ -325,7 +331,7 @@ SCREENS.monto = ({ mode, who }) => {
     else if (k === ".") { if (!v.includes(".")) v = (v || "0") + "."; }
     else {
       const [i, d] = v.split(".");
-      if (d !== undefined ? d.length < 2 : (i || "").length < 7) v = v === "0" ? k : v + k;
+      if (d !== undefined ? d.length < 2 : (i || "").length < 6) v = v === "0" ? k : v + k;
     }
     show();
   };
@@ -406,12 +412,13 @@ async function act(a) {
 
 function tone(body) {
   if (/^(🛡️|⛔|❌)|No (envío|pago|te entendí)|no está en tu lista/.test(body)) return "bad";
+  if (/^(⚠️|🔐)|ya tiene un cobro abierto|necesito tu aprobación/.test(body)) return "warn";
   if (/^(✅|💰|🎉)|Listo|Anotado|Recib/.test(body)) return "ok";
   return "";
 }
-function actionHtml(a, i) {
+function actionHtml(a, i, body = "") {
   if (a.kind === "qr") return a.url ? `<img class="qr" alt="Código QR para pagar" src="${esc(a.url)}">` : `<div class="qr sim">Código QR<br>(de prueba)</div>`;
-  const label = a.kind === "confirm" ? "✅ Sí, está bien"
+  const label = a.kind === "confirm" ? (/^Anoto/.test(body) ? "✅ Sí, anotar" : /^Le mando/.test(body) ? "✅ Sí, mandar el cobro" : "✅ Sí, está bien")
     : a.kind === "cancel" ? "✖ No, cancelar"
     : a.kind === "approve" ? "🔐 Aprobar con mi huella"
     : esc(a.label);
@@ -419,8 +426,11 @@ function actionHtml(a, i) {
   return `<button class="${cls}" type="button" data-a="${i}">${label}</button>`;
 }
 
+// Quita los códigos de regla “(R05)”: sirven al equipo, no a quien usa el portal.
+const plain = (body) => String(body).replace(/\s*\(R\d{2}\)/g, "");
+
 SCREENS.respuesta = ({ pending, replies, error, done, cancelled } = {}) => {
-  if (pending) { app.innerHTML = `<div class="wait"><div class="spin"></div>Un momento, Cuadra está revisando…</div>`; return; }
+  if (pending) { app.innerHTML = `<div class="wait"><div class="spin"></div>Un momento, Cuadra está revisando…</div>${navHtml(false)}`; return; }
   if (error) {
     app.innerHTML = `<h1>Algo salió mal</h1><p class="lead">No se movió dinero. Revisa tu internet y vuelve a intentar.</p>${navHtml(false)}`;
     return;
@@ -433,18 +443,24 @@ SCREENS.respuesta = ({ pending, replies, error, done, cancelled } = {}) => {
   }
   const actions = [];
   const cards = replies.map((m) => {
-    const acts = (m.actions || []).map((a) => { actions.push(a); return actionHtml(a, actions.length - 1); }).join("");
-    return `<div class="reply ${tone(m.body)}"><div class="from"><img src="/logo.svg" alt="">Cuadra dice:</div>${esc(m.body)}${acts ? `<div>${acts}</div>` : ""}</div>`;
+    const acts = (m.actions || []).map((a) => { actions.push(a); return actionHtml(a, actions.length - 1, m.body); }).join("");
+    return `<div class="reply ${tone(m.body)}"><div class="from"><img src="/logo.svg" alt="">Cuadra dice:</div>${esc(plain(m.body))}${acts ? `<div>${acts}</div>` : ""}</div>`;
   }).join("");
   const asks = actions.some((a) => a.kind === "confirm");
+  const tones = replies.map((m) => tone(m.body));
+  const title = asks ? "¿Está bien así?"
+    : tones.includes("bad") ? "No se pudo hacer"
+    : tones.includes("warn") ? "Revisa esto"
+    : cancelled ? "Cancelado" : "Listo ✅";
+  // Mientras haya una pregunta abierta, la única salida es Sí o No (así no quedan propuestas colgadas).
   app.innerHTML = `
-    <h1>${asks ? "¿Está bien así?" : done ? (cancelled ? "Cancelado" : "Listo") : "Respuesta"}</h1>
+    <h1>${title}</h1>
     ${cards}
     ${canSpeak ? `<button class="listen" type="button" id="listen">🔊 Escuchar</button>` : ""}
-    ${asks ? navHtml() : `<button class="go" type="button" data-nav="home" style="margin-top:20px">🏠 Volver al inicio</button>`}`;
+    ${asks ? "" : `<button class="go" type="button" data-nav="home" style="margin-top:20px">🏠 Volver al inicio</button>`}`;
   app.querySelectorAll("[data-a]").forEach((b) => (b.onclick = () => { b.disabled = true; act(actions[Number(b.dataset.a)]); }));
-  const l = $("#listen"); if (l) l.onclick = () => speak(replies.map((m) => m.body).join(". "));
-  $("#say").textContent = replies.map((m) => m.body).join(". ");
+  const l = $("#listen"); if (l) l.onclick = () => speak(replies.map((m) => plain(m.body)).join(". "));
+  $("#say").textContent = replies.map((m) => plain(m.body)).join(". ");
 };
 
 home();
