@@ -476,8 +476,22 @@ export class CuadraService {
         this.d.log({ msg: "pey_pn_failed", merchant_id: this.d.merchantId, proposal_id: proposalId, error: failure });
       }
     }
-    await setProposalStatus(this.d.db, proposalId, "done", { charge_id: chargeId, pushed });
     const amount = formatMXN(balance);
+    if (phone && !pushed) {
+      // La solicitud no salió (p. ej. el celular no está registrado en CoDi): el cobro se cancela
+      // para que no bloquee otro intento ni cuente como recordatorio, y al cliente no se le manda nada.
+      await this.d.db.update(schema.charges).set({ status: "cancelled" }).where(eq(schema.charges.id, chargeId));
+      await setProposalStatus(this.d.db, proposalId, "rejected", { charge_id: chargeId, push_failed: failure });
+      if (!opts.scheduled) {
+        await this.say(
+          "comercio",
+          `⚠️ No salió la solicitud CoDi de ${amount} a ${c.name}${failure ? `: ${failure}` : ""}. No le mandé nada. ` +
+            `Revisa que su celular esté registrado en CoDi en la app de su banco, o cóbrale con “QR para ${c.name}”.`,
+        );
+      }
+      return false;
+    }
+    await setProposalStatus(this.d.db, proposalId, "done", { charge_id: chargeId, pushed });
     const actions: MessageAction[] =
       pushed && this.d.gateway.simulated ? [{ kind: "pay", label: `Aprobar pago de ${amount} (banco simulado)`, url: `/api/sim/pay/${chargeId}` }] : [];
     await this.say(

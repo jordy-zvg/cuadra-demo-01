@@ -90,6 +90,43 @@ describe("cobros vencidos no bloquean al cliente", () => {
   });
 });
 
+describe("solicitud al celular rechazada por pey", () => {
+  it("el cobro se cancela, al cliente no le llega nada y se puede cobrar por QR de inmediato", async () => {
+    const f = await setup();
+    f.gw.requestPayment = async () => {
+      throw new Error("Phone number not registered for CoDi");
+    };
+    await f.fiado("Doña Lupe se llevó $0.01");
+    await f.say("Cóbrale a Doña Lupe");
+    await f.confirmLast();
+    expect(await f.lastBody()).toMatch(/No salió la solicitud CoDi de \$0\.01 a Doña Lupe: Phone number not registered for CoDi/);
+    const lupeMsgs = await f.db.select().from(schema.messages).where(eq(schema.messages.thread, "c_lupe"));
+    expect(lupeMsgs).toHaveLength(0);
+    const [ch] = await f.db.select().from(schema.charges).where(eq(schema.charges.customerId, "c_lupe"));
+    expect(ch!.status).toBe("cancelled");
+    await f.say("QR para Doña Lupe");
+    expect(f.gw.qrs).toHaveLength(1);
+  });
+
+  it("un intento fallido no cuenta como recordatorio: se puede reintentar al celular", async () => {
+    const f = await setup();
+    const real = f.gw.requestPayment.bind(f.gw);
+    let fail = true;
+    f.gw.requestPayment = async (r) => {
+      if (fail) throw new Error("pey 503");
+      return real(r);
+    };
+    await f.fiado("Doña Lupe se llevó $0.01");
+    await f.say("Cóbrale a Doña Lupe");
+    await f.confirmLast();
+    fail = false;
+    await f.say("Cóbrale a Doña Lupe");
+    await f.confirmLast();
+    expect(f.gw.pushes).toHaveLength(1);
+    expect(await f.lastBody()).toMatch(/enviado a Doña Lupe por CoDi vía pey/);
+  });
+});
+
 describe("cobro directo al celular en la demo", () => {
   it("los cobros simulados y los QR de mostrador no cuentan como recordatorio previo", async () => {
     const f = await setup();
