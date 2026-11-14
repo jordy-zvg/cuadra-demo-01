@@ -55,6 +55,12 @@ export const riskState = pgTable("risk_state", {
   updatedAt: ts("updated_at").notNull().defaultNow(),
 });
 
+export const systemState = pgTable("system_state", {
+  id: boolean("id").primaryKey().default(true),
+  killSwitch: boolean("kill_switch").notNull().default(false),
+  updatedAt: ts("updated_at").notNull().defaultNow(),
+});
+
 export const customers = pgTable("customers", {
   id: text("id").primaryKey(),
   merchantId: text("merchant_id").notNull(),

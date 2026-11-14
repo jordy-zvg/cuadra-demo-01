@@ -15,6 +15,7 @@ import {
 import { and, desc, eq, gte, isNull, ne, sql } from "drizzle-orm";
 import type { Db } from "./client.js";
 import { ledgerBalance } from "./ledger-repo.js";
+import { globalKillSwitch } from "./risk.js";
 import {
   approvals,
   mandates,
@@ -257,7 +258,7 @@ export async function loadOutflowContext(
     reconciliation_ok_today: recon?.ok === true,
     recent_outflows: recent,
     risk: {
-      kill_switch: risk?.killSwitch ?? false,
+      kill_switch: (risk?.killSwitch ?? false) || (await globalKillSwitch(db)),
       account_frozen: risk?.accountFrozen ?? false,
       reconciliation_mismatch: risk?.reconciliationMismatch ?? false,
       auditor_veto: row.auditorVeto,

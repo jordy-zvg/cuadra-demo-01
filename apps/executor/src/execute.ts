@@ -5,6 +5,7 @@ import {
   type Db,
   IntegrityError,
   failTransfer,
+  globalKillSwitch,
   loadOutflowContext,
   lockMerchant,
   markTransferSent,
@@ -114,7 +115,7 @@ export async function submit(transfer: Transfer, deps: ExecutorDeps): Promise<Ex
     const [risk] = await db.select().from(schema.riskState).where(eq(schema.riskState.merchantId, transfer.merchantId));
     const [p] = await db.select().from(schema.proposals).where(eq(schema.proposals.id, transfer.proposalId));
     const blocked = checkRisk({
-      kill_switch: risk?.killSwitch ?? false,
+      kill_switch: (risk?.killSwitch ?? false) || (await globalKillSwitch(db)),
       account_frozen: risk?.accountFrozen ?? false,
       reconciliation_mismatch: risk?.reconciliationMismatch ?? false,
       auditor_veto: p?.auditorVeto ?? true,

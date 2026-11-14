@@ -1,5 +1,5 @@
 import { SoftAuthenticator } from "@cuadra/adapters/testing";
-import { DEMO, ledgerBalance, runReconciliation, schema } from "@cuadra/db";
+import { DEMO, ledgerBalance, runReconciliation, schema, setKillSwitch } from "@cuadra/db";
 import { eq } from "drizzle-orm";
 import { describe, expect, it } from "vitest";
 import { decideAndReserve, executeOutflow, submit } from "../src/execute.js";
@@ -165,6 +165,31 @@ describe("executor: riesgo, saldo y fallas", () => {
       status: "rejected",
       decision: { rules_failed: [{ rule_id: "R12" }] },
     });
+    expect(f.provider.calls).toHaveLength(0);
+  });
+
+  it("freno global → rechazo en todos los comercios; al quitarlo vuelve a pagar", async () => {
+    const f = await setup();
+    await f.mandate();
+    await setKillSwitch(f.db, { global: true }, true);
+    const p = await f.payout(10_000);
+    expect(await executeOutflow({ proposal_id: p.id }, f.deps)).toMatchObject({
+      status: "rejected",
+      decision: { rules_failed: [{ rule_id: "R12" }] },
+    });
+    await setKillSwitch(f.db, { global: true }, false);
+    const q = await f.payout(10_000, { concept: "Otra" });
+    expect(await executeOutflow({ proposal_id: q.id }, f.deps)).toMatchObject({ status: "sent" });
+  });
+
+  it("freno global entre la reserva y el envío → falla sin llamar al proveedor", async () => {
+    const f = await setup();
+    await f.mandate();
+    const p = await f.payout(10_000);
+    const phase1 = await decideAndReserve({ proposal_id: p.id }, f.deps);
+    if (phase1.kind !== "submit") throw new Error("se esperaba reserva");
+    await setKillSwitch(f.db, { global: true }, true);
+    expect((await submit(phase1.transfer, f.deps)).status).toBe("failed");
     expect(f.provider.calls).toHaveLength(0);
   });
 
