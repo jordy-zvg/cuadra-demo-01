@@ -1,0 +1,149 @@
+import { describe, expect, it } from "vitest";
+import {
+  type Mandate,
+  type MatchContext,
+  Proposal,
+  canonicalJson,
+  checkBalance,
+  evaluateReminder,
+  isMandateActive,
+  isWithinMxHours,
+  mandateCovers,
+  matchDeposit,
+  mxDateKey,
+  proposalHash,
+} from "../src/index.js";
+
+// CDMX = UTC-6 todo el año.
+const at = (hhmm: string, day = "2026-11-14") => new Date(`${day}T${hhmm}:00-06:00`);
+
+describe("time", () => {
+  it("usa hora de CDMX", () => {
+    expect(isWithinMxHours(at("07:00"), 7, 22)).toBe(true);
+    expect(isWithinMxHours(at("21:59"), 7, 22)).toBe(true);
+    expect(isWithinMxHours(at("22:00"), 7, 22)).toBe(false);
+    expect(isWithinMxHours(at("06:59"), 7, 22)).toBe(false);
+    expect(mxDateKey(new Date("2026-11-15T03:00:00Z"))).toBe("2026-11-14");
+  });
+});
+
+describe("recordatorios", () => {
+  const ok = {
+    now: at("10:00"),
+    ledger_balance: 8000n,
+    amount: 8000n,
+    last_reminder_at: null,
+    opt_in: true,
+    template_id: "cobro_amable",
+    approved_template_ids: ["cobro_amable"],
+  };
+  const ids = (i: Partial<Omit<typeof ok, "last_reminder_at">> & { last_reminder_at?: Date | null }) =>
+    evaluateReminder({ ...ok, ...i }).rules_failed.map((f) => f.rule_id);
+
+  it("permite cuando todo se cumple", () => expect(evaluateReminder(ok).allow).toBe(true));
+  it("P01 sin saldo", () => expect(ids({ ledger_balance: 0n, amount: 0n })).toEqual(["P01"]));
+  it("P02 monto ≠ saldo", () => expect(ids({ amount: 7999n })).toEqual(["P02"]));
+  it("P03 máx. 1 cada 72 h", () => {
+    expect(ids({ last_reminder_at: at("10:01", "2026-11-11") })).toEqual(["P03"]);
+    expect(ids({ last_reminder_at: at("10:00", "2026-11-11") })).toEqual([]);
+  });
+  it("P04 horario 9–20", () => {
+    expect(ids({ now: at("08:59") })).toEqual(["P04"]);
+    expect(ids({ now: at("20:00") })).toEqual(["P04"]);
+  });
+  it("P05 opt-in", () => expect(ids({ opt_in: false })).toEqual(["P05"]));
+  it("P06 plantilla", () => expect(ids({ template_id: "amenaza" })).toEqual(["P06"]));
+});
+
+describe("mandatos", () => {
+  const m: Mandate = {
+    id: "md1", merchant_id: "m1", payee_id: "p1", purpose: "proveedor",
+    per_op_cap_cents: 100000n, period_cap_cents: 500000n, period: "week",
+    valid_from: at("00:00", "2026-11-01"), valid_until: at("00:00", "2026-12-01"),
+    revoked_at: null, signature_valid: true,
+  };
+  it("vigencia", () => {
+    expect(isMandateActive(m, at("10:00"))).toBe(true);
+    expect(isMandateActive(m, at("10:00", "2026-10-31"))).toBe(false);
+    expect(isMandateActive(m, at("00:00", "2026-12-01"))).toBe(false);
+    expect(isMandateActive({ ...m, signature_valid: false }, at("10:00"))).toBe(false);
+    expect(isMandateActive({ ...m, revoked_at: at("09:00") }, at("10:00"))).toBe(false);
+    expect(isMandateActive({ ...m, revoked_at: at("11:00") }, at("10:00"))).toBe(true);
+  });
+  it("cobertura", () => {
+    const o = { merchant_id: "m1", payee_id: "p1", purpose: "proveedor" as const };
+    expect(mandateCovers(m, o)).toBe(true);
+    expect(mandateCovers(m, { ...o, payee_id: "p2" })).toBe(false);
+    expect(mandateCovers(m, { ...o, purpose: "tanda" })).toBe(false);
+    expect(mandateCovers(m, { ...o, merchant_id: "m2" })).toBe(false);
+  });
+});
+
+describe("conciliación de abonos", () => {
+  const ctx: MatchContext = {
+    virtual_clabes: new Map([["V1", "c1"]]),
+    linked_ordering_clabes: new Map([["O2", "c2"]]),
+    open_charges: [
+      { customer_id: "c3", reference: "1234567", unique_amount: 8017n },
+      { customer_id: "c4", reference: "7654321", unique_amount: 8023n },
+      { customer_id: "c5", reference: "5550001", unique_amount: 8023n },
+      { customer_id: "c6", reference: "5550001" },
+    ],
+  };
+  const dep = { clave_rastreo: "CR1", amount: 100n };
+
+  it("1. CLABE virtual gana sobre todo", () => {
+    expect(matchDeposit({ ...dep, destination_clabe: "V1", ordering_clabe: "O2" }, ctx)).toEqual({
+      matched: true, customer_id: "c1", method: "virtual_clabe",
+    });
+  });
+  it("2. CLABE ordenante ligada", () => {
+    expect(matchDeposit({ ...dep, destination_clabe: "X", ordering_clabe: "O2" }, ctx)).toMatchObject({
+      customer_id: "c2", method: "ordering_clabe",
+    });
+  });
+  it("3. referencia o concepto", () => {
+    expect(matchDeposit({ ...dep, reference: "1234567" }, ctx)).toMatchObject({ customer_id: "c3", method: "reference" });
+    expect(matchDeposit({ ...dep, concept: "pago fiado 7654321 gracias" }, ctx)).toMatchObject({ customer_id: "c4" });
+  });
+  it("4. monto con centavos únicos", () => {
+    expect(matchDeposit({ ...dep, amount: 8017n }, ctx)).toMatchObject({ customer_id: "c3", method: "unique_amount" });
+  });
+  it("5. ambiguo o sin coincidencia → 1300, nunca adivina", () => {
+    expect(matchDeposit({ ...dep, reference: "5550001" }, ctx)).toMatchObject({ matched: false, account: "1300" });
+    expect(matchDeposit({ ...dep, amount: 8023n }, ctx)).toMatchObject({ matched: false });
+    expect(matchDeposit(dep, ctx)).toMatchObject({ matched: false });
+  });
+  it("saldo ledger vs proveedor", () => {
+    expect(checkBalance(100n, 100n)).toEqual({ ok: true, difference: 0n, freeze_outflows: false });
+    expect(checkBalance(100n, 90n)).toEqual({ ok: false, difference: 10n, freeze_outflows: true });
+  });
+});
+
+describe("proposals", () => {
+  const payout = { type: "PayoutRequest", merchant_id: "m1", provenance: "user_direct", payee_id: "p1", amount_cents: 150000, concept: "Refrescos" };
+  it("valida y convierte montos a bigint", () => {
+    const p = Proposal.parse(payout);
+    expect(p.type === "PayoutRequest" && p.amount_cents).toBe(150000n);
+    expect(Proposal.parse({ ...payout, amount_cents: "150000" })).toEqual(p);
+  });
+  it("rechaza floats, negativos, tipos desconocidos y procedencia inválida", () => {
+    for (const bad of [
+      { ...payout, amount_cents: 1500.5 },
+      { ...payout, amount_cents: -1 },
+      { ...payout, amount_cents: 0 },
+      { ...payout, amount_cents: "15e3" },
+      { ...payout, type: "Transfer" },
+      { ...payout, provenance: "llm" },
+    ]) {
+      expect(Proposal.safeParse(bad).success).toBe(false);
+    }
+  });
+  it("hash estable ante orden de llaves y sensible al contenido", () => {
+    const a = Proposal.parse(payout);
+    const b = Proposal.parse(Object.fromEntries(Object.entries(payout).reverse()));
+    expect(proposalHash(a)).toBe(proposalHash(b));
+    expect(proposalHash(Proposal.parse({ ...payout, amount_cents: 150001 }))).not.toBe(proposalHash(a));
+    expect(canonicalJson({ b: [1n, null], a: undefined, c: "x" })).toBe('{"b":["1",null],"c":"x"}');
+  });
+});
