@@ -1,4 +1,5 @@
 import { clabeCheckDigit } from "@cuadra/core";
+import { eq } from "drizzle-orm";
 import type { Db } from "./client.js";
 import { charges, customerOrderingClabes, customers, merchantUsers, merchants, payees, riskState } from "./schema.js";
 
@@ -65,6 +66,10 @@ export async function seedDemo(db: Db, now = new Date(), opts: { lupePhone?: str
       .insert(charges)
       .values({ id: "ch_chela_1", merchantId: DEMO.merchantId, customerId: chela.id, reference: "4815162", uniqueAmountCents: 45017n })
       .onConflictDoNothing();
+    // El celular real de la demo se puede cambiar en cualquier arranque.
+    if (opts.lupePhone) {
+      await tx.update(customers).set({ phone: opts.lupePhone }).where(eq(customers.id, lupe.id));
+    }
   });
   return DEMO;
 }
