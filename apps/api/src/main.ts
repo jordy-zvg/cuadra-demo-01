@@ -1,5 +1,5 @@
 import { PeyClient, verifyProposalAssertion } from "@cuadra/adapters";
-import { RuleInterpreter } from "@cuadra/agents";
+import { AnthropicInterpreter, FallbackInterpreter, type Interpreter, RuleInterpreter } from "@cuadra/agents";
 import { connectPostgres, migratePostgres } from "@cuadra/db/node";
 import { seedDemo } from "@cuadra/db";
 import { type ChargeGateway, PeyGateway, SimulatedGateway } from "./gateway.js";
@@ -30,11 +30,17 @@ async function main(): Promise<void> {
   const rpID = env("WEBAUTHN_RP_ID") ?? (publicUrl ? new URL(publicUrl).hostname : "localhost");
   const origins = (env("WEBAUTHN_ORIGINS") ?? publicUrl ?? "http://localhost:3000").split(",");
 
+  // BRIEF §9: tres extracciones independientes con consenso. Sin llave de Anthropic, reglas.
+  const rules = new RuleInterpreter();
+  const interpreters: Interpreter[] = env("ANTHROPIC_API_KEY")
+    ? [1, 2, 3].map(() => new FallbackInterpreter(new AnthropicInterpreter(), rules))
+    : [rules];
+
   const service = new CuadraService({
     db,
     merchantId: demo.merchantId,
     ownerId: demo.ownerId,
-    interpreters: [new RuleInterpreter()],
+    interpreters,
     gateway,
     verify: (a) => verifyProposalAssertion({ ...a, config: { rpID, origins } }),
     now: () => new Date(),
@@ -54,7 +60,7 @@ async function main(): Promise<void> {
   });
   const port = Number(env("PORT") ?? 3000);
   await app.listen({ port, host: "0.0.0.0" });
-  log({ msg: "api_started", port, migrations: applied, gateway: gateway.name, simulated: gateway.simulated });
+  log({ msg: "api_started", port, migrations: applied, gateway: gateway.name, simulated: gateway.simulated, interpreter: interpreters[0]!.name });
 }
 
 main().catch((e: unknown) => {

@@ -9,7 +9,11 @@
     "test": "vitest run",
     "typecheck": "tsc --noEmit"
   },
-  "dependencies": { "@cuadra/core": "workspace:*", "zod": "^3.23.8" },
+  "dependencies": {
+    "@anthropic-ai/sdk": "^1.8.0",
+    "@cuadra/core": "workspace:*",
+    "zod": "^3.23.8"
+  },
   "devDependencies": {
     "@types/node": "^20.14.0",
     "typescript": "^5.6.0",
