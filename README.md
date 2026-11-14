@@ -10,6 +10,25 @@ detiene un guard determinista que explica por qué.
 > Cursor Hackatón México · CDMX · noviembre 2026. Brief completo en [BRIEF.md](./BRIEF.md);
 > reglas de ingeniería en [CLAUDE.md](./CLAUDE.md).
 
+## Para quién y por qué importa
+
+México vive de la confianza de barrio: **55.1 % del empleo es informal** (INEGI, 2T26), **20 % de los adultos
+participa en tandas** y **29 % tuvo crédito informal** (ENIF 2024). El fiado vive en una libreta, la tanda en un
+grupo de WhatsApp y el cobro en capturas de pantalla, con errores y comprobantes falsos de por medio.
+
+Cuadra está hecha para la **tiendita, la fonda o el oficio** con celular prepago, que habla con sus clientes por
+WhatsApp y manda notas de voz:
+
+- **Cobrar sin pena:** el recordatorio lo manda Cuadra, con un tono de vecino (“si hoy no se puede, dinos cuándo
+  te queda bien”), solo con permiso del cliente, en horario decente y como máximo uno cada 72 h.
+- **El cliente no instala nada ni da datos:** aprueba la solicitud CoDi en la app de su banco, sin capturar CLABE
+  ni pagar comisión, y recibe su recibo.
+- **Habla como el comercio:** texto o nota de voz (“Doña Lupe se llevó $185”), en español mexicano coloquial.
+- **Del cuaderno al historial:** cada peso cobrado queda en un ledger de partida doble. Ese historial es la base
+  para que el negocio crezca: pasar de la cuenta Nivel 2 Bis a Nivel 3 o pedir un crédito formal.
+- **Cuadra nunca toca el dinero:** el cobro va directo a la cuenta del comercio por CoDi; las salidas requieren
+  un mandato firmado con huella o rostro.
+
 ## Por qué ahora
 
 - **Banxico homologó la experiencia CoDi:** el mismo flujo en cualquier banco, y todos los bancos deben

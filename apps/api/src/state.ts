@@ -68,6 +68,17 @@ export async function panelState(db: Db, merchantId: string, opts: { gateway: st
     recon = { ledger_1100: s(ledger), bank: s(bank), in_flight: s(inflight), ok: c.ok, difference: s(c.difference) };
   }
 
+  // Impacto: fiado de libreta que ya se cobró en digital, clientes al corriente.
+  const impact = (await db.execute(sql`
+    SELECT
+      coalesce((SELECT sum(l.debit) FROM journal_lines l JOIN journal_entries e ON e.id = l.entry_id
+                WHERE e.merchant_id = ${merchantId} AND e.kind = 'fiado' AND l.account = '1200'), 0)::text AS fiado_total,
+      coalesce((SELECT sum(amount_cents) FROM deposits WHERE merchant_id = ${merchantId} AND customer_id IS NOT NULL), 0)::text AS cobrado_digital,
+      (SELECT count(*) FROM deposits WHERE merchant_id = ${merchantId})::int AS pagos_digitales,
+      (SELECT count(*) FROM charges WHERE merchant_id = ${merchantId} AND status = 'paid')::int AS cobros_pagados
+  `)) as unknown as { rows: Array<Record<string, unknown>> };
+  const im = impact.rows[0] ?? {};
+
   const t = (totals as unknown as { rows: Array<Record<string, unknown>> }).rows[0] ?? {};
   return {
     merchant: { id: merchantId, name: merchant?.name },
@@ -77,6 +88,14 @@ export async function panelState(db: Db, merchantId: string, opts: { gateway: st
     accounts,
     ledger: { debit: String(t.debit ?? "0"), credit: String(t.credit ?? "0"), unbalanced: Number(t.unbalanced ?? 0), entries: Number(t.entries ?? 0) },
     reconciliation: recon,
+    impact: {
+      fiado_total: String(im.fiado_total ?? "0"),
+      cobrado_digital: String(im.cobrado_digital ?? "0"),
+      pagos_digitales: Number(im.pagos_digitales ?? 0),
+      cobros_pagados: Number(im.cobros_pagados ?? 0),
+      clientes_al_corriente: customerRows.filter((c) => c.owes === "0").length,
+      clientes: customerRows.length,
+    },
     customers: customerRows,
     entries: entryRows,
     charges: charges.map((c) => ({ id: c.id, customer_id: c.customerId, reference: c.reference, amount: c.amountCents === null ? null : s(c.amountCents), status: c.status, provider: c.provider, channel: c.channel, at: c.createdAt.toISOString() })),

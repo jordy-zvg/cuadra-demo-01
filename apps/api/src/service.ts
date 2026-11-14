@@ -395,10 +395,11 @@ export class CuadraService {
       pushed && this.d.gateway.simulated ? [{ kind: "pay", label: `Aprobar pago de ${amount} (banco simulado)`, url: `/api/sim/pay/${chargeId}` }] : [];
     await this.say(
       c.id,
-      `Hola ${c.name} 👋 ${merchant?.name} te recuerda tu saldo de ${amount}.\n` +
+      `Hola ${c.name} 👋 Te saludamos de ${merchant?.name}. Tu cuenta va en ${amount}.\n` +
         (pushed
-          ? `Te llegó una solicitud de cobro CoDi a tu celular: ábrela en la app de tu banco y apruébala. Ref. ${reference}.`
-          : `Ref. ${reference}.`),
+          ? `Te mandamos la solicitud de cobro a tu celular: la abres en la app de tu banco y la apruebas, sin capturar CLABE ni pagar comisión. Ref. ${reference}.\n`
+          : `Ref. ${reference}.\n`) +
+        "Si hoy no se puede, no pasa nada: dinos cuándo te queda bien. ¡Gracias por tu confianza!",
       actions,
     );
     await this.say(
