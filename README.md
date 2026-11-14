@@ -33,7 +33,7 @@ WhatsApp y manda notas de voz:
 
 - **Consentimiento:** solo se le escribe al cliente que aceptó recibir mensajes; nada de cobranza agresiva.
 - **Mínimos datos:** el cliente final no se registra ni comparte datos con Cuadra; las CLABEs se muestran
-  enmascaradas y nunca salen del chat ni del modelo de IA.
+  enmascaradas y un mensaje que trae una CLABE se bloquea antes de pasar por el modelo de IA.
 - **La IA propone, la persona decide:** ninguna instrucción del modelo mueve dinero; cada rechazo se explica en
   español claro y cita la regla.
 - **Sin custodia:** Cuadra no guarda el dinero de nadie.
