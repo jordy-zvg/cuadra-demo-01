@@ -22,7 +22,10 @@ function log(r: Record<string, unknown>): void {
 async function main(): Promise<void> {
   const { db, pool } = await connectPostgres(req("DATABASE_URL"));
   const applied = await migratePostgres(pool);
-  const demo = await seedDemo(db, new Date(), { ...(env("DEMO_CUSTOMER_PHONE") ? { lupePhone: env("DEMO_CUSTOMER_PHONE")! } : {}) });
+  const demo = await seedDemo(db, new Date(), {
+    ...(env("DEMO_CUSTOMER_PHONE") ? { lupePhone: env("DEMO_CUSTOMER_PHONE")! } : {}),
+    ...(env("DEMO_OWNER_PHONE") ? { ownerPhone: env("DEMO_OWNER_PHONE")! } : {}),
+  });
   const bankSim = env("BANK_SIM") !== "off";
   // Cuenta receptora del comercio registrada en pey (POST /bank-account, estado ACTIVE).
   if (env("PEY_BANK_ACCOUNT_ID")) {

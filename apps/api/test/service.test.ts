@@ -256,10 +256,30 @@ describe("modo simulado", () => {
   });
 });
 
+describe("celulares ficticios de la demo", () => {
+  it("con pey en vivo, nunca se manda cobro a un número que no existe (empieza con 0)", async () => {
+    const { db } = await createTestDb();
+    await seedDemo(db, NOW); // sin DEMO_CUSTOMER_PHONE: Doña Lupe tiene +520000000101
+    const gw = new FakePey();
+    const svc = new CuadraService({
+      db, merchantId: M, ownerId: DEMO.ownerId, interpreters: [new RuleInterpreter()], gateway: gw,
+      verify: async () => false, now: () => NOW, publicUrl: null, peyWebhookSecret: null, bankSim: false, udi: null, log: () => {},
+    });
+    const lastAct = async () => (await db.select().from(schema.messages).orderBy(schema.messages.id)).filter((m) => m.actions?.length).at(-1)!.actions![0]!.proposal_id!;
+    await svc.handleMerchantMessage("Doña Lupe se llevó $10");
+    await svc.confirm(await lastAct());
+    await svc.handleMerchantMessage("Cóbrale a Doña Lupe");
+    await svc.confirm(await lastAct());
+    expect(gw.pushes).toHaveLength(0);
+    const msgs = await db.select().from(schema.messages).where(eq(schema.messages.thread, "comercio")).orderBy(schema.messages.id);
+    expect(msgs.at(-1)!.body).toMatch(/no tiene celular/);
+  });
+});
+
 describe("canales de salida", () => {
   it("cada mensaje se entrega al celular de su conversación; un canal caído no rompe el flujo", async () => {
     const { db } = await createTestDb();
-    await seedDemo(db, NOW, { lupePhone: "+525512345678" });
+    await seedDemo(db, NOW, { lupePhone: "+525512345678", ownerPhone: "+525587654321" });
     const sent: Array<{ phone10: string; thread: string; body: string; actions: unknown[] }> = [];
     const svc = new CuadraService({
       db, merchantId: M, ownerId: DEMO.ownerId, interpreters: [new RuleInterpreter()], gateway: new FakePey(),
@@ -271,7 +291,7 @@ describe("canales de salida", () => {
       log: () => {},
     });
     await svc.handleMerchantMessage("Doña Lupe se llevó $185");
-    expect(sent.at(-1)).toMatchObject({ phone10: "5500000001", thread: "comercio", actions: [{ kind: "confirm" }, { kind: "cancel" }] });
+    expect(sent.at(-1)).toMatchObject({ phone10: "5587654321", thread: "comercio", actions: [{ kind: "confirm" }, { kind: "cancel" }] });
     const pid = (sent.at(-1)!.actions[0] as { proposal_id: string }).proposal_id;
     await svc.confirm(pid);
     await svc.handleMerchantMessage("Cóbrale a Doña Lupe");

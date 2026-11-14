@@ -32,7 +32,7 @@ pnpm pey:check cuenta <id>                                     # espera a ACTIVE
 |---|---|
 | `PEY_API_KEY` | la llave |
 | `PEY_WEBHOOK_SECRET` | el `whsec_...` |
-| `DEMO_CUSTOMER_PHONE` | tu celular con CoDi (hará de Doña Lupe) |
+| `DEMO_CUSTOMER_PHONE` | tu celular con CoDi (hará de Doña Lupe). **Sin él no se manda ningún cobro**: los celulares de demo son ficticios (empiezan con 0) y Cuadra nunca les envía nada |
 | `PEY_BANK_ACCOUNT_ID` | opcional: id de la cuenta receptora ACTIVE del comercio |
 
 Al guardar, Railway redespliega. El panel debe cambiar de “CoDi simulado” a **“CoDi en vivo vía pey”**.
