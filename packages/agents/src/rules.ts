@@ -27,6 +27,12 @@ const PATTERNS: Array<[RegExp, (m: RegExpExecArray) => Intent]> = [
   // "QR para Doña Lupe", "cóbrale con QR a Beto" (cobro en mostrador)
   [/^(?:(?:hazme\s+(?:un|el)\s+)?qr\s+(?:para|de|a)|c[oó]brale\s+con\s+qr\s+a|cobro\s+con\s+qr\s+(?:a|para))\s+(.+)$/i,
     (m) => ({ kind: "charge_qr", customer_name: clean(m[1]!) })],
+  // "Vuélvele a mandar la notificación", "reenvíale el cobro a Beto", "mándale otra vez el cobro a Lupe"
+  [/^(?:vu[eé]lve(?:le)?\s+a\s+(?:mandar|enviar)(?:le)?|reenv[ií]a(?:le)?|m[aá]nda(?:le)?\s+(?:otra\s+vez|de\s+nuevo)|env[ií]a(?:le)?\s+(?:otra\s+vez|de\s+nuevo))(?:\s+(?:otra\s+vez|de\s+nuevo))?(?:\s+(?:la|el)\s+(?:notificaci[oó]n|cobro|solicitud|recordatorio|petici[oó]n)(?:\s+de\s+(?:pago|cobro))?)?(?:\s+(?:otra\s+vez|de\s+nuevo))?(?:\s+a\s+(.+))?$/i,
+    (m) => (m[1] && clean(m[1]) ? { kind: "resend_reminder", customer_name: clean(m[1]) } : { kind: "resend_reminder" })],
+  // "Mándale el cobro otra vez a Lupe"
+  [/^(?:m[aá]nda|env[ií]a)(?:le)?\s+(?:la|el)\s+(?:notificaci[oó]n|cobro|solicitud|recordatorio|petici[oó]n)(?:\s+de\s+(?:pago|cobro))?\s+(?:otra\s+vez|de\s+nuevo)(?:\s+a\s+(.+))?$/i,
+    (m) => (m[1] && clean(m[1]) ? { kind: "resend_reminder", customer_name: clean(m[1]) } : { kind: "resend_reminder" })],
   // "Cóbrale a Doña Lupe", "mándale recordatorio a Beto"
   [/^(?:c[oó]brale|cobrar(?:le)?|m[aá]ndale\s+(?:el\s+)?(?:cobro|recordatorio)|recu[eé]rdale)\s+a\s+(.+)$/i,
     (m) => ({ kind: "send_reminder", customer_name: clean(m[1]!) })],

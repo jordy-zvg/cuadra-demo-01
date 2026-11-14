@@ -61,5 +61,10 @@ Con pey en vivo, la API compara cada 5 minutos (`PEY_RECONCILE_MS`) las transacc
 Corrida manual: `POST /api/reconcile/pey`. El panel muestra la última en la tarjeta “Conciliación”.
 
 ## Vencimientos
-La solicitud al celular vence en 1 h y el QR en 30 min (más 2 min de margen); después el cliente puede recibir
-un cobro nuevo. Si el pago de un cobro vencido llega tarde, se aplica igual.
+La solicitud al celular por un fiado vence en 6 min (el mínimo de pey) y el QR en 30 min, más 2 min de margen;
+mientras está viva no se manda otra, para que el cliente no pague doble. Después:
+- **Reenvío:** “Vuélvele a mandar la notificación” (o “Cóbrale a…”) reenvía solo la solicitud, sin otro mensaje,
+  hasta 3 veces por recordatorio. Los recordatorios programados nunca reenvían.
+- **QR:** “QR para Doña Lupe” si el cliente está en la tienda.
+- La regla de 72 h entre recordatorios sigue; en desarrollo se baja con `REMINDER_COOLDOWN_HOURS=0`.
+La solicitud de una tanda dura 1 h (`TANDA_PN_TTL_S`). Si el pago de un cobro vencido llega tarde, se aplica igual.

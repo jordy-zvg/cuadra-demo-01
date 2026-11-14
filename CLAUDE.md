@@ -91,6 +91,10 @@ Resultado: `allow` | `require_passkey` | `deny`, con `rules_failed[]`.
 
 ## Política de recordatorios (separada del guard)
 Saldo en ledger > 0 · monto = saldo · máx. 1 por cliente cada 72 h · horario 09:00–20:00 · cliente con opt-in · tono dentro de plantilla aprobada.
+Reenvío (decisión 14-nov-2026): la solicitud CoDi al celular dura 6 min (mínimo de pey). Si venció sin pago, el
+comercio puede reenviarla (solo la solicitud, sin otro mensaje) hasta 3 veces por recordatorio; nunca mientras
+haya una viva (pagaría doble) y nunca desde los recordatorios programados. Solo en desarrollo,
+`REMINDER_COOLDOWN_HOURS` baja las 72 h (p. ej. 0 para probar seguido); en producción no se define.
 
 ## Conciliación de abonos (cascada)
 1. CLABE virtual del cliente (si el proveedor la ofrece).

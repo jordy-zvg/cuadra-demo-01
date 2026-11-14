@@ -174,10 +174,11 @@ describe("QR en mostrador y un solo cobro abierto", () => {
     expect(msg.actions?.[0]).toMatchObject({ kind: "qr", url: expect.stringMatching(/^data:image\/png;base64,/) });
 
     await f.svc.handleMerchantMessage("QR para Doña Lupe");
-    expect((await f.msgs()).at(-1)!.body).toMatch(/ya tiene un cobro abierto/);
+    expect((await f.msgs()).at(-1)!.body).toMatch(/ya tiene un QR abierto de \$185\.00 \(ref\. \d{7}\) que vence hoy a las 11:32/);
     await f.svc.handleMerchantMessage("Cóbrale a Doña Lupe");
-    await f.svc.confirm(await f.lastAction());
-    expect((await f.msgs()).at(-1)!.body).toMatch(/No mando/);
+    const last = (await f.msgs()).at(-1)!;
+    expect(last.body).toMatch(/ya tiene un QR abierto/);
+    expect(last.actions ?? []).toHaveLength(0); // no pide "Confirmar" para algo que no va a salir
     expect(gw.pushes).toHaveLength(0);
 
     const qrTx = [...gw.txs.keys()][0]!;

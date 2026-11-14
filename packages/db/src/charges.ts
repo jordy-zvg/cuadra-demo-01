@@ -34,6 +34,8 @@ export async function insertCharge(
     reference: string;
     amountCents: Centavos;
     now: Date;
+    /** Recordatorio original, si este cobro es un reenvío de su solicitud CoDi. */
+    resendOf?: string | null;
   },
 ): Promise<void> {
   await db.insert(charges).values({
@@ -44,6 +46,7 @@ export async function insertCharge(
     amountCents: c.amountCents,
     createdAt: c.now,
     expiresAt: new Date(c.now.getTime() + CHARGE_DEFAULT_TTL_MS),
+    resendOf: c.resendOf ?? null,
   });
 }
 

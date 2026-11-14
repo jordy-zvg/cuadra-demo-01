@@ -215,6 +215,8 @@ export const charges = pgTable("charges", {
   paymentUrl: text("payment_url"),
   channel: text("channel").$type<"codi_pn" | "codi_qr" | "payment_link">(),
   expiresAt: ts("expires_at"),
+  /** Si es un reenvío de una solicitud vencida: el recordatorio original. */
+  resendOf: text("resend_of"),
   createdAt: ts("created_at").notNull().defaultNow(),
 });
 

@@ -67,6 +67,13 @@ async function main(): Promise<void> {
         }
       : undefined;
 
+  // Política de recordatorios: 72 h entre cobros al mismo cliente. Solo en desarrollo se baja
+  // (REMINDER_COOLDOWN_HOURS=0) para probar seguido; un valor inválido deja la política normal.
+  const cooldownRaw = env("REMINDER_COOLDOWN_HOURS");
+  const cooldown = cooldownRaw === undefined ? undefined : Number(cooldownRaw);
+  const reminderCooldownHours = cooldown !== undefined && Number.isFinite(cooldown) && cooldown >= 0 ? cooldown : undefined;
+  if (cooldownRaw !== undefined && reminderCooldownHours === undefined) log({ msg: "config_invalid", variable: "REMINDER_COOLDOWN_HOURS" });
+
   const service = new CuadraService({
     db,
     merchantId: demo.merchantId,
@@ -81,6 +88,7 @@ async function main(): Promise<void> {
     udi: env("UDI_VALOR") ? parseUdiValue(env("UDI_VALOR")!) : null,
     log,
     ...(whatsapp ? { channels: [whatsapp.channel] } : {}),
+    ...(reminderCooldownHours !== undefined ? { reminderCooldownHours } : {}),
   });
   const app = buildServer({
     db,
@@ -107,7 +115,7 @@ async function main(): Promise<void> {
   }
   const port = Number(env("PORT") ?? 3000);
   await app.listen({ port, host: "0.0.0.0" });
-  log({ msg: "api_started", port, migrations: applied, gateway: gateway.name, simulated: gateway.simulated, interpreter: interpreters[0]!.name, whatsapp: Boolean(whatsapp), reminders: schedule });
+  log({ msg: "api_started", port, migrations: applied, gateway: gateway.name, simulated: gateway.simulated, interpreter: interpreters[0]!.name, whatsapp: Boolean(whatsapp), reminders: schedule, reminder_cooldown_hours: reminderCooldownHours ?? 72 });
 }
 
 main().catch((e: unknown) => {

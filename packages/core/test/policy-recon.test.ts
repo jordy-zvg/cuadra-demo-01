@@ -3,9 +3,14 @@ import {
   type Mandate,
   type MatchContext,
   Proposal,
+  REMINDER_MAX_RESENDS,
+  type ResendInput,
   canonicalJson,
   checkBalance,
   evaluateReminder,
+  evaluateResend,
+  formatMxTime,
+  formatMxWhen,
   isMandateActive,
   isWithinMxHours,
   mandateCovers,
@@ -24,6 +29,14 @@ describe("time", () => {
     expect(isWithinMxHours(at("22:00"), 7, 22)).toBe(false);
     expect(isWithinMxHours(at("06:59"), 7, 22)).toBe(false);
     expect(mxDateKey(new Date("2026-11-15T03:00:00Z"))).toBe("2026-11-14");
+  });
+  it("formatea horas y días en hora de CDMX", () => {
+    expect(formatMxTime(at("16:11"))).toBe("16:11");
+    expect(formatMxWhen(at("16:11"), at("15:09"))).toBe("hoy a las 16:11");
+    expect(formatMxWhen(at("09:05", "2026-11-15"), at("15:09"))).toBe("mañana a las 09:05");
+    expect(formatMxWhen(at("15:09", "2026-11-17"), at("15:09"))).toMatch(/^el martes 17 de noviembre a las 15:09$/);
+    // 23:30 en CDMX ya es el día siguiente en UTC: sigue siendo "hoy".
+    expect(formatMxWhen(at("23:30"), at("10:00"))).toBe("hoy a las 23:30");
   });
 });
 
@@ -53,6 +66,52 @@ describe("recordatorios", () => {
   });
   it("P05 opt-in", () => expect(ids({ opt_in: false })).toEqual(["P05"]));
   it("P06 plantilla", () => expect(ids({ template_id: "amenaza" })).toEqual(["P06"]));
+  it("P03 configurable solo para desarrollo: 0 h no limita, 1 h limita una hora", () => {
+    const last = at("09:30");
+    expect(evaluateReminder({ ...ok, last_reminder_at: last, min_interval_hours: 0 }).allow).toBe(true);
+    const r = evaluateReminder({ ...ok, last_reminder_at: last, min_interval_hours: 1 });
+    expect(r.rules_failed).toEqual([{ rule_id: "P03", reason: "Ya se envió un recordatorio a este cliente en la última hora." }]);
+    expect(evaluateReminder({ ...ok, last_reminder_at: at("09:00"), min_interval_hours: 1 }).allow).toBe(true);
+  });
+});
+
+describe("reenvío de una solicitud CoDi vencida", () => {
+  const base = {
+    now: at("10:00"), ledger_balance: 8000n, amount: 8000n, opt_in: true,
+    template_id: "cobro_amable", approved_template_ids: ["cobro_amable"],
+  };
+  const blocked = evaluateReminder({ ...base, last_reminder_at: at("09:00") }); // solo P03
+  const expired = { status: "expired" as const, channel: "codi_pn" as const };
+  const rs = (d: ReturnType<typeof evaluateReminder>, i: Partial<ResendInput>) =>
+    evaluateResend(d, { last_charge: expired, resends_in_cycle: 0, ...i }).rules_failed.map((f) => f.rule_id);
+
+  it("se permite si solo falla P03 y la solicitud anterior venció sin pago", () => {
+    expect(blocked.rules_failed.map((f) => f.rule_id)).toEqual(["P03"]);
+    expect(evaluateResend(blocked, { last_charge: expired, resends_in_cycle: 0 }).allow).toBe(true);
+    expect(evaluateResend(blocked, { last_charge: expired, resends_in_cycle: REMINDER_MAX_RESENDS - 1 }).allow).toBe(true);
+  });
+  it("P07: nunca con una solicitud viva, pagada, cancelada o por QR", () => {
+    expect(rs(blocked, { last_charge: { status: "open", channel: "codi_pn" } })).toEqual(["P07"]);
+    expect(rs(blocked, { last_charge: { status: "paid", channel: "codi_pn" } })).toEqual(["P07"]);
+    expect(rs(blocked, { last_charge: { status: "cancelled", channel: "codi_pn" } })).toEqual(["P07"]);
+    expect(rs(blocked, { last_charge: { status: "expired", channel: "codi_qr" } })).toEqual(["P07"]);
+    expect(rs(blocked, { last_charge: { status: "expired", channel: null } })).toEqual(["P07"]);
+    expect(rs(blocked, { last_charge: null })).toEqual(["P07"]);
+  });
+  it("P08: máximo de reenvíos por recordatorio", () => {
+    expect(rs(blocked, { resends_in_cycle: REMINDER_MAX_RESENDS })).toEqual(["P08"]);
+  });
+  it("las demás reglas siguen aplicando (horario, opt-in, saldo)", () => {
+    const night = evaluateReminder({ ...base, now: at("20:30"), last_reminder_at: at("19:00") });
+    expect(rs(night, {})).toEqual(["P04"]);
+    const noOptIn = evaluateReminder({ ...base, opt_in: false, last_reminder_at: at("09:00") });
+    expect(rs(noOptIn, {})).toEqual(["P05"]);
+    const paidOff = evaluateReminder({ ...base, ledger_balance: 0n, amount: 0n, last_reminder_at: at("09:00") });
+    expect(rs(paidOff, {})).toEqual(["P01"]);
+  });
+  it("sin P03 no hay reenvío: procede un recordatorio normal", () => {
+    expect(rs(evaluateReminder({ ...base, last_reminder_at: null }), {})).toEqual(["P07"]);
+  });
 });
 
 describe("mandatos", () => {

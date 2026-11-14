@@ -18,6 +18,8 @@ describe("toIntent: el código convierte montos, no el LLM", () => {
   it("pagos, recordatorios, consultas y fuera de alcance", () => {
     expect(toIntent({ ...base, kind: "payout", customer_name: null, payee_name: "de los refrescos", amount_as_written: "$1,200" })).toEqual({ kind: "payout", payee_name: "de los refrescos", amount_cents: 120000 });
     expect(toIntent({ ...base, kind: "send_reminder" })).toEqual({ kind: "send_reminder", customer_name: "Doña Lupe" });
+    expect(toIntent({ ...base, kind: "resend_reminder" })).toEqual({ kind: "resend_reminder", customer_name: "Doña Lupe" });
+    expect(toIntent({ ...base, kind: "resend_reminder", customer_name: null })).toEqual({ kind: "resend_reminder" });
     expect(toIntent({ ...base, kind: "query_balance", customer_name: null })).toEqual({ kind: "query_balance" });
     expect(toIntent({ ...base, kind: "out_of_scope" })).toEqual({ kind: "out_of_scope" });
     expect(toIntent({ ...base, kind: "unclear", question: "¿Cuánto?" })).toEqual({ kind: "unclear", question: "¿Cuánto?" });

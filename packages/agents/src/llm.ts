@@ -15,6 +15,7 @@ export const LlmExtraction = z.object({
     "add_credit",
     "register_cash_payment",
     "send_reminder",
+    "resend_reminder",
     "charge_qr",
     "payout",
     "query_balance",
@@ -41,6 +42,7 @@ Intenciones:
 - add_credit: el comercio le fió algo a un cliente ("Doña Lupe se llevó $185", "anótale 80 a Beto").
 - register_cash_payment: un cliente le pagó en efectivo.
 - send_reminder: quiere cobrarle o recordarle a un cliente ("cóbrale a Lupe").
+- resend_reminder: quiere volver a mandar una solicitud de cobro que ya mandó ("vuélvele a mandar la notificación", "reenvíale el cobro a Beto"). customer_name es opcional: null si no lo dice.
 - charge_qr: quiere un QR para que el cliente pague ahí mismo ("QR para Lupe", "cóbrale con QR a Beto").
 - payout: quiere pagarle a un proveedor ("paga al de los refrescos $1,200").
 - query_balance: pregunta cuánto le deben (customer_name opcional).
@@ -111,6 +113,10 @@ export function toIntent(x: LlmExtraction): Intent {
       return x.kind === "add_credit"
         ? { kind: "add_credit", customer_name: n, amount_cents: a, ...(x.concept ? { concept: x.concept.slice(0, 140) } : {}) }
         : { kind: "register_cash_payment", customer_name: n, amount_cents: a };
+    }
+    case "resend_reminder": {
+      const n = name(x.customer_name);
+      return n ? { kind: "resend_reminder", customer_name: n } : { kind: "resend_reminder" };
     }
     case "send_reminder":
     case "charge_qr": {
