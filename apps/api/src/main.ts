@@ -1,6 +1,6 @@
 import { PeyClient, WhatsAppClient, verifyProposalAssertion } from "@cuadra/adapters";
 import { parseUdiValue } from "@cuadra/core";
-import { AnthropicInterpreter, FallbackInterpreter, type Interpreter, RuleInterpreter } from "@cuadra/agents";
+import { AnthropicInterpreter, GrokInterpreter, type Interpreter, RuleInterpreter, mixedInterpreters } from "@cuadra/agents";
 import { connectPostgres, migratePostgres } from "@cuadra/db/node";
 import { type MessageAction, schema, seedDemo } from "@cuadra/db";
 import { eq } from "drizzle-orm";
@@ -42,11 +42,14 @@ async function main(): Promise<void> {
   const rpID = env("WEBAUTHN_RP_ID") ?? (publicUrl ? new URL(publicUrl).hostname : "localhost");
   const origins = (env("WEBAUTHN_ORIGINS") ?? publicUrl ?? "http://localhost:3000").split(",");
 
-  // BRIEF §9: tres extracciones independientes con consenso. Sin llave de Anthropic, reglas.
+  // BRIEF §9: tres extracciones independientes con consenso. Con las dos llaves se reparten entre
+  // Claude y Grok (proveedores distintos); con una sola, ese modelo; sin llaves, reglas.
   const rules = new RuleInterpreter();
-  const interpreters: Interpreter[] = env("ANTHROPIC_API_KEY")
-    ? [1, 2, 3].map(() => new FallbackInterpreter(new AnthropicInterpreter(), rules))
-    : [rules];
+  const models: Interpreter[] = [
+    ...(env("ANTHROPIC_API_KEY") ? [new AnthropicInterpreter()] : []),
+    ...(env("XAI_API_KEY") ? [new GrokInterpreter({ apiKey: env("XAI_API_KEY")!, ...(env("XAI_MODEL") ? { model: env("XAI_MODEL")! } : {}) })] : []),
+  ];
+  const interpreters = mixedInterpreters(models, rules);
 
   // WhatsApp Cloud API: se activa solo con las cuatro variables; si no, queda el chat web.
   const waToken = env("WHATSAPP_TOKEN");
@@ -100,7 +103,7 @@ async function main(): Promise<void> {
   }
   const port = Number(env("PORT") ?? 3000);
   await app.listen({ port, host: "0.0.0.0" });
-  log({ msg: "api_started", port, migrations: applied, gateway: gateway.name, simulated: gateway.simulated, interpreter: interpreters[0]!.name, whatsapp: Boolean(whatsapp), reminders: schedule });
+  log({ msg: "api_started", port, migrations: applied, gateway: gateway.name, simulated: gateway.simulated, interpreter: interpreters.map((i) => i.name).join(","), whatsapp: Boolean(whatsapp), reminders: schedule });
 }
 
 main().catch((e: unknown) => {
