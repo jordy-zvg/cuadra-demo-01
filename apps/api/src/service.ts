@@ -261,6 +261,19 @@ export class CuadraService {
     return out;
   }
 
+  /** Nombre que no está en los clientes: opciones parecidas o dar de alta. */
+  private async unknownCustomer(name: string, options: Array<{ name: string }>): Promise<void> {
+    if (options.length) {
+      await this.say("comercio", `¿Cuál? ${options.map((o) => o.name).join(", ")}`);
+      return;
+    }
+    const n = displayName(name);
+    await this.say("comercio", `No tengo a “${n}” en tus clientes. Para darlo de alta escribe: “Agrega a ${n}, 55 1234 5678”.`, [
+      { kind: "say", label: `Dar de alta a ${n}`, text: `Agrega a ${n}` },
+      ...(await this.suggestions()).slice(0, 2),
+    ]);
+  }
+
   private async blockBankDataFromChat(provenance: Provenance): Promise<void> {
     const decision = evaluateCreatePayee({
       provenance,
@@ -314,6 +327,25 @@ export class CuadraService {
       case "query_tanda":
         await this.say("comercio", await this.tanda.describe());
         return;
+      case "create_customer": {
+        const name = displayName(intent.customer_name);
+        const r = await this.resolve(await this.customers(), name);
+        if (r.ok) {
+          await this.say("comercio", `Ya tengo a ${r.row.name} en tus clientes.`);
+          return;
+        }
+        const p = await this.newProposal(
+          { type: "CreateCustomer", name, ...(intent.phone ? { phone: `+52${intent.phone}` } : {}) },
+          provenance,
+        );
+        await this.say(
+          "comercio",
+          `Doy de alta a ${name}${intent.phone ? ` con celular ${intent.phone}` : " (sin celular: solo podrás cobrarle con QR)"}. ¿Confirmas?`,
+          confirmButtons(p.id),
+          p.id,
+        );
+        return;
+      }
       case "query_limit": {
         const s = await this.n2bis();
         await this.say("comercio", s ? s.message : "No tengo configurado el valor de la UDI para calcular tu tope Nivel 2 Bis.");
@@ -322,7 +354,7 @@ export class CuadraService {
       case "charge_qr": {
         const r = await this.resolve(await this.customers(), intent.customer_name);
         if (!r.ok) {
-          await this.say("comercio", r.options.length ? `¿Cuál? ${r.options.map((o) => o.name).join(", ")}` : `No tengo a “${intent.customer_name}” en tus clientes.`);
+          await this.unknownCustomer(intent.customer_name, r.options);
           return;
         }
         await this.serialized(r.row.id, () => this.chargeWithQr(r.row.id));
@@ -342,8 +374,23 @@ export class CuadraService {
           return;
         }
         const r = await this.resolve(await this.customers(), intent.customer_name);
+        if (!r.ok && r.options.length === 0 && intent.kind === "add_credit") {
+          // Cliente nuevo: se ofrece darlo de alta y anotarle el fiado con un solo "Confirmar".
+          const name = displayName(intent.customer_name);
+          const p = await this.newProposal(
+            { type: "CreateCustomer", name, credit_cents: intent.amount_cents, credit_concept: intent.concept ?? "Fiado" },
+            provenance,
+          );
+          await this.say(
+            "comercio",
+            `No tengo a “${name}” en tus clientes. ¿Lo doy de alta y le anoto ${formatMXN(BigInt(intent.amount_cents))} de fiado?`,
+            confirmButtons(p.id),
+            p.id,
+          );
+          return;
+        }
         if (!r.ok) {
-          await this.say("comercio", r.options.length ? `¿Cuál? ${r.options.map((o) => o.name).join(", ")}` : `No tengo a “${intent.customer_name}” en tus clientes.`);
+          await this.unknownCustomer(intent.customer_name, r.options);
           return;
         }
         if (intent.kind === "add_credit") {
@@ -466,6 +513,41 @@ export class CuadraService {
       const [c] = await this.d.db.select().from(schema.customers).where(eq(schema.customers.id, parsed.customer_id));
       const bal = await ledgerBalance(this.d.db, this.d.merchantId, "1200", parsed.customer_id);
       await this.say("comercio", `📒 Listo. ${c?.name} te debe ${formatMXN(bal)}.`);
+      return;
+    }
+    if (parsed.type === "CreateCustomer") {
+      const existing = await this.resolve(await this.customers(), parsed.name);
+      const customerId = existing.ok ? existing.row.id : id("c");
+      if (!existing.ok) {
+        await this.d.db.insert(schema.customers).values({
+          id: customerId,
+          merchantId: this.d.merchantId,
+          name: parsed.name,
+          phone: parsed.phone ?? null,
+          // El cliente acepta mensajes por su cuenta (componente #14); hasta entonces no hay recordatorios.
+          optIn: false,
+          createdAt: this.d.now(),
+        });
+      }
+      if (parsed.credit_cents) {
+        await postEntries(this.d.db, [
+          fiado({
+            merchant_id: this.d.merchantId,
+            idempotency_key: `proposal:${p.id}:fiado`,
+            amount: parsed.credit_cents,
+            customer_id: customerId,
+            memo: parsed.credit_concept ?? "Fiado",
+          }),
+        ]);
+      }
+      await setProposalStatus(this.d.db, p.id, "done", { customer_id: customerId });
+      const bal = await ledgerBalance(this.d.db, this.d.merchantId, "1200", customerId);
+      await this.say(
+        "comercio",
+        `👤 Listo, di de alta a ${parsed.name}.` +
+          (parsed.credit_cents ? ` 📒 Te debe ${formatMXN(bal)}.` : "") +
+          (parsed.phone ? "" : ` Sin celular, cóbrale con “QR para ${parsed.name}”.`),
+      );
       return;
     }
     if (parsed.type === "SendReminder") {
@@ -1197,4 +1279,10 @@ function describeIntent(i: Intent): string {
     default:
       return "";
   }
+}
+
+/** "el señor joel" → "Señor Joel": sin artículo al inicio y con mayúsculas si vino todo en minúsculas. */
+function displayName(raw: string): string {
+  const n = raw.trim().replace(/^(?:el|la|al|a)\s+/i, "").replace(/\s+/g, " ").slice(0, 80);
+  return n === n.toLowerCase() ? n.replace(/(^|\s)(\p{L})/gu, (_m, s: string, c: string) => s + c.toUpperCase()) : n.charAt(0).toUpperCase() + n.slice(1);
 }

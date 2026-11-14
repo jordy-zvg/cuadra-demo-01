@@ -2,7 +2,7 @@ import type Anthropic from "@anthropic-ai/sdk";
 import { describe, expect, it } from "vitest";
 import { AnthropicInterpreter, FallbackInterpreter, type LlmExtraction, RuleInterpreter, toIntent } from "../src/index.js";
 
-const base: LlmExtraction = { kind: "add_credit", customer_name: "Doña Lupe", payee_name: null, amount_as_written: "$185", concept: null, question: null };
+const base: LlmExtraction = { kind: "add_credit", customer_name: "Doña Lupe", payee_name: null, amount_as_written: "$185", concept: null, question: null, phone_as_written: null };
 
 describe("toIntent: el código convierte montos, no el LLM", () => {
   it("monto literal → centavos exactos", () => {
@@ -11,9 +11,17 @@ describe("toIntent: el código convierte montos, no el LLM", () => {
     expect(toIntent({ ...base, amount_as_written: "185 pesos" })).toMatchObject({ amount_cents: 18500 });
   });
   it("monto ilegible, cero o sin nombre → pregunta", () => {
-    for (const bad of [{ amount_as_written: "ciento ochenta" }, { amount_as_written: "0" }, { amount_as_written: null }, { customer_name: " " }]) {
+    for (const bad of [{ amount_as_written: "un montón" }, { amount_as_written: "0" }, { amount_as_written: null }, { customer_name: " " }]) {
       expect(toIntent({ ...base, ...bad }).kind).toBe("unclear");
     }
+  });
+  it("alta de cliente: celular a 10 dígitos", () => {
+    expect(toIntent({ ...base, kind: "create_customer", customer_name: "Joel", amount_as_written: null, phone_as_written: "+52 55 1234 5678" })).toEqual({ kind: "create_customer", customer_name: "Joel", phone: "5512345678" });
+    expect(toIntent({ ...base, kind: "create_customer", customer_name: "Joel", amount_as_written: null })).toEqual({ kind: "create_customer", customer_name: "Joel" });
+    expect(toIntent({ ...base, kind: "create_customer", customer_name: " ", amount_as_written: null }).kind).toBe("unclear");
+  });
+  it("monto con letra: lo convierte el código, no el LLM", () => {
+    expect(toIntent({ ...base, amount_as_written: "ciento ochenta pesos" })).toMatchObject({ kind: "add_credit", amount_cents: 18000 });
   });
   it("pagos, recordatorios, consultas y fuera de alcance", () => {
     expect(toIntent({ ...base, kind: "payout", customer_name: null, payee_name: "de los refrescos", amount_as_written: "$1,200" })).toEqual({ kind: "payout", payee_name: "de los refrescos", amount_cents: 120000 });
