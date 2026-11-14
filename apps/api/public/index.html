@@ -120,7 +120,8 @@ $("#chips").onclick = (e) => { if (e.target.matches(".chip")) { $("#txt").value 
 
 async function post(url, body) {
   const r = await fetch(url, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify(body ?? {}) });
-  if (!r.ok) alert("Error: " + (await r.text()));
+  if (r.status === 409 && url.startsWith("/api/sim/pay/")) alert("Esa solicitud ya no está vigente: venció o ya se pagó.");
+  else if (!r.ok) alert("Error: " + (await r.text()));
   refresh();
 }
 let fromVoice = false;
@@ -220,7 +221,7 @@ function render(s) {
     `<tr><td>${k} ${NAMES[k] || ""}</td><td class="n">${mxn(v)}</td></tr>`).join("") || `<tr><td class="muted">Sin movimientos</td></tr>`;
   const cname = (id) => (customers.find((c) => c.id === id) || {}).name || id;
   $("#chg").innerHTML = `<tr><th>Cliente</th><th>Ref.</th><th class="n">Monto</th><th>Estado</th></tr>` +
-    s.charges.map((c) => `<tr><td>${esc(cname(c.customer_id))}</td><td>${esc(c.reference)}</td><td class="n">${c.amount ? mxn(c.amount) : "—"}</td><td>${c.status === "paid" ? "✅ pagado" : c.status === "open" ? "⏳ abierto" : esc(c.status)}</td></tr>`).join("");
+    s.charges.map((c) => `<tr><td>${esc(cname(c.customer_id))}</td><td>${esc(c.reference)}</td><td class="n">${c.amount ? mxn(c.amount) : "—"}</td><td>${({ paid: "✅ pagado", open: "⏳ abierto", expired: "⌛ vencido", cancelled: "✖ no salió" })[c.status] ?? esc(c.status)}${c.resend_of ? " · reenvío" : ""}</td></tr>`).join("");
   $("#blk").innerHTML = s.blocks.recent.map((b) => `<div class="block"><b>${esc(b.kind)}</b> · ${esc(b.provenance)}<br>${b.reasons.map(esc).join("<br>")}</div>`).join("") || `<p class="muted">Ninguno todavía.</p>`;
   $("#led").innerHTML = s.entries.map((e) => `<div class="entry"><div class="k">${esc(e.kind)} <span class="muted">· ${esc(e.memo)}</span></div>${
     e.lines.map((l) => `<div class="ln"><span>${l.account}</span><span class="muted">${esc(NAMES[l.account] || "")}${l.sub ? " · " + esc(cname(l.sub)) : ""}</span><span>${l.debit !== "0" ? "D " + mxn(l.debit) : ""}</span><span>${l.credit !== "0" ? "H " + mxn(l.credit) : ""}</span></div>`).join("")}</div>`).join("");

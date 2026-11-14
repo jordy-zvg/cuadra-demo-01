@@ -40,7 +40,8 @@ export function normalizeName(s: string): string {
 }
 
 function key(i: Intent): string {
-  const o: Record<string, unknown> = { kind: i.kind };
+  // Con nombre, reenviar y cobrar hacen lo mismo (el código decide si es reenvío): no es desacuerdo.
+  const o: Record<string, unknown> = { kind: i.kind === "resend_reminder" && i.customer_name ? "send_reminder" : i.kind };
   if ("customer_name" in i && i.customer_name) o.n = normalizeName(i.customer_name);
   if ("payee_name" in i) o.p = normalizeName(i.payee_name);
   if ("amount_cents" in i) o.a = i.amount_cents;

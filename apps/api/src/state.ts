@@ -1,5 +1,5 @@
 import { type AccountCode, ACCOUNTS, checkBalance, potCents } from "@cuadra/core";
-import { type Db, bankSimBalance, inFlightCents, ledgerBalance, schema, tandaMembersOf, tandaRoundStatus } from "@cuadra/db";
+import { CHARGE_EXPIRY_GRACE_MS, type Db, bankSimBalance, inFlightCents, ledgerBalance, schema, tandaMembersOf, tandaRoundStatus } from "@cuadra/db";
 import { and, desc, eq, sql } from "drizzle-orm";
 
 const s = (v: bigint) => v.toString();
@@ -98,7 +98,19 @@ export async function panelState(db: Db, merchantId: string, opts: { gateway: st
     },
     customers: customerRows,
     entries: entryRows,
-    charges: charges.map((c) => ({ id: c.id, customer_id: c.customerId, reference: c.reference, amount: c.amountCents === null ? null : s(c.amountCents), status: c.status, provider: c.provider, channel: c.channel, at: c.createdAt.toISOString() })),
+    // Un cobro abierto que ya pasó su vigencia se muestra vencido aunque nadie lo haya tocado aún.
+    charges: charges.map((c) => ({
+      id: c.id,
+      customer_id: c.customerId,
+      reference: c.reference,
+      amount: c.amountCents === null ? null : s(c.amountCents),
+      status: c.status === "open" && c.expiresAt && c.expiresAt.getTime() + CHARGE_EXPIRY_GRACE_MS < Date.now() ? "expired" : c.status,
+      provider: c.provider,
+      channel: c.channel,
+      resend_of: c.resendOf,
+      expires_at: c.expiresAt?.toISOString() ?? null,
+      at: c.createdAt.toISOString(),
+    })),
     deposits: deposits.map((d) => ({ id: s(d.id), clave: d.claveRastreo, amount: s(d.amountCents), customer_id: d.customerId, method: d.matchMethod, fee: d.feeCents === null ? null : s(d.feeCents), at: d.receivedAt.toISOString() })),
     transfers: transfers.map((x) => ({ id: x.id, amount: s(x.amountCents), status: x.status, payee_id: x.payeeId, concept: x.concept })),
     blocks: { count: blockCount?.n ?? 0, recent: blocks.map((b) => ({ kind: b.kind, provenance: b.provenance, reasons: b.reasons, source: b.source, at: b.createdAt.toISOString() })) },

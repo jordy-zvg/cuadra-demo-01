@@ -14,6 +14,15 @@ const clean = (s: string) => s.trim().replace(/[.,;:!?¡¿]+$/g, "").trim();
 
 const OUT_OF_SCOPE = /\b(chiste|clima|f[uú]tbol|receta|pol[ií]tica|horóscopo|horoscopo|canci[oó]n|cr[eé]dito bancario|pr[eé]stamo|inversi[oó]n|bitcoin|cripto)\b/i;
 
+// Reenvío de la solicitud de cobro. Las frases de tanda, recibos o comprobantes son otra intención.
+const RESEND_NOT = String.raw`(?!.*\b(?:tanda|recibo|comprobante|ticket)\b)`;
+const RESEND_VERB = String.raw`(?:vu[eé]lve(?:le)?\s+a\s+(?:mandar|enviar|cobrar)(?:le|selo|sela)?|reenv[ií](?:a|ar)(?:le|selo|sela)?|(?:m[aá]nda|env[ií]a)(?:le|selo|sela)?\s+(?:otra\s+vez|de\s+nuevo))`;
+const RESEND_WHAT = String.raw`(?:\s+(?:(?:la|el)\s+)?(?:notificaci[oó]n|cobro|solicitud|recordatorio|petici[oó]n)(?:\s+de\s+(?:pago|cobro))?)`;
+const AGAIN = String.raw`(?:\s+(?:otra\s+vez|de\s+nuevo))?`;
+const RESEND_WHO = String.raw`(?:\s+(?:a|de)\s+(.+))?`;
+const resend = (m: RegExpExecArray): Intent =>
+  m[1] && clean(m[1]) ? { kind: "resend_reminder", customer_name: clean(m[1]) } : { kind: "resend_reminder" };
+
 const PATTERNS: Array<[RegExp, (m: RegExpExecArray) => Intent]> = [
   // "Doña Lupe se llevó $185", "Beto se llevó 2 refrescos de $40"
   [new RegExp(String.raw`^(.+?)\s+se\s+(?:llev[oó]|fi[oó]|ech[oó] al fiado)\s+(?:.*?\s)?${MONEY}\s*(.*)$`, "i"),
@@ -27,12 +36,11 @@ const PATTERNS: Array<[RegExp, (m: RegExpExecArray) => Intent]> = [
   // "QR para Doña Lupe", "cóbrale con QR a Beto" (cobro en mostrador)
   [/^(?:(?:hazme\s+(?:un|el)\s+)?qr\s+(?:para|de|a)|c[oó]brale\s+con\s+qr\s+a|cobro\s+con\s+qr\s+(?:a|para))\s+(.+)$/i,
     (m) => ({ kind: "charge_qr", customer_name: clean(m[1]!) })],
-  // "Vuélvele a mandar la notificación", "reenvíale el cobro a Beto", "mándale otra vez el cobro a Lupe"
-  [/^(?:vu[eé]lve(?:le)?\s+a\s+(?:mandar|enviar)(?:le)?|reenv[ií]a(?:le)?|m[aá]nda(?:le)?\s+(?:otra\s+vez|de\s+nuevo)|env[ií]a(?:le)?\s+(?:otra\s+vez|de\s+nuevo))(?:\s+(?:otra\s+vez|de\s+nuevo))?(?:\s+(?:la|el)\s+(?:notificaci[oó]n|cobro|solicitud|recordatorio|petici[oó]n)(?:\s+de\s+(?:pago|cobro))?)?(?:\s+(?:otra\s+vez|de\s+nuevo))?(?:\s+a\s+(.+))?$/i,
-    (m) => (m[1] && clean(m[1]) ? { kind: "resend_reminder", customer_name: clean(m[1]) } : { kind: "resend_reminder" })],
+  // "Vuélvele a mandar la notificación", "reenvíale el cobro a Beto", "reenvía el cobro de Lupe",
+  // "mándale otra vez el cobro a Lupe", "vuelve a cobrarle a Doña Lupe"
+  [new RegExp(String.raw`^${RESEND_NOT}${RESEND_VERB}${AGAIN}${RESEND_WHAT}?${AGAIN}${RESEND_WHO}$`, "i"), resend],
   // "Mándale el cobro otra vez a Lupe"
-  [/^(?:m[aá]nda|env[ií]a)(?:le)?\s+(?:la|el)\s+(?:notificaci[oó]n|cobro|solicitud|recordatorio|petici[oó]n)(?:\s+de\s+(?:pago|cobro))?\s+(?:otra\s+vez|de\s+nuevo)(?:\s+a\s+(.+))?$/i,
-    (m) => (m[1] && clean(m[1]) ? { kind: "resend_reminder", customer_name: clean(m[1]) } : { kind: "resend_reminder" })],
+  [new RegExp(String.raw`^${RESEND_NOT}(?:m[aá]nda|env[ií]a)(?:le|selo|sela)?${RESEND_WHAT}\s+(?:otra\s+vez|de\s+nuevo)${RESEND_WHO}$`, "i"), resend],
   // "Cóbrale a Doña Lupe", "mándale recordatorio a Beto"
   [/^(?:c[oó]brale|cobrar(?:le)?|m[aá]ndale\s+(?:el\s+)?(?:cobro|recordatorio)|recu[eé]rdale)\s+a\s+(.+)$/i,
     (m) => ({ kind: "send_reminder", customer_name: clean(m[1]!) })],

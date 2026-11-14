@@ -4,6 +4,7 @@ import { createTestDb } from "@cuadra/db/testing";
 import { eq } from "drizzle-orm";
 import { describe, expect, it } from "vitest";
 import { SimulatedGateway } from "../src/gateway.js";
+import { parseCooldownHours } from "../src/reminder-config.js";
 import { mxWeekday, parseReminderSchedule, reminderTick } from "../src/scheduler.js";
 import { CuadraService } from "../src/service.js";
 
@@ -82,5 +83,19 @@ describe("reminderTick", () => {
     const thu = new Date("2026-11-12T10:30:00-06:00");
     const ran = await reminderTick({ db: f.db, merchantId: M, schedule: { days: [5], hour: 10 }, now: () => thu, log: () => {}, run: async () => ({ sent: 0, skipped: 0 }) });
     expect(ran).toBe(false);
+  });
+});
+
+describe("REMINDER_COOLDOWN_HOURS", () => {
+  it("solo números no negativos escritos tal cual; vacío = sin definir; lo demás es inválido", () => {
+    expect(parseCooldownHours(undefined)).toEqual({ hours: undefined, invalid: false });
+    expect(parseCooldownHours("")).toEqual({ hours: undefined, invalid: false });
+    expect(parseCooldownHours("  ")).toEqual({ hours: undefined, invalid: false }); // un espacio no apaga la regla
+    expect(parseCooldownHours("0")).toEqual({ hours: 0, invalid: false });
+    expect(parseCooldownHours(" 24 ")).toEqual({ hours: 24, invalid: false });
+    expect(parseCooldownHours("1.5")).toEqual({ hours: 1.5, invalid: false });
+    for (const bad of ["abc", "-1", "0x10", "1e3", "Infinity", "NaN", "\t0\t0"]) {
+      expect(parseCooldownHours(bad)).toEqual({ hours: undefined, invalid: true });
+    }
   });
 });

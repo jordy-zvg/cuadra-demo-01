@@ -9,6 +9,7 @@ import { seedHistory } from "./seed-history.js";
 import { buildServer } from "./server.js";
 import { CuadraService } from "./service.js";
 import { WhatsAppChannel } from "./whatsapp.js";
+import { parseCooldownHours } from "./reminder-config.js";
 import { parseReminderSchedule, startReminderScheduler } from "./scheduler.js";
 
 const env = (k: string) => process.env[k] || undefined;
@@ -69,10 +70,12 @@ async function main(): Promise<void> {
 
   // Política de recordatorios: 72 h entre cobros al mismo cliente. Solo en desarrollo se baja
   // (REMINDER_COOLDOWN_HOURS=0) para probar seguido; un valor inválido deja la política normal.
-  const cooldownRaw = env("REMINDER_COOLDOWN_HOURS");
-  const cooldown = cooldownRaw === undefined ? undefined : Number(cooldownRaw);
-  const reminderCooldownHours = cooldown !== undefined && Number.isFinite(cooldown) && cooldown >= 0 ? cooldown : undefined;
-  if (cooldownRaw !== undefined && reminderCooldownHours === undefined) log({ msg: "config_invalid", variable: "REMINDER_COOLDOWN_HOURS" });
+  const cooldownCfg = parseCooldownHours(process.env.REMINDER_COOLDOWN_HOURS);
+  const reminderCooldownHours = cooldownCfg.hours;
+  if (cooldownCfg.invalid) log({ msg: "config_invalid", variable: "REMINDER_COOLDOWN_HOURS" });
+  if (reminderCooldownHours !== undefined && !gateway.simulated) {
+    log({ msg: "reminder_cooldown_override", hours: reminderCooldownHours, warning: "solo para desarrollo; en producción debe quedar sin definir" });
+  }
 
   const service = new CuadraService({
     db,

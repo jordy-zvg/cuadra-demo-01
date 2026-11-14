@@ -68,3 +68,12 @@ mientras está viva no se manda otra, para que el cliente no pague doble. Despu�
 - **QR:** “QR para Doña Lupe” si el cliente está en la tienda.
 - La regla de 72 h entre recordatorios sigue; en desarrollo se baja con `REMINDER_COOLDOWN_HOURS=0`.
 La solicitud de una tanda dura 1 h (`TANDA_PN_TTL_S`). Si el pago de un cobro vencido llega tarde, se aplica igual.
+
+Para que nunca haya dos solicitudes que el cliente pueda pagar:
+- **Antes de reenviar o de generar un QR** se consulta a pey (`GET /transaction/{id}`) cada solicitud al celular
+  de la última hora que Cuadra dio por vencida. Si ya estaba pagada (webhook perdido), se registra y no se manda
+  otra; si pey no responde, no se manda nada.
+- **Si pey no responde al crear la solicitud** (red, 5xx o 20 s sin respuesta), pudo haberse creado: el cobro
+  queda abierto hasta que venza y bloquea otra solicitud o un QR. Solo un rechazo explícito (4xx) la cancela.
+- Una propuesta se confirma una sola vez, dentro de 10 min y por el monto que se mostró; los cobros a un mismo
+  cliente se ejecutan de uno en uno.
