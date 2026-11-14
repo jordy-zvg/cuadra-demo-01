@@ -208,12 +208,13 @@ export const charges = pgTable("charges", {
   customerId: text("customer_id").notNull(),
   reference: text("reference").notNull(),
   uniqueAmountCents: cents("unique_amount_cents"),
-  status: text("status").$type<"open" | "paid" | "cancelled">().notNull().default("open"),
+  status: text("status").$type<"open" | "paid" | "cancelled" | "expired">().notNull().default("open"),
   amountCents: cents("amount_cents"),
   provider: text("provider"),
   providerChargeId: text("provider_charge_id"),
   paymentUrl: text("payment_url"),
   channel: text("channel").$type<"codi_pn" | "codi_qr" | "payment_link">(),
+  expiresAt: ts("expires_at"),
   createdAt: ts("created_at").notNull().defaultNow(),
 });
 
@@ -310,4 +311,15 @@ export const tandaCharges = pgTable("tanda_charges", {
   paidCents: cents("paid_cents"),
   createdAt: ts("created_at").notNull().defaultNow(),
   paidAt: ts("paid_at"),
+});
+
+export const providerReconciliationRuns = pgTable("provider_reconciliation_runs", {
+  id: bigserial("id", { mode: "number" }).primaryKey(),
+  merchantId: text("merchant_id").notNull(),
+  provider: text("provider").notNull(),
+  runAt: ts("run_at").notNull().defaultNow(),
+  checked: integer("checked").notNull(),
+  recovered: integer("recovered").notNull(),
+  discrepancies: jsonb("discrepancies").$type<Array<{ kind: string; transaction_id: string; detail: string }>>().notNull(),
+  ok: boolean("ok").notNull(),
 });

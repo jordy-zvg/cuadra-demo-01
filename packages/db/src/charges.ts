@@ -20,6 +20,11 @@ export async function newChargeReference(db: Db, merchantId: string): Promise<st
   throw new Error("No se pudo generar una referencia única");
 }
 
+/** Un cobro sin proveedor (solo referencia) se considera vencido a las 72 h, como la política de recordatorios. */
+export const CHARGE_DEFAULT_TTL_MS = 72 * 60 * 60 * 1000;
+/** Margen antes de dar por vencido un cobro, por diferencias de reloj con el proveedor. */
+export const CHARGE_EXPIRY_GRACE_MS = 2 * 60 * 1000;
+
 export async function insertCharge(
   db: Db,
   c: {
@@ -38,17 +43,51 @@ export async function insertCharge(
     reference: c.reference,
     amountCents: c.amountCents,
     createdAt: c.now,
+    expiresAt: new Date(c.now.getTime() + CHARGE_DEFAULT_TTL_MS),
   });
+}
+
+/**
+ * Cobro abierto vigente del cliente. Los que ya vencieron en el proveedor se marcan como
+ * vencidos y no bloquean un cobro nuevo.
+ */
+export async function openChargeFor(db: Db, customerId: string, now: Date) {
+  const open = await db
+    .select()
+    .from(charges)
+    .where(and(eq(charges.customerId, customerId), eq(charges.status, "open")));
+  let live: (typeof open)[number] | null = null;
+  for (const c of open) {
+    if (c.expiresAt && c.expiresAt.getTime() + CHARGE_EXPIRY_GRACE_MS < now.getTime()) {
+      await db.update(charges).set({ status: "expired" }).where(and(eq(charges.id, c.id), eq(charges.status, "open")));
+    } else {
+      live ??= c;
+    }
+  }
+  return live;
 }
 
 export async function attachProviderCharge(
   db: Db,
   chargeId: string,
-  p: { provider: string; providerChargeId: string; channel: "codi_pn" | "codi_qr" | "payment_link"; paymentUrl?: string | null },
+  p: {
+    provider: string;
+    providerChargeId: string;
+    channel: "codi_pn" | "codi_qr" | "payment_link";
+    paymentUrl?: string | null;
+    /** Vencimiento del cobro en el proveedor. */
+    expiresAt?: Date;
+  },
 ): Promise<void> {
   await db
     .update(charges)
-    .set({ provider: p.provider, providerChargeId: p.providerChargeId, channel: p.channel, paymentUrl: p.paymentUrl ?? null })
+    .set({
+      provider: p.provider,
+      providerChargeId: p.providerChargeId,
+      channel: p.channel,
+      paymentUrl: p.paymentUrl ?? null,
+      ...(p.expiresAt ? { expiresAt: p.expiresAt } : {}),
+    })
     .where(eq(charges.id, chargeId));
 }
 

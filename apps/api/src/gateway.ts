@@ -3,6 +3,10 @@ import type { Centavos } from "@cuadra/core";
 import { type Db, schema } from "@cuadra/db";
 import { eq } from "drizzle-orm";
 
+/** Vigencia de una solicitud CoDi al celular y de un QR de mostrador (segundos). */
+export const PN_TTL_S = 3600;
+export const QR_TTL_S = 1800;
+
 /** Cobro al cliente final. pey en vivo; simulado cuando no hay llave (se dice en la UI). */
 export interface ChargeGateway {
   readonly name: string;
@@ -34,12 +38,12 @@ export class PeyGateway implements ChargeGateway {
   readonly simulated = false;
   constructor(private readonly pey: PeyClient) {}
   async requestPayment(r: Parameters<ChargeGateway["requestPayment"]>[0]) {
-    const pn = await this.pey.createPushNotification({ ...r, expiration_s: 3600 });
+    const pn = await this.pey.createPushNotification({ ...r, expiration_s: PN_TTL_S });
     return { provider_charge_id: pn.transactionId };
   }
   async createQr(r: Parameters<ChargeGateway["createQr"]>[0]) {
     // 30 min de vigencia (mínimo de pey: 360 s).
-    const qr = await this.pey.createQr({ ...r, expiration_s: 1800, generate_image: true });
+    const qr = await this.pey.createQr({ ...r, expiration_s: QR_TTL_S, generate_image: true });
     return { provider_charge_id: qr.id, image_png_base64: qr.qrImage ?? null };
   }
   getTransaction(id: string) {
