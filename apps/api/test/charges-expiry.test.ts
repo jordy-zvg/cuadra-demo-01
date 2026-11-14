@@ -129,6 +129,16 @@ describe("solicitud al celular rechazada por pey", () => {
 });
 
 describe("diagnóstico de la solicitud al celular", () => {
+  it("sin saldo no ofrece un cobro de $0.00 ni pide confirmar", async () => {
+    const f = await setup();
+    await f.say("Cóbrale a Doña Lupe");
+    expect(await f.lastBody()).toMatch(/Doña Lupe no te debe nada/);
+    const msgs = await f.db.select().from(schema.messages).where(eq(schema.messages.thread, "comercio"));
+    expect(msgs.some((m) => /\$0\.00/.test(m.body))).toBe(false);
+    expect(msgs.some((m) => m.actions?.some((a) => a.kind === "confirm"))).toBe(false);
+    expect(f.gw.pushes).toHaveLength(0);
+  });
+
   it("pey la rechaza (4xx): se registra status, tipo y requestId y se sugiere revisar CoDi", async () => {
     const f = await setup();
     f.gw.requestPayment = async () => {

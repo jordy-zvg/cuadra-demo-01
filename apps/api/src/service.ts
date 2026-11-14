@@ -267,8 +267,13 @@ export class CuadraService {
           );
           await this.say("comercio", `Anoto ${formatMXN(BigInt(intent.amount_cents))} de fiado a ${r.row.name}. ¿Confirmas?`, confirmButtons(p.id), p.id);
         } else {
-          const p = await this.newProposal({ type: "SendReminder", customer_id: r.row.id }, provenance);
           const bal = await ledgerBalance(this.d.db, this.d.merchantId, "1200", r.row.id);
+          // Sin saldo no hay nada que confirmar: no se ofrece un cobro de $0.00.
+          if (bal <= 0n) {
+            await this.say("comercio", `${r.row.name} no te debe nada, así que no hay cobro que mandar. Si se llevó algo, dime “${r.row.name} se llevó $…”.`);
+            return;
+          }
+          const p = await this.newProposal({ type: "SendReminder", customer_id: r.row.id }, provenance);
           await this.say("comercio", `Le mando a ${r.row.name} su cobro de ${formatMXN(bal)} por CoDi. ¿Confirmas?`, confirmButtons(p.id), p.id);
         }
         return;
