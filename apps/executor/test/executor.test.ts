@@ -269,3 +269,72 @@ describe("executor: riesgo, saldo y fallas", () => {
     });
   });
 });
+
+describe("executor: devoluciones SPEI y resultados inciertos", () => {
+  it("devolución tras confirmar → reversos; saldo y conciliación vuelven", async () => {
+    const f = await setup();
+    await f.mandate();
+    const p = await f.payout(10_000);
+    const r = await executeOutflow({ proposal_id: p.id }, f.deps);
+    const ref = r.status === "sent" ? r.provider_ref : "";
+    await f.webhook(f.provider.settle(ref, "confirmed"));
+    expect(await ledgerBalance(f.db, f.M, "1100")).toBe(990_000n);
+    expect(await f.webhook(f.provider.returnTransfer(ref))).toMatchObject({ status: "transfer_returned" });
+    expect(await ledgerBalance(f.db, f.M, "1100")).toBe(1_000_000n);
+    expect(await ledgerBalance(f.db, f.M, "5100")).toBe(0n);
+    expect(await ledgerBalance(f.db, f.M, "2400")).toBe(0n);
+    expect((await runReconciliation(f.db, f.M, await f.provider.getBalance(), NOW)).ok).toBe(true);
+    const [t] = await f.db.select().from(schema.transfers);
+    expect(t!.status).toBe("returned");
+  });
+
+  it("devolución que llega antes que la confirmación; la confirmación tardía se ignora", async () => {
+    const f = await setup();
+    await f.mandate();
+    const p = await f.payout(10_000);
+    const r = await executeOutflow({ proposal_id: p.id }, f.deps);
+    const ref = r.status === "sent" ? r.provider_ref : "";
+    const late = { type: "transfer.confirmed" as const, event_id: "evt_late", provider_ref: ref };
+    await f.webhook(f.provider.returnTransfer(ref));
+    const { applyProviderEvent } = await import("@cuadra/db");
+    expect(await applyProviderEvent(f.db, "mock", f.M, late)).toMatchObject({ status: "transfer_confirmed" });
+    expect(await ledgerBalance(f.db, f.M, "1100")).toBe(1_000_000n);
+    expect(await ledgerBalance(f.db, f.M, "2400")).toBe(0n);
+    // Un "failed" después de liquidada no tiene sentido en SPEI: se detiene para revisión.
+    const weird = { type: "transfer.failed" as const, event_id: "evt_weird", provider_ref: ref, failure_reason: "x" };
+    await expect(applyProviderEvent(f.db, "mock", f.M, weird)).rejects.toThrow(/revisión/);
+  });
+
+  it("resultado incierto del proveedor: queda pendiente y se resuelve al reintentar", async () => {
+    const f = await setup();
+    await f.mandate();
+    const p = await f.payout(10_000);
+    const { ProviderOutcomeUnknownError } = await import("@cuadra/adapters");
+    const real = f.provider.createTransfer.bind(f.provider);
+    let first = true;
+    f.provider.createTransfer = async (req) => {
+      if (first) {
+        first = false;
+        throw new ProviderOutcomeUnknownError("sin respuesta");
+      }
+      return real(req);
+    };
+    await expect(executeOutflow({ proposal_id: p.id }, f.deps)).rejects.toThrow(ProviderOutcomeUnknownError);
+    const [pending] = await f.db.select().from(schema.transfers);
+    expect(pending).toMatchObject({ status: "pending", submittedAt: expect.any(Date) });
+    expect(await ledgerBalance(f.db, f.M, "2400")).toBe(10_000n);
+    expect(await executeOutflow({ proposal_id: p.id }, f.deps)).toMatchObject({ status: "sent" });
+  });
+
+  it("sin resultado tras 23 h → se detiene para revisión humana", async () => {
+    const f = await setup();
+    await f.mandate();
+    const p = await f.payout(10_000);
+    f.provider.setOutage(true);
+    await expect(executeOutflow({ proposal_id: p.id }, f.deps)).rejects.toThrow();
+    f.provider.setOutage(false);
+    f.setNow(new Date(NOW.getTime() + 24 * 3600_000));
+    await expect(executeOutflow({ proposal_id: p.id }, f.deps)).rejects.toThrow(/revisión manual/);
+    expect(f.provider.calls).toHaveLength(1);
+  });
+});

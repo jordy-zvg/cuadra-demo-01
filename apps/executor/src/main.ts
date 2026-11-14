@@ -2,7 +2,12 @@
  * Proceso executor: ÚNICO con credenciales del proveedor de pagos.
  * Consume la cola "outflows" (solo { proposal_id }) y revalida todo antes de enviar.
  */
-import { MockPaymentProvider, type PaymentProvider, verifyProposalAssertion } from "@cuadra/adapters";
+import {
+  FintocPaymentProvider,
+  MockPaymentProvider,
+  type PaymentProvider,
+  verifyProposalAssertion,
+} from "@cuadra/adapters";
 import { connectPostgres } from "@cuadra/db/node";
 import { Worker } from "bullmq";
 import { Redis } from "ioredis";
@@ -23,6 +28,13 @@ function log(record: Record<string, unknown>): void {
 function buildProvider(): PaymentProvider {
   const kind = env("PAYMENTS_PROVIDER");
   if (kind === "mock") return new MockPaymentProvider(env("MOCK_WEBHOOK_SECRET"));
+  if (kind === "fintoc") {
+    return new FintocPaymentProvider({
+      secretKey: env("FINTOC_SECRET_KEY"),
+      jwsPrivateKeyPem: env("FINTOC_JWS_PRIVATE_KEY"),
+      accountId: env("FINTOC_ACCOUNT_ID"),
+    });
+  }
   throw new Error(`Proveedor de pagos no soportado: ${kind}`);
 }
 

@@ -25,6 +25,7 @@ export const merchants = pgTable("merchants", {
   name: text("name").notNull(),
   dailyLimitCents: cents("daily_limit_cents").notNull(),
   maxOutflowsPerHour: integer("max_outflows_per_hour").notNull(),
+  providerAccountId: text("provider_account_id").unique(),
   createdAt: ts("created_at").notNull().defaultNow(),
 });
 
@@ -158,7 +159,7 @@ export const journalLines = pgTable("journal_lines", {
   credit: cents("credit").notNull(),
 });
 
-export type TransferStatus = "pending" | "sent" | "confirmed" | "failed";
+export type TransferStatus = "pending" | "sent" | "confirmed" | "failed" | "returned";
 
 export const transfers = pgTable("transfers", {
   id: text("id").primaryKey(),

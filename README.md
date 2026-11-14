@@ -26,6 +26,8 @@ Para probar contra un Postgres de verdad: `TEST_DATABASE_URL=postgres://... pnpm
 - [x] `packages/core`: money, clabe, ledger, proposals, guard (12 reglas), mandates, reminder-policy, reconciliation
 - [x] `packages/db`: esquema con invariantes en SQL (Σdebe = Σhaber diferido, append-only, CLABE válida,
       idempotencia), ledger, propuestas/aprobaciones/mandatos, transferencias, abonos, conciliación, webhooks, seed
-- [x] `packages/adapters`: proveedor de pagos mock con webhooks firmados; verificación de passkey ligada al hash
+- [x] `packages/adapters`: proveedor mock con webhooks firmados; **Fintoc** (MX, API v2026-02-01: JWS RS256,
+      Idempotency-Key, webhooks `Fintoc-Signature`) probado contra la documentación, aún no contra el sandbox;
+      verificación de passkey ligada al hash
 - [x] `apps/executor`: guard revalidado con el comercio bloqueado, reserva + asiento en la misma transacción, envío idempotente
-- [ ] `packages/agents`, `apps/api`, `apps/worker`, `apps/web`, adapter fintoc
+- [ ] `packages/agents`, `apps/api`, `apps/worker`, `apps/web`

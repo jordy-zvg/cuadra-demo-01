@@ -17,6 +17,8 @@ import {
 import { eq } from "drizzle-orm";
 import { z } from "zod";
 
+export const MAX_RETRY_WINDOW_MS = 23 * 60 * 60 * 1000;
+
 /** El trabajo solo trae el id: todo lo demás se relee de la DB y se revalida. */
 export const OutflowJob = z.object({ proposal_id: z.string().min(1).max(64) }).strict();
 export type OutflowJob = z.infer<typeof OutflowJob>;
@@ -137,6 +139,11 @@ export async function submit(transfer: Transfer, deps: ExecutorDeps): Promise<Ex
     throw new Error(`Beneficiario inválido en transferencia ya enviada ${transfer.id}; requiere revisión`);
   }
 
+  // Fintoc puede olvidar la llave de idempotencia a las 24 h; pasado ese margen un
+  // reintento podría crear un segundo pago. Se detiene para revisión humana.
+  if (transfer.submittedAt !== null && deps.now().getTime() - transfer.submittedAt.getTime() > MAX_RETRY_WINDOW_MS) {
+    throw new Error(`Transferencia ${transfer.id} sin resultado tras 23 h; requiere revisión manual`);
+  }
   await markTransferSubmitted(db, transfer.id, deps.now());
   const res = await deps.provider.createTransfer({
     idempotency_key: transfer.idempotencyKey,

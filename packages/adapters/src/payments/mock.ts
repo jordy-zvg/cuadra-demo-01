@@ -117,6 +117,17 @@ export class MockPaymentProvider implements PaymentProvider, WebhookParser {
     return this.webhook({ type: "transfer.confirmed", provider_ref: providerRef });
   }
 
+  /** El banco receptor devuelve una transferencia ya liquidada (SPEI "devolución"). */
+  returnTransfer(providerRef: string, reason = "Cuenta inexistente"): SignedWebhook {
+    const t = this.byRef.get(providerRef);
+    if (!t || (t.status !== "confirmed" && t.status !== "sent")) {
+      throw new Error(`Transferencia ${providerRef} no se puede devolver`);
+    }
+    t.status = "failed";
+    this.balance += t.req.amount_cents;
+    return this.webhook({ type: "transfer.returned", provider_ref: providerRef, return_reason: reason });
+  }
+
   /** Simula un SPEI entrante a la cuenta operativa. */
   incomingSpei(d: {
     clave_rastreo: string;

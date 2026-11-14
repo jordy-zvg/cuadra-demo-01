@@ -14,6 +14,12 @@ export type TransferResponse =
   | { provider_ref: string; status: "sent" }
   | { provider_ref: string; status: "failed"; failure_reason: string };
 
+/**
+ * El proveedor no pudo confirmar si la transferencia se creó (5xx, timeout) y tampoco la
+ * encontró al buscarla. El trabajo debe reintentarse; nunca crear otra con llave nueva.
+ */
+export class ProviderOutcomeUnknownError extends Error {}
+
 /** Solo apps/executor instancia un PaymentProvider con credenciales. */
 export interface PaymentProvider {
   readonly name: string;
@@ -38,6 +44,17 @@ export const ProviderEvent = z.discriminatedUnion("type", [
     failure_reason: z.string(),
   }),
   z.object({
+    type: z.literal("transfer.returned"),
+    event_id: z.string().min(1),
+    provider_ref: z.string().min(1),
+    return_reason: z.string(),
+  }),
+  z.object({
+    type: z.literal("ignored"),
+    event_id: z.string().min(1),
+    original_type: z.string(),
+  }),
+  z.object({
     type: z.literal("deposit.received"),
     event_id: z.string().min(1),
     clave_rastreo: z.string().min(1).max(30),
@@ -46,6 +63,8 @@ export const ProviderEvent = z.discriminatedUnion("type", [
     ordering_clabe: z.string().optional(),
     reference: z.string().optional(),
     concept: z.string().optional(),
+    /** Cuenta operativa del proveedor que recibió el abono (para ubicar al comercio). */
+    provider_account_id: z.string().optional(),
   }),
 ]);
 export type ProviderEvent = z.infer<typeof ProviderEvent>;

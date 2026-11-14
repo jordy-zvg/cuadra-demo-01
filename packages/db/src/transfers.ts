@@ -8,6 +8,8 @@ export const transferKeys = (id: string) => ({
   created: `transfer:${id}:created`,
   confirmed: `transfer:${id}:confirmed`,
   reversed: `transfer:${id}:reversed`,
+  returnedConfirmed: `transfer:${id}:returned:confirmed`,
+  returnedCreated: `transfer:${id}:returned:created`,
 });
 
 /** Bloquea al comercio hasta el fin de la transacción: serializa salidas y abonos. */
@@ -131,7 +133,7 @@ export async function confirmTransfer(db: Db, id: string): Promise<void> {
   await db.transaction(async (tx) => {
     const [t] = await tx.select().from(transfers).where(eq(transfers.id, id)).for("update");
     if (!t) throw new Error(`Transferencia ${id} no existe`);
-    if (t.status === "confirmed") return;
+    if (t.status === "confirmed" || t.status === "returned") return;
     if (t.status !== "sent") throw new Error(`Transferencia ${id} en estado ${t.status}; no se puede confirmar`);
     await tx.update(transfers).set({ status: "confirmed" }).where(eq(transfers.id, id));
     const entry: JournalEntry = pagoConfirmado({
@@ -142,6 +144,30 @@ export async function confirmTransfer(db: Db, id: string): Promise<void> {
     });
     await postEntries(tx, [entry]);
     await setProposalStatus(tx, t.proposalId, "done");
+  });
+}
+
+/**
+ * Devolución SPEI de una transferencia ya liquidada: reversa la confirmación
+ * (D 1100 / H 2400) y la creación (… / D 2400). Si llega antes que la confirmación
+ * (webhooks desordenados), primero confirma. Idempotente.
+ */
+export async function returnTransfer(db: Db, id: string, reason: string): Promise<void> {
+  await db.transaction(async (tx) => {
+    const [t] = await tx.select().from(transfers).where(eq(transfers.id, id)).for("update");
+    if (!t) throw new Error(`Transferencia ${id} no existe`);
+    if (t.status === "returned") return;
+    if (t.status !== "sent" && t.status !== "confirmed") {
+      throw new Error(`Transferencia ${id} en estado ${t.status}; no se puede devolver`);
+    }
+    if (t.status === "sent") await confirmTransfer(tx, id);
+    const keys = transferKeys(id);
+    const confirmed = await getEntry(tx, keys.confirmed);
+    const created = await getEntry(tx, keys.created);
+    if (!confirmed || !created) throw new Error(`Faltan asientos de la transferencia ${id}`);
+    await postEntries(tx, [reverso(confirmed, keys.returnedConfirmed), reverso(created, keys.returnedCreated)]);
+    await tx.update(transfers).set({ status: "returned", failureReason: reason }).where(eq(transfers.id, id));
+    await setProposalStatus(tx, t.proposalId, "rejected", { returned: reason });
   });
 }
 
