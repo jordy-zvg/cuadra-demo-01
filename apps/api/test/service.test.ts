@@ -40,6 +40,15 @@ class FakePey implements ChargeGateway {
     });
     return { provider_charge_id: id, image_png_base64: "iVBORw0KGgo=" };
   }
+  accounts: Array<Record<string, unknown>> = [];
+  accountStatusValue = "ACTIVE";
+  async registerAccount(r: { clabe: string; name: string; alias: string }) {
+    this.accounts.push(r);
+    return { id: `ba_${r.clabe.slice(-4)}`, status: this.accountStatusValue };
+  }
+  async accountStatus() {
+    return this.accountStatusValue;
+  }
   async getTransaction(id: string) {
     const t = this.txs.get(id);
     if (!t) throw new Error("404");

@@ -84,12 +84,12 @@ $("#register").onclick = async () => {
 
 async function showProposal(id) {
   const p = await api("/api/proposal/" + encodeURIComponent(id));
-  $("#title").textContent = p.type === "CreateMandate" ? "Firmar mandato" : "Aprobar pago";
+  $("#title").textContent = p.type === "CreateMandate" ? "Firmar mandato" : p.type === "CreateTanda" ? "Firmar tanda" : "Aprobar pago";
   $("#summary").textContent = p.summary;
   $("#hash").textContent = p.hash;
   $("#review").hidden = false;
   if (p.provenance === "third_party_content") say("Ojo: esta instrucción vino de una foto, documento o mensaje reenviado. Revísala bien.");
-  const okStatus = (p.type === "CreateMandate" && p.status === "pending") || (p.type === "PayoutRequest" && p.status === "awaiting_passkey");
+  const okStatus = ((p.type === "CreateMandate" || p.type === "CreateTanda") && p.status === "pending") || (p.type === "PayoutRequest" && p.status === "awaiting_passkey");
   if (!okStatus) { $("#sign").disabled = true; say("Esta propuesta ya no se puede aprobar (estado: " + p.status + ")."); }
 }
 

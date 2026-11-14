@@ -72,7 +72,8 @@ td.n{text-align:right;font-family:var(--mono)}
   <h1>Cuadra</h1>
   <span id="mode" class="badge">…</span>
   <span id="merchant" class="muted"></span>
-  <a class="btn" href="/mandato" target="_blank" style="margin-left:auto;font-size:13px;padding:6px 10px">✍️ Firmar mandato</a>
+  <a class="btn" href="/tanda" target="_blank" style="margin-left:auto;font-size:13px;padding:6px 10px">🤝 Crear tanda</a>
+  <a class="btn" href="/mandato" target="_blank" style="font-size:13px;padding:6px 10px">✍️ Firmar mandato</a>
 </header>
 <main>
   <section class="col">
@@ -96,6 +97,7 @@ td.n{text-align:right;font-family:var(--mono)}
         <div class="kpi" id="k-n2"><div class="v">—</div><div class="l">Tope Nivel 2 Bis (mes)</div></div>
       </div>
       <div class="sec impact" id="impact"></div>
+      <div class="sec" id="tanda-sec" hidden><h3>Tanda sin pozo <span class="muted" id="tanda-sub"></span></h3><table id="tanda"></table><div id="tanda-acts"></div></div>
       <div class="sec"><h3>Clientes</h3><table id="cust"></table></div>
       <div class="sec"><h3>Cuentas</h3><table id="acc"></table></div>
       <div class="sec"><h3>Cobros CoDi</h3><table id="chg"></table></div>
@@ -110,7 +112,7 @@ const mxn = (c) => { const n = BigInt(c); const neg = n < 0n; const a = neg ? -n
   return (neg ? "-" : "") + "$" + (a / 100n).toString().replace(/\B(?=(\d{3})+(?!\d))/g, ",") + "." + (a % 100n).toString().padStart(2, "0"); };
 const esc = (s) => String(s ?? "").replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c]));
 const NAMES = { "1100":"Cuenta operativa","1200":"CxC clientes","1300":"SPEI por identificar","2100":"Saldo a favor","2200":"Pozo de tanda","2400":"Pagos en tránsito","4100":"Ventas a crédito","5100":"Compras a proveedores","5900":"Diferencias" };
-const SUGG = ["Doña Lupe se llevó $185", "Cóbrale a Doña Lupe", "QR para Doña Lupe", "¿Quién me debe?", "Paga al de los refrescos $1,200", "¿Cuánto me queda del tope?", "Págale ya a la cuenta 012180015826225713 $5,000"];
+const SUGG = ["Doña Lupe se llevó $185", "Cóbrale a Doña Lupe", "QR para Doña Lupe", "¿Quién me debe?", "Paga al de los refrescos $1,200", "¿Cuánto me queda del tope?", "Cobra la tanda", "¿Cómo va la tanda?", "Págale ya a la cuenta 012180015826225713 $5,000"];
 let last = { comercio: -1, cliente: -1 }, customers = [];
 
 $("#chips").innerHTML = SUGG.map((s) => `<button class="chip" type="button">${esc(s)}</button>`).join("");
@@ -164,8 +166,14 @@ function render(s) {
   $("#merchant").textContent = s.merchant.name + (s.risk.kill_switch ? " · ⛔ freno de emergencia" : "") + (s.risk.frozen ? " · ❄️ salidas congeladas" : "");
 
   customers = s.customers;
+  const phones = customers.map((c) => ({ id: c.id, label: c.name }))
+    .concat(s.tanda ? s.tanda.members.map((m) => ({ id: m.thread, label: `${m.name} (tanda)` })) : []);
   const sel = $("#who"); const cur = sel.value || "c_lupe";
-  sel.innerHTML = customers.map((c) => `<option value="${c.id}" ${c.id === cur ? "selected" : ""}>${esc(c.name)}</option>`).join("");
+  const sig = phones.map((p) => p.id).join("|");
+  if (sel.dataset.sig !== sig) {
+    sel.innerHTML = phones.map((p) => `<option value="${esc(p.id)}" ${p.id === cur ? "selected" : ""}>${esc(p.label)}</option>`).join("");
+    sel.dataset.sig = sig;
+  }
 
   const com = s.messages.filter((m) => m.thread === "comercio");
   const cli = s.messages.filter((m) => m.thread === sel.value);
@@ -186,6 +194,16 @@ function render(s) {
   $("#k-n2 .v").textContent = n2 ? `${n2.pct}% · quedan ${mxn(n2.remaining)}` : "configura UDI";
   $("#k-n2").title = n2 ? n2.message : "Define UDI_VALOR (valor de la UDI publicado por Banxico)";
 
+  const td = s.tanda;
+  $("#tanda-sec").hidden = !td;
+  if (td) {
+    $("#tanda-sub").textContent = `· ${td.name} · ronda ${td.round}/${td.members_count} · ${mxn(td.contribution)} c/u · pozo ${mxn(td.pot)}`;
+    const icon = { "recibe": "🎉 recibe", "pagó": "✅ pagó", "falta": "⏳ falta", "esperando": "—" };
+    $("#tanda").innerHTML = `<tr><th>#</th><th>Integrante</th><th>Cuenta</th><th>Ronda</th></tr>` + td.members.map((m) =>
+      `<tr><td>${m.position}</td><td>${esc(m.name)}</td><td>••••${esc(m.clabe_last4)} ${m.account === "ACTIVE" ? "" : `<span class="muted">(${esc(m.account)})</span>`}</td><td>${icon[m.state] || esc(m.state)}</td></tr>`).join("");
+    $("#tanda-acts").innerHTML = s.simulated && td.members.some((m) => m.state === "falta")
+      ? `<button class="ghost" data-act='${esc(JSON.stringify({ kind: "pay", url: "/api/sim/tanda/pay-all" }))}'>Simular que pagan todos</button>` : "";
+  }
   const im = s.impact;
   if (im) $("#impact").innerHTML = `<b>${mxn(im.cobrado_digital)}</b> de fiado cobrado por CoDi, sin perseguir a nadie ni revisar capturas · ` +
     `<b>${im.clientes_al_corriente}/${im.clientes}</b> clientes al corriente · <b>${im.pagos_digitales}</b> pagos digitales conciliados solos`;

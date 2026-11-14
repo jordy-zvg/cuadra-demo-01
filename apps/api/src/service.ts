@@ -38,6 +38,7 @@ import {
 } from "@cuadra/db";
 import { and, desc, eq } from "drizzle-orm";
 import type { ChargeGateway } from "./gateway.js";
+import { TandaFlow } from "./tanda-flow.js";
 
 export const REMINDER_TEMPLATE = "cobro_amable";
 
@@ -65,7 +66,18 @@ const id = (p: string) => `${p}_${randomUUID().replace(/-/g, "").slice(0, 16)}`;
 const CLABE_IN_TEXT = /\b\d{18}\b/;
 
 export class CuadraService {
-  constructor(private readonly d: ServiceDeps) {}
+  readonly tanda: TandaFlow;
+  constructor(private readonly d: ServiceDeps) {
+    this.tanda = new TandaFlow({
+      db: d.db,
+      merchantId: d.merchantId,
+      gateway: d.gateway,
+      verify: d.verify,
+      now: d.now,
+      say: (thread, body, actions) => this.say(thread, body, actions),
+      log: d.log,
+    });
+  }
 
   // ---------- mensajes ----------
 
@@ -193,6 +205,15 @@ export class CuadraService {
         return;
       case "query_balance":
         await this.answerBalance(intent.customer_name);
+        return;
+      case "start_tanda_round":
+        await this.tanda.startRound();
+        return;
+      case "tanda_reminder":
+        await this.tanda.remindPending();
+        return;
+      case "query_tanda":
+        await this.say("comercio", await this.tanda.describe());
         return;
       case "query_limit": {
         const s = await this.n2bis();
@@ -502,6 +523,8 @@ export class CuadraService {
   }
 
   async applyPayment(tx: PeyTransaction): Promise<void> {
+    // Aportaciones de tanda: van directo a la cuenta del integrante en turno, no al comercio.
+    if (await this.tanda.applyPayment(tx)) return;
     const out = await recordProviderPayment(this.d.db, this.d.merchantId, {
       provider: this.d.gateway.name,
       transaction_id: tx.id,

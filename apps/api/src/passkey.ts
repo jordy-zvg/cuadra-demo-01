@@ -1,10 +1,12 @@
 import { randomUUID } from "node:crypto";
 import { verifyProposalAssertion } from "@cuadra/adapters";
-import { CreateMandate, PayoutRequest, Proposal, formatMXN } from "@cuadra/core";
+import { CreateMandate, CreateTanda, PayoutRequest, Proposal, formatMXN, maskClabe } from "@cuadra/core";
 import {
   type AssertionVerifier,
   type Db,
   createMandateFromApproval,
+  createTandaFromApproval,
+  setMemberBankAccount,
   saveApproval,
   saveProposal,
   schema,
@@ -18,8 +20,11 @@ import {
 import { and, eq } from "drizzle-orm";
 import type { FastifyInstance } from "fastify";
 import { z } from "zod";
+import type { ChargeGateway } from "./gateway.js";
 
 export interface PasskeyOpts {
+  /** Para registrar las cuentas receptoras de los integrantes de una tanda. */
+  gateway: Pick<ChargeGateway, "registerAccount">;
   db: Db;
   merchantId: string;
   ownerId: string;
@@ -37,6 +42,11 @@ async function describe(db: Db, p: Proposal): Promise<string> {
   if (p.type === "CreateMandate") {
     const per = { day: "día", week: "semana", month: "mes" }[p.period];
     return `Mandato para ${await payeeName(p.payee_id)}: hasta ${formatMXN(p.per_op_cap_cents)} por pago y ${formatMXN(p.period_cap_cents)} por ${per}, vigente ${p.valid_days} días.`;
+  }
+  if (p.type === "CreateTanda") {
+    const per = { week: "semana", biweek: "quincena", month: "mes" }[p.period];
+    const turns = p.members.map((m, i) => `${i + 1}. ${m.name} (CLABE ${maskClabe(m.clabe)})`).join("; ");
+    return `Tanda “${p.name}”: ${formatMXN(p.contribution_cents)} por ${per} cada quien, ${p.members.length} integrantes. Turnos: ${turns}. Cada aportación va directo a la cuenta de quien le toca.`;
   }
   if (p.type === "PayoutRequest") return `Pagar ${formatMXN(p.amount_cents)} a ${await payeeName(p.payee_id)} · “${p.concept}”.`;
   return p.type;
@@ -58,6 +68,31 @@ export function registerPasskeyRoutes(app: FastifyInstance, o: PasskeyOpts): voi
 
   app.get("/aprobar/:id", (_req, reply) => reply.sendFile("aprobar.html"));
   app.get("/mandato", (_req, reply) => reply.sendFile("aprobar.html"));
+  app.get("/tanda", (_req, reply) => reply.sendFile("tanda.html"));
+
+  const TandaBody = z.object({
+    name: z.string().min(1).max(80),
+    contribution_pesos: z.number().positive().max(100_000),
+    period: z.enum(["week", "biweek", "month"]),
+    members: z.array(z.object({ name: z.string().min(1).max(80), phone: z.string(), clabe: z.string() })).min(2).max(20),
+  });
+  app.post("/api/tanda/propose", async (req, reply) => {
+    const b = TandaBody.safeParse(json(req.body));
+    if (!b.success) return reply.code(400).send({ error: "Datos de la tanda incompletos" });
+    const parsed = CreateTanda.safeParse({
+      type: "CreateTanda",
+      merchant_id: o.merchantId,
+      provenance: "user_direct",
+      name: b.data.name.trim(),
+      contribution_cents: Math.round(b.data.contribution_pesos * 100),
+      period: b.data.period,
+      members: b.data.members.map((m) => ({ name: m.name.trim(), phone: m.phone.replace(/\D/g, "").slice(-10), clabe: m.clabe.replace(/\s/g, "") })),
+    });
+    if (!parsed.success) return reply.code(400).send({ error: parsed.error.issues.map((i) => i.message).join("; ") });
+    const id = `pr_${randomUUID().replace(/-/g, "").slice(0, 16)}`;
+    await saveProposal(o.db, { id, actorId: o.ownerId, proposal: parsed.data });
+    return { id };
+  });
 
   app.get("/api/payees", async () =>
     (await o.db.select().from(schema.payees).where(eq(schema.payees.merchantId, o.merchantId))).map((p) => ({
@@ -146,7 +181,7 @@ export function registerPasskeyRoutes(app: FastifyInstance, o: PasskeyOpts): voi
 
   const ApproveBody = z.object({ proposal_id: z.string().min(1).max(64) });
   const approvable = (status: string, type: string) =>
-    (type === "CreateMandate" && status === "pending") || (type === "PayoutRequest" && status === "awaiting_passkey");
+    ((type === "CreateMandate" || type === "CreateTanda") && status === "pending") || (type === "PayoutRequest" && status === "awaiting_passkey");
 
   app.post("/api/approve/options", async (req, reply) => {
     const b = ApproveBody.safeParse(json(req.body));
@@ -195,7 +230,25 @@ export function registerPasskeyRoutes(app: FastifyInstance, o: PasskeyOpts): voi
     const say = (body: string) =>
       o.db.insert(schema.messages).values({ merchantId: o.merchantId, thread: "comercio", direction: "out", body, createdAt: now });
 
-    if (p.type === "CreateMandate") {
+    if (p.type === "CreateTanda") {
+      const tandaId = `td_${row.id}`;
+      await createTandaFromApproval(o.db, { tandaId, proposalId: row.id, approvalId, now, verify });
+      // Cada integrante registra su CLABE como cuenta receptora CoDi en pey.
+      let pending = 0;
+      for (const [i, m] of p.members.entries()) {
+        try {
+          const acc = await o.gateway.registerAccount({ clabe: m.clabe, name: m.name, alias: `${p.name} · ${m.name}` });
+          await setMemberBankAccount(o.db, tandaId, i + 1, acc.id, acc.status);
+          if (acc.status !== "ACTIVE") pending++;
+        } catch {
+          pending++;
+        }
+      }
+      await say(
+        `✍️ Tanda firmada con passkey. ${await describe(o.db, p)}` +
+          (pending ? ` ${pending} cuenta(s) quedan en alta con Banxico (hasta 5 días hábiles).` : " Todas las cuentas están listas: escribe “cobra la tanda”."),
+      );
+    } else if (p.type === "CreateMandate") {
       await createMandateFromApproval(o.db, { mandateId: `md_${row.id}`, proposalId: row.id, approvalId, now, verify });
       await say(`✍️ Mandato firmado con passkey. ${await describe(o.db, p)}`);
     } else if (PayoutRequest.safeParse(p).success) {

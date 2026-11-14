@@ -62,7 +62,7 @@ async function main(): Promise<void> {
     merchantId: demo.merchantId,
     gateway,
     bankSim,
-    passkey: { db, merchantId: demo.merchantId, ownerId: demo.ownerId, rpID, origins, now: () => new Date() },
+    passkey: { gateway, db, merchantId: demo.merchantId, ownerId: demo.ownerId, rpID, origins, now: () => new Date() },
     log,
   });
   const port = Number(env("PORT") ?? 3000);

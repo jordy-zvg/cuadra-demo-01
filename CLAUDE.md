@@ -62,8 +62,12 @@ CreateMandate · RevokeMandate · CreateTanda · TandaContribution · TandaPayou
 - Abono identificado: D 1100 / H 1200 (hasta el saldo) ; excedente H 2100
 - Abono sin identificar: D 1100 / H 1300 → al identificar: D 1300 / H 1200
 - Pago a proveedor creado: D 5100 / H 2400 → confirmado: D 2400 / H 1100 → fallido: reverso
-- Aportación de tanda: D 1100 / H 2200
-- Dispersión de tanda: D 2200 / H 2400 → confirmada: D 2400 / H 1100
+- Tanda **sin pozo** (decisión 14-nov-2026): cada aportación se cobra por CoDi (pey) directo a la cuenta
+  registrada del integrante en turno (`bankAccountId`). Cuadra no recibe ni dispersa dinero de tanda: **no hay
+  asientos en el ledger del comercio**; el control vive en `tandas` / `tanda_members` / `tanda_charges`
+  (idempotente por transacción del proveedor, una aportación pagada por integrante y ronda). Integrantes, CLABEs
+  y orden se firman con passkey (CreateTanda) y se revalidan antes de cada ronda; si no coinciden, la tanda se
+  congela. Las cuentas 2200 y el flujo de dispersión quedan sin uso.
 - Devolución saldo a favor: D 2100 / H 2400 → confirmada: D 2400 / H 1100
 
 ## Guard de salidas (12 reglas)
@@ -80,6 +84,10 @@ R10 Velocidad y horario: máx. N salidas/hora; fuera de 07:00–22:00 → requie
 R11 Procedencia: `third_party_content` no crea beneficiarios ni ejecuta sin passkey; datos bancarios solo del sistema.
 R12 Estado de riesgo: kill switch, cuenta congelada, conciliación descuadrada o veto del auditor → deny.
 Resultado: `allow` | `require_passkey` | `deny`, con `rules_failed[]`.
+
+## Backlog acordado
+- Registrar pagos en efectivo (RegisterCashPayment): requiere cuenta de caja en el catálogo; sirve para medir
+  la parte no digital del tope Nivel 2 Bis (≤ 3,000 de 15,000 UDIs).
 
 ## Política de recordatorios (separada del guard)
 Saldo en ledger > 0 · monto = saldo · máx. 1 por cliente cada 72 h · horario 09:00–20:00 · cliente con opt-in · tono dentro de plantilla aprobada.

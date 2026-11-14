@@ -12,6 +12,9 @@ export const Intent = z.discriminatedUnion("kind", [
   z.object({ kind: z.literal("payout"), payee_name: z.string().min(1).max(80), amount_cents: z.number().int().positive().safe(), concept: z.string().max(140).optional() }),
   z.object({ kind: z.literal("query_balance"), customer_name: z.string().max(80).optional() }),
   z.object({ kind: z.literal("query_limit") }),
+  z.object({ kind: z.literal("start_tanda_round") }),
+  z.object({ kind: z.literal("query_tanda") }),
+  z.object({ kind: z.literal("tanda_reminder") }),
   z.object({ kind: z.literal("out_of_scope") }),
   z.object({ kind: z.literal("unclear"), question: z.string().max(200).optional() }),
 ]);

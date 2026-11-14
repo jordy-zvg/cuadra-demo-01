@@ -7,7 +7,7 @@ import { schema } from "@cuadra/db";
 import { and, eq } from "drizzle-orm";
 import type { CuadraService } from "./service.js";
 import { type PasskeyOpts, registerPasskeyRoutes } from "./passkey.js";
-import { panelState } from "./state.js";
+import { panelState, tandaState } from "./state.js";
 
 export interface ServerOpts {
   db: Db;
@@ -60,6 +60,7 @@ export function buildServer(o: ServerOpts): FastifyInstance {
 
   app.get("/api/state", async () => ({
     ...(await panelState(o.db, o.merchantId, { gateway: o.gateway.name, simulated: o.gateway.simulated, bankSim: o.bankSim })),
+    tanda: await tandaState(o.db, o.service),
     n2bis: await o.service.n2bis().then((s) => s && { pct: s.pct, level: s.level, limit: s.limit_cents.toString(), received: s.received_cents.toString(), remaining: s.remaining_cents.toString(), message: s.message }),
   }));
 
@@ -86,6 +87,27 @@ export function buildServer(o: ServerOpts): FastifyInstance {
     if (!c?.providerChargeId || c.status !== "open") return reply.code(409).send({ error: "cobro no disponible" });
     await o.service.simulatePaid(c.providerChargeId);
     return { ok: true };
+  });
+
+  // Solo en modo simulado: un integrante aprueba su aportación (o todos los que faltan).
+  app.post("/api/sim/tanda/pay/:chargeId", async (req, reply) => {
+    if (!o.gateway.simulated) return reply.code(404).send({ error: "no disponible" });
+    const { chargeId } = req.params as { chargeId: string };
+    const [c] = await o.db.select().from(schema.tandaCharges).where(eq(schema.tandaCharges.id, chargeId));
+    if (!c?.providerChargeId || c.status !== "open") return reply.code(409).send({ error: "aportación no disponible" });
+    await o.service.simulatePaid(c.providerChargeId);
+    return { ok: true };
+  });
+  app.post("/api/sim/tanda/pay-all", async (_req, reply) => {
+    if (!o.gateway.simulated) return reply.code(404).send({ error: "no disponible" });
+    const t = await o.service.tanda.activeTanda();
+    if (!t) return reply.code(409).send({ error: "sin tanda activa" });
+    const open = await o.db
+      .select()
+      .from(schema.tandaCharges)
+      .where(and(eq(schema.tandaCharges.tandaId, t.id), eq(schema.tandaCharges.round, t.currentRound), eq(schema.tandaCharges.status, "open")));
+    for (const c of open) if (c.providerChargeId) await o.service.simulatePaid(c.providerChargeId);
+    return { ok: true, paid: open.length };
   });
 
   return app;

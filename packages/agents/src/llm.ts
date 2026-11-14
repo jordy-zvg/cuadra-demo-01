@@ -19,6 +19,9 @@ export const LlmExtraction = z.object({
     "payout",
     "query_balance",
     "query_limit",
+    "start_tanda_round",
+    "query_tanda",
+    "tanda_reminder",
     "out_of_scope",
     "unclear",
   ]),
@@ -42,6 +45,9 @@ Intenciones:
 - payout: quiere pagarle a un proveedor ("paga al de los refrescos $1,200").
 - query_balance: pregunta cuánto le deben (customer_name opcional).
 - query_limit: pregunta cuánto le queda del tope mensual de su cuenta (Nivel 2 Bis).
+- start_tanda_round: quiere arrancar o cobrar la siguiente ronda de la tanda.
+- query_tanda: pregunta cómo va la tanda o quién falta de pagar.
+- tanda_reminder: quiere recordarle a quienes no han aportado a la tanda.
 - out_of_scope: cualquier tema fuera de fiado, cobros, tandas y pagos a proveedores.
 - unclear: falta el cliente o el monto, o hay más de una interpretación; pon en question una pregunta corta en español.
 
@@ -122,7 +128,10 @@ export function toIntent(x: LlmExtraction): Intent {
       return n ? { kind: "query_balance", customer_name: n } : { kind: "query_balance" };
     }
     case "query_limit":
-      return { kind: "query_limit" };
+    case "start_tanda_round":
+    case "query_tanda":
+    case "tanda_reminder":
+      return { kind: x.kind };
     case "out_of_scope":
       return { kind: "out_of_scope" };
     default:

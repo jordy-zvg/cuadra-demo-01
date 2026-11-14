@@ -12,3 +12,4 @@ export * from "./proposals-repo.js";
 export * from "./risk.js";
 export * from "./charges.js";
 export * from "./bank-sim.js";
+export * from "./tandas.js";

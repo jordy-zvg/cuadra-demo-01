@@ -1,5 +1,6 @@
 import { createHash } from "node:crypto";
 import { z } from "zod";
+import { isValidClabe } from "./clabe.js";
 
 export const Provenance = z.enum(["user_direct", "user_voice", "third_party_content"]);
 export type Provenance = z.infer<typeof Provenance>;
@@ -43,13 +44,28 @@ export const CreateMandate = z.object({
   valid_days: z.number().int().min(1).max(365),
 });
 export const RevokeMandate = z.object({ ...base, type: z.literal("RevokeMandate"), mandate_id: id });
-export const CreateTanda = z.object({
+/**
+ * Integrante de tanda: la organizadora captura su CLABE en la página de alta (no el LLM) y la
+ * firma con passkey junto con el orden de turnos. A esa CLABE llegan las aportaciones de su turno.
+ */
+export const TandaMember = z.object({
+  name: text,
+  phone: z.string().regex(/^\d{10}$/, "Celular de 10 dígitos"),
+  clabe: z.string().refine(isValidClabe, "CLABE con dígito verificador inválido"),
+});
+export const CreateTandaObject = z.object({
   ...base,
   type: z.literal("CreateTanda"),
   name: text,
   contribution_cents: CentavosSchema,
-  member_customer_ids: z.array(id).min(2).max(50),
+  period: z.enum(["week", "biweek", "month"]),
+  /** En orden de turno: el integrante i recibe en la ronda i. */
+  members: z.array(TandaMember).min(2).max(20),
 });
+/** Validación completa al crear (sin celulares ni CLABEs repetidos). */
+export const CreateTanda = CreateTandaObject
+  .refine((t) => new Set(t.members.map((m) => m.phone)).size === t.members.length, "Celulares repetidos")
+  .refine((t) => new Set(t.members.map((m) => m.clabe)).size === t.members.length, "CLABEs repetidas");
 export const TandaContribution = z.object({ ...base, type: z.literal("TandaContribution"), tanda_id: id, customer_id: id, amount_cents: CentavosSchema });
 export const TandaPayout = z.object({ ...base, type: z.literal("TandaPayout"), tanda_id: id, payee_id: id, amount_cents: CentavosSchema, concept: text });
 export const RefundCredit = z.object({ ...base, type: z.literal("RefundCredit"), customer_id: id, payee_id: id, amount_cents: CentavosSchema, concept: text });
@@ -69,7 +85,7 @@ export const Proposal = z.discriminatedUnion("type", [
   PayoutRequest,
   CreateMandate,
   RevokeMandate,
-  CreateTanda,
+  CreateTandaObject,
   TandaContribution,
   TandaPayout,
   RefundCredit,

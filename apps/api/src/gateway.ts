@@ -24,6 +24,9 @@ export interface ChargeGateway {
     bank_account_id?: string;
   }): Promise<{ provider_charge_id: string; image_png_base64: string | null }>;
   getTransaction(id: string): Promise<PeyTransaction>;
+  /** Alta de una CLABE como cuenta receptora (pey: POST /bank-account). */
+  registerAccount(r: { clabe: string; name: string; alias: string }): Promise<{ id: string; status: string }>;
+  accountStatus(id: string): Promise<string>;
 }
 
 export class PeyGateway implements ChargeGateway {
@@ -42,6 +45,13 @@ export class PeyGateway implements ChargeGateway {
   getTransaction(id: string) {
     return this.pey.getTransaction(id);
   }
+  async registerAccount(r: { clabe: string; name: string; alias: string }) {
+    const a = await this.pey.registerBankAccount({ alias: r.alias.slice(0, 255), name: r.name.slice(0, 255), clabe: r.clabe, entity: "PERSON" });
+    return { id: a.id, status: a.codiStatus };
+  }
+  async accountStatus(id: string) {
+    return (await this.pey.getBankAccount(id)).codiStatus;
+  }
 }
 
 /**
@@ -53,12 +63,26 @@ export class SimulatedGateway implements ChargeGateway {
   readonly simulated = true;
   constructor(private readonly db: Db) {}
   async requestPayment(r: Parameters<ChargeGateway["requestPayment"]>[0]) {
-    return { provider_charge_id: `simtx_${r.metadata.cuadra_charge_id}` };
+    return { provider_charge_id: `simtx_${r.metadata.cuadra_charge_id ?? r.metadata.cuadra_tanda_charge_id}` };
   }
   async createQr(r: Parameters<ChargeGateway["createQr"]>[0]) {
     return { provider_charge_id: `simqr_${r.metadata.cuadra_charge_id}`, image_png_base64: null };
   }
+  async registerAccount(r: { clabe: string }) {
+    return { id: `simba_${r.clabe.slice(-8)}`, status: "ACTIVE" };
+  }
+  async accountStatus() {
+    return "ACTIVE";
+  }
   async getTransaction(id: string): Promise<PeyTransaction> {
+    const [tc] = await this.db.select().from(schema.tandaCharges).where(eq(schema.tandaCharges.providerChargeId, id));
+    if (tc) {
+      return {
+        id, status: "PAID", amount_cents: tc.amountCents, base_cents: tc.amountCents, tip_cents: 0n, fee_cents: 0n,
+        payment_method: "CODI", payable_type: "API_CODI_PN", payable_id: id, date_paid: new Date(),
+        payer_clabe: null, tracking_key: null, external_metadata: { cuadra_tanda_charge_id: tc.id },
+      };
+    }
     const [c] = await this.db.select().from(schema.charges).where(eq(schema.charges.providerChargeId, id));
     if (!c?.amountCents) throw new Error(`Transacción simulada ${id} no existe`);
     return {

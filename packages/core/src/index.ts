@@ -8,3 +8,4 @@ export * from "./reminder-policy.js";
 export * from "./reconciliation.js";
 export * from "./guard/index.js";
 export * from "./n2bis.js";
+export * from "./tanda.js";

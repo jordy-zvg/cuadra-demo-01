@@ -14,6 +14,10 @@ const cases: Array<[string, Intent]> = [
   ["págale a la panadería 500", { kind: "payout", payee_name: "panadería", amount_cents: 50000 }],
   ["¿Cuánto me debe Doña Lupe?", { kind: "query_balance", customer_name: "Doña Lupe" }],
   ["¿Quién me debe?", { kind: "query_balance" }],
+  ["Cobra la tanda", { kind: "start_tanda_round" }],
+  ["arranca la siguiente ronda", { kind: "start_tanda_round" }],
+  ["¿Cómo va la tanda?", { kind: "query_tanda" }],
+  ["recuérdales la tanda a los que faltan", { kind: "tanda_reminder" }],
   ["cuéntame un chiste", { kind: "out_of_scope" }],
   ["hola", { kind: "unclear" }],
 ];

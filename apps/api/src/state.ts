@@ -1,5 +1,5 @@
-import { type AccountCode, ACCOUNTS, checkBalance } from "@cuadra/core";
-import { type Db, bankSimBalance, inFlightCents, ledgerBalance, schema } from "@cuadra/db";
+import { type AccountCode, ACCOUNTS, checkBalance, potCents } from "@cuadra/core";
+import { type Db, bankSimBalance, inFlightCents, ledgerBalance, schema, tandaMembersOf, tandaRoundStatus } from "@cuadra/db";
 import { desc, eq, sql } from "drizzle-orm";
 
 const s = (v: bigint) => v.toString();
@@ -103,5 +103,34 @@ export async function panelState(db: Db, merchantId: string, opts: { gateway: st
     transfers: transfers.map((x) => ({ id: x.id, amount: s(x.amountCents), status: x.status, payee_id: x.payeeId, concept: x.concept })),
     blocks: { count: blockCount?.n ?? 0, recent: blocks.map((b) => ({ kind: b.kind, provenance: b.provenance, reasons: b.reasons, source: b.source, at: b.createdAt.toISOString() })) },
     messages: msgs.reverse().map((m) => ({ id: m.id, thread: m.thread, direction: m.direction, body: m.body, actions: m.actions, at: m.createdAt.toISOString() })),
+  };
+}
+
+/** Estado de la tanda activa (o la última) para el panel y los teléfonos de los integrantes. */
+export async function tandaState(db: Db, service: { tanda: { activeTanda(): Promise<{ id: string } | null> } }) {
+  const active = await service.tanda.activeTanda();
+  const [t] = active
+    ? await db.select().from(schema.tandas).where(eq(schema.tandas.id, active.id))
+    : await db.select().from(schema.tandas).orderBy(desc(schema.tandas.createdAt)).limit(1);
+  if (!t) return null;
+  const members = await tandaMembersOf(db, t.id);
+  const st = await tandaRoundStatus(db, t);
+  return {
+    id: t.id,
+    name: t.name,
+    status: t.status,
+    round: t.currentRound,
+    members_count: t.membersCount,
+    contribution: t.contributionCents.toString(),
+    pot: potCents(t.contributionCents, t.membersCount).toString(),
+    recipient: st?.recipient ?? null,
+    members: members.map((m) => ({
+      position: m.position,
+      name: m.name,
+      thread: `tanda:${t.id}:${m.position}`,
+      clabe_last4: m.clabe.slice(-4),
+      account: m.bankAccountStatus,
+      state: !st ? "esperando" : m.position === st.recipient ? "recibe" : st.paid.includes(m.position) ? "pagó" : "falta",
+    })),
   };
 }

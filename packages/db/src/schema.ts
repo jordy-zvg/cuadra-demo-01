@@ -267,3 +267,47 @@ export const guardBlocks = pgTable("guard_blocks", {
   source: text("source").notNull().default("chat"),
   createdAt: ts("created_at").notNull().defaultNow(),
 });
+
+export const tandas = pgTable("tandas", {
+  id: text("id").primaryKey(),
+  merchantId: text("merchant_id").notNull(),
+  name: text("name").notNull(),
+  contributionCents: cents("contribution_cents").notNull(),
+  period: text("period").$type<"week" | "biweek" | "month">().notNull(),
+  membersCount: integer("members_count").notNull(),
+  proposalId: text("proposal_id").notNull(),
+  approvalId: text("approval_id").notNull(),
+  currentRound: integer("current_round").notNull().default(0),
+  status: text("status").$type<"active" | "done" | "frozen">().notNull().default("active"),
+  createdAt: ts("created_at").notNull().defaultNow(),
+});
+
+export const tandaMembers = pgTable(
+  "tanda_members",
+  {
+    tandaId: text("tanda_id").notNull(),
+    position: integer("position").notNull(),
+    name: text("name").notNull(),
+    phone: text("phone").notNull(),
+    clabe: text("clabe").notNull(),
+    bankAccountId: text("bank_account_id"),
+    bankAccountStatus: text("bank_account_status").notNull().default("PENDING"),
+  },
+  (t) => [primaryKey({ columns: [t.tandaId, t.position] })],
+);
+
+export const tandaCharges = pgTable("tanda_charges", {
+  id: text("id").primaryKey(),
+  tandaId: text("tanda_id").notNull(),
+  round: integer("round").notNull(),
+  payerPosition: integer("payer_position").notNull(),
+  recipientPosition: integer("recipient_position").notNull(),
+  amountCents: cents("amount_cents").notNull(),
+  provider: text("provider"),
+  providerChargeId: text("provider_charge_id"),
+  status: text("status").$type<"open" | "paid" | "expired" | "mismatch">().notNull().default("open"),
+  transactionId: text("transaction_id").unique(),
+  paidCents: cents("paid_cents"),
+  createdAt: ts("created_at").notNull().defaultNow(),
+  paidAt: ts("paid_at"),
+});

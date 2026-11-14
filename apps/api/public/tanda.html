@@ -1,0 +1,69 @@
+<!doctype html>
+<html lang="es-MX">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Crear tanda</title>
+<style>
+:root{--bg:#f4f1ea;--panel:#fffdf8;--ink:#1d1b16;--muted:#6b665c;--line:#e4ded2;--brand:#0f6b4f;--brand-ink:#fff;--bad:#a1271b;--bad-bg:#fde8e5;--chip:#efe9dd}
+@media (prefers-color-scheme: dark){:root{--bg:#141412;--panel:#1d1c19;--ink:#efeae0;--muted:#a39d91;--line:#33302a;--brand:#3cc492;--brand-ink:#08130e;--bad:#ff8a7d;--bad-bg:#3d1a16;--chip:#2a2824}}
+*{box-sizing:border-box}
+body{margin:0;background:var(--bg);color:var(--ink);font:16px/1.45 system-ui,-apple-system,Segoe UI,Roboto,sans-serif;display:flex;justify-content:center;padding:24px 16px}
+.card{background:var(--panel);border:1px solid var(--line);border-radius:16px;padding:20px;max-width:560px;width:100%}
+h1{font-size:20px;margin:0 0 4px}
+.muted{color:var(--muted);font-size:13px}
+label{display:block;font-size:13px;color:var(--muted);margin-top:10px}
+input,select{width:100%;font:inherit;padding:9px 10px;border-radius:10px;border:1px solid var(--line);background:var(--bg);color:var(--ink);margin-top:4px}
+.row{display:grid;grid-template-columns:1fr 1fr;gap:10px}
+.member{display:grid;grid-template-columns:28px 1fr 1fr 1.4fr 32px;gap:6px;align-items:center;margin-top:8px}
+.member input{margin-top:0;font-size:14px;padding:8px}
+.n{font-weight:600;color:var(--muted);text-align:center}
+button{font:inherit;border:0;border-radius:12px;padding:12px;cursor:pointer;background:var(--brand);color:var(--brand-ink);font-weight:600;width:100%;margin-top:16px}
+button.ghost{background:var(--chip);color:var(--ink);font-weight:500;width:auto;padding:8px 12px;margin-top:10px}
+button.x{background:transparent;color:var(--muted);padding:4px;margin:0;width:auto}
+.msg{border-radius:10px;padding:10px;margin-top:12px;display:none;background:var(--bad-bg);color:var(--bad)}
+@media (max-width:560px){.member{grid-template-columns:22px 1fr 32px}.member input.ph,.member input.cl{grid-column:2 / 3}}
+</style>
+</head>
+<body>
+<div class="card">
+  <h1>Crear tanda sin pozo</h1>
+  <p class="muted">Cada ronda, las aportaciones se cobran por CoDi y llegan directo a la cuenta de quien le toca. Nadie guarda el dinero. Al final firmas con tu huella o rostro el orden y las cuentas: si alguien los cambia, la tanda se congela.</p>
+  <label>Nombre de la tanda<input id="name" placeholder="Tanda del mercado" maxlength="80"></label>
+  <div class="row">
+    <label>Aportación ($)<input id="amount" type="number" min="1" step="0.01" value="500"></label>
+    <label>Periodicidad<select id="period"><option value="week">Semanal</option><option value="biweek">Quincenal</option><option value="month">Mensual</option></select></label>
+  </div>
+  <label>Integrantes en orden de turno (nombre, celular de 10 dígitos y CLABE donde recibe)</label>
+  <div id="members"></div>
+  <button type="button" class="ghost" id="add">+ Agregar integrante</button>
+  <button type="button" id="go">Revisar y firmar</button>
+  <div class="msg" id="out"></div>
+</div>
+<script>
+const $ = (s) => document.querySelector(s);
+function addMember(v = {}) {
+  const d = document.createElement("div");
+  d.className = "member";
+  d.innerHTML = `<span class="n"></span><input class="nm" placeholder="Nombre" maxlength="80"><input class="ph" placeholder="Celular" inputmode="numeric" maxlength="13"><input class="cl" placeholder="CLABE (18 dígitos)" inputmode="numeric" maxlength="22"><button class="x" type="button" title="Quitar">✕</button>`;
+  d.querySelector(".nm").value = v.name || ""; d.querySelector(".ph").value = v.phone || ""; d.querySelector(".cl").value = v.clabe || "";
+  d.querySelector(".x").onclick = () => { d.remove(); renumber(); };
+  $("#members").appendChild(d); renumber();
+}
+function renumber() { [...document.querySelectorAll(".member .n")].forEach((n, i) => (n.textContent = i + 1)); }
+for (let i = 0; i < 3; i++) addMember();
+$("#add").onclick = () => addMember();
+$("#go").onclick = async () => {
+  const members = [...document.querySelectorAll(".member")].map((d) => ({
+    name: d.querySelector(".nm").value.trim(), phone: d.querySelector(".ph").value.trim(), clabe: d.querySelector(".cl").value.trim(),
+  })).filter((m) => m.name || m.phone || m.clabe);
+  const r = await fetch("/api/tanda/propose", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({
+    name: $("#name").value.trim(), contribution_pesos: Number($("#amount").value), period: $("#period").value, members,
+  }) });
+  const j = await r.json().catch(() => ({}));
+  if (!r.ok) { const o = $("#out"); o.textContent = j.error || "Revisa los datos."; o.style.display = "block"; return; }
+  location.href = "/aprobar/" + encodeURIComponent(j.id);
+};
+</script>
+</body>
+</html>

@@ -35,6 +35,10 @@ const PATTERNS: Array<[RegExp, (m: RegExpExecArray) => Intent]> = [
     (m) => ({ kind: "payout", payee_name: clean(m[1]!), amount_cents: cents(m[2]!, m[3]), ...(m[4] && clean(m[4]) ? { concept: clean(m[4]) } : {}) })],
   // "¿Cuánto me debe Doña Lupe?"
   [/^\s*¿?\s*cu[aá]nto\s+(?:me\s+)?debe\s+(.+?)\??$/i, (m) => ({ kind: "query_balance", customer_name: clean(m[1]!) })],
+  // Tanda: "cobra la tanda", "arranca la ronda", "¿cómo va la tanda?", "recuérdales la tanda"
+  [/^\s*(?:c[oó]bra|arranca|empieza|inicia|abre)\s+(?:la\s+)?(?:tanda|ronda|siguiente\s+ronda)\b/i, () => ({ kind: "start_tanda_round" })],
+  [/\b(?:recu[eé]rdales|recordatorio)\b.*\btanda\b/i, () => ({ kind: "tanda_reminder" })],
+  [/\b(?:c[oó]mo\s+va|qui[eé]n\s+(?:falta|ha\s+pagado)|estado\s+de)\b.*\btanda\b|\btanda\b.*\bqui[eé]n\s+falta\b/i, () => ({ kind: "query_tanda" })],
   // "¿Cuánto me queda del tope?", "¿cómo voy con mi cuenta?"
   [/\b(tope|l[ií]mite|nivel\s*2\s*bis)\b/i, () => ({ kind: "query_limit" })],
   // "¿Quién me debe?", "saldos"
