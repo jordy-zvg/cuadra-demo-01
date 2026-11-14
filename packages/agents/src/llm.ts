@@ -9,6 +9,7 @@ import { betaZodOutputFormat } from "@anthropic-ai/sdk/helpers/beta/zod";
 import { parsePesos } from "@cuadra/core";
 import * as z from "zod/v4";
 import { type Intent, type Interpreter } from "./intent.js";
+import { normalizeAmountWords } from "./numbers.js";
 
 export const LlmExtraction = z.object({
   kind: z.enum([
@@ -19,6 +20,7 @@ export const LlmExtraction = z.object({
     "payout",
     "query_balance",
     "query_limit",
+    "create_customer",
     "start_tanda_round",
     "query_tanda",
     "tanda_reminder",
@@ -31,6 +33,8 @@ export const LlmExtraction = z.object({
   amount_as_written: z.string().nullable(),
   concept: z.string().nullable(),
   question: z.string().nullable(),
+  /** Celular tal como lo escribió el comercio (solo para create_customer). */
+  phone_as_written: z.string().nullable(),
 });
 export type LlmExtraction = z.infer<typeof LlmExtraction>;
 
@@ -45,6 +49,7 @@ Intenciones:
 - payout: quiere pagarle a un proveedor ("paga al de los refrescos $1,200").
 - query_balance: pregunta cuánto le deben (customer_name opcional).
 - query_limit: pregunta cuánto le queda del tope mensual de su cuenta (Nivel 2 Bis).
+- create_customer: quiere dar de alta un cliente nuevo ("agrega a Joel, 55 1234 5678"); pon el celular en phone_as_written si lo dio.
 - start_tanda_round: quiere arrancar o cobrar la siguiente ronda de la tanda.
 - query_tanda: pregunta cómo va la tanda o quién falta de pagar.
 - tanda_reminder: quiere recordarle a quienes no han aportado a la tanda.
@@ -93,7 +98,8 @@ export function toIntent(x: LlmExtraction): Intent {
   const cents = (): number | null => {
     if (!x.amount_as_written) return null;
     try {
-      const c = parsePesos(x.amount_as_written.replace(/\s*(pesos|varos|mxn)\s*$/i, ""));
+      // "cinco pesos" → "$5" (código determinista); "$1,250.50" queda igual.
+      const c = parsePesos(normalizeAmountWords(x.amount_as_written.trim()).replace(/\s*(pesos|varos|mxn)\s*$/i, ""));
       return c > 0n && c <= 100_000_000n ? Number(c) : null;
     } catch {
       return null;
@@ -126,6 +132,12 @@ export function toIntent(x: LlmExtraction): Intent {
     case "query_balance": {
       const n = name(x.customer_name);
       return n ? { kind: "query_balance", customer_name: n } : { kind: "query_balance" };
+    }
+    case "create_customer": {
+      const n = name(x.customer_name);
+      if (!n) return unclear("¿Cómo se llama el cliente?");
+      const d = (x.phone_as_written ?? "").replace(/\D/g, "");
+      return { kind: "create_customer", customer_name: n, ...(d.length >= 10 ? { phone: d.slice(-10) } : {}) };
     }
     case "query_limit":
     case "start_tanda_round":

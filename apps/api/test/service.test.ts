@@ -162,6 +162,42 @@ describe("fiado y cobro con pey", () => {
   });
 });
 
+describe("clientes nuevos y montos con letra", () => {
+  it("fiado a un nombre desconocido: un Confirmar da de alta y anota el fiado", async () => {
+    const f = await setup();
+    await f.svc.handleMerchantMessage("El señor Joel se llevó cinco pesos");
+    expect((await f.msgs()).at(-1)!.body).toMatch(/No tengo a “Señor Joel”.*¿Lo doy de alta y le anoto \$5\.00/);
+    await f.svc.confirm(await f.lastAction());
+    const [joel] = await f.db.select().from(schema.customers).where(eq(schema.customers.name, "Señor Joel"));
+    expect(joel).toMatchObject({ phone: null, optIn: false });
+    expect(await ledgerBalance(f.db, M, "1200", joel!.id)).toBe(500n);
+    expect((await f.msgs()).at(-1)!.body).toMatch(/di de alta a Señor Joel.*Te debe \$5\.00.*QR para Señor Joel/);
+    // Un segundo clic no duplica ni al cliente ni el fiado.
+    await f.svc.confirm(await f.lastAction());
+    expect(await f.db.select().from(schema.customers).where(eq(schema.customers.name, "Señor Joel"))).toHaveLength(1);
+    expect(await ledgerBalance(f.db, M, "1200", joel!.id)).toBe(500n);
+  });
+
+  it("“Agrega a Rosa, 55…” da de alta con celular; si ya existe, lo dice", async () => {
+    const f = await setup();
+    await f.svc.handleMerchantMessage("Agrega a Rosa, 55 9876 5432");
+    expect((await f.msgs()).at(-1)!.body).toMatch(/Doy de alta a Rosa con celular 5598765432/);
+    await f.svc.confirm(await f.lastAction());
+    const [rosa] = await f.db.select().from(schema.customers).where(eq(schema.customers.name, "Rosa"));
+    expect(rosa!.phone).toBe("+525598765432");
+    await f.svc.handleMerchantMessage("Agrega a Doña Lupe");
+    expect((await f.msgs()).at(-1)!.body).toMatch(/Ya tengo a Doña Lupe/);
+  });
+
+  it("QR o cobro a un desconocido: ofrece darlo de alta con un botón", async () => {
+    const f = await setup();
+    await f.svc.handleMerchantMessage("QR para Pedro");
+    const m = (await f.msgs()).at(-1)!;
+    expect(m.body).toMatch(/No tengo a “Pedro”.*Agrega a Pedro/);
+    expect(m.actions![0]).toMatchObject({ kind: "say", text: "Agrega a Pedro" });
+  });
+});
+
 describe("QR en mostrador y un solo cobro abierto", () => {
   it("QR por el saldo; mientras esté abierto no se emite otro cobro; el pago lo cierra", async () => {
     const f = await setup();

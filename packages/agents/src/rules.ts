@@ -1,4 +1,5 @@
 import type { Intent, Interpreter } from "./intent.js";
+import { normalizeAmountWords } from "./numbers.js";
 
 /**
  * Intérprete determinista para español mexicano coloquial. Es el respaldo de la demo y la
@@ -41,6 +42,13 @@ const PATTERNS: Array<[RegExp, (m: RegExpExecArray) => Intent]> = [
   [/\b(?:c[oó]mo\s+va|qui[eé]n\s+(?:falta|ha\s+pagado)|estado\s+de)\b.*\btanda\b|\btanda\b.*\bqui[eé]n\s+falta\b/i, () => ({ kind: "query_tanda" })],
   // "¿Cuánto me queda del tope?", "¿cómo voy con mi cuenta?"
   [/\b(tope|l[ií]mite|nivel\s*2\s*bis)\b/i, () => ({ kind: "query_limit" })],
+  // "Agrega a Joel, 55 1234 5678", "da de alta a Joel", "nuevo cliente Joel cel 5512345678"
+  [/^\s*(?:agrega(?:r)?|registra(?:r)?|da(?:r)?\s+de\s+alta|alta\s+(?:de|a)|nuevo\s+cliente)\s+(?:a(?:l)?\s+)?(?:cliente\s+)?(.+?)(?:[,\s]+(?:cel(?:ular)?|tel(?:[eé]fono)?|n[uú]mero)?[:\s]*(\+?\d[\d\s-]{8,}\d))?\s*$/i,
+    (m) => {
+      const d = (m[2] ?? "").replace(/\D/g, "");
+      const phone = d.length >= 10 ? d.slice(-10) : undefined;
+      return { kind: "create_customer", customer_name: clean(m[1]!), ...(phone ? { phone } : {}) };
+    }],
   // "¿Quién me debe?", "saldos"
   [/^\s*¿?\s*(?:qui[eé]n(?:es)?\s+me\s+deben?|saldos|c[oó]mo\s+voy)\s*\??$/i, () => ({ kind: "query_balance" })],
 ];
@@ -48,7 +56,8 @@ const PATTERNS: Array<[RegExp, (m: RegExpExecArray) => Intent]> = [
 export class RuleInterpreter implements Interpreter {
   readonly name = "rules";
   async interpret(text: string): Promise<Intent> {
-    const t = text.trim().replace(/\s+/g, " ");
+    // "cinco pesos" → "$5": los montos con letra se leen igual que los escritos con número.
+    const t = normalizeAmountWords(text.trim().replace(/\s+/g, " "));
     if (OUT_OF_SCOPE.test(t)) return { kind: "out_of_scope" };
     for (const [re, build] of PATTERNS) {
       const m = re.exec(t);
