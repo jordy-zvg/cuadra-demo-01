@@ -29,7 +29,9 @@ class FakeWhatsApp {
     this.sent.push({ to, body, buttons });
     return "wamid";
   }
+  templatesPending = false;
   async sendTemplate(to: string, name: string, language: string, params: string[]) {
+    if (this.templatesPending) throw new WhatsAppApiError(400, 132001, "Template name does not exist in the translation");
     this.templates.push({ to, name, language, params });
     return "wamid";
   }
@@ -169,6 +171,18 @@ describe("canal WhatsApp", () => {
 
     // Cada envío trae exactamente las variables que la plantilla espera.
     for (const t of f.wa.templates) expect(t.params).toHaveLength(templateArity(t.name as TemplateName));
+  });
+
+  it("plantilla sin aprobar: al cliente se le intenta con texto normal", async () => {
+    const f = await setup();
+    f.wa.templatesPending = true;
+    await f.channel.handleInbound([f.text("Doña Lupe se llevó $185")], f.svc);
+    await f.channel.handleInbound([{ kind: "button", id: "b1", from: OWNER_WA, button_id: f.wa.sent.at(-1)!.buttons[0]!.id }], f.svc);
+    await f.channel.handleInbound([f.text("Cóbrale a Doña Lupe")], f.svc);
+    await f.channel.handleInbound([{ kind: "button", id: "b2", from: OWNER_WA, button_id: f.wa.sent.at(-1)!.buttons[0]!.id }], f.svc);
+    const toLupe = f.wa.sent.filter((m) => m.to === "525512345678");
+    expect(toLupe.at(-1)!.body).toMatch(/Tu cuenta va en \$185\.00/);
+    expect(f.logs.some((l) => l.msg === "whatsapp_template_failed")).toBe(true);
   });
 
   it("si la ventana de 24 h del comercio ya cerró, le llega el aviso genérico", async () => {

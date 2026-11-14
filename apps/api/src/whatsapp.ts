@@ -41,8 +41,16 @@ export class WhatsAppChannel implements OutboundChannel {
     // 52... a 521... por su cuenta (probado el 14-nov-2026).
     const to = `52${msg.phone10}`;
     if (msg.template && !comercio) {
-      await this.d.client.sendTemplate(to, msg.template.name, TEMPLATE_LANGUAGE, msg.template.params);
-      return;
+      try {
+        await this.d.client.sendTemplate(to, msg.template.name, TEMPLATE_LANGUAGE, msg.template.params);
+        return;
+      } catch (e) {
+        // Plantilla aún sin aprobar (o rechazada): si el cliente escribió en las últimas 24 h, el texto
+        // normal sí entra. Si tampoco, el error se registra y el flujo del dinero sigue igual.
+        this.d.log({ msg: "whatsapp_template_failed", template: msg.template.name, code: e instanceof WhatsAppApiError ? e.code : null });
+        await this.d.client.sendText(to, msg.body);
+        return;
+      }
     }
     const buttons: WhatsAppButton[] = [];
     const links: string[] = [];
