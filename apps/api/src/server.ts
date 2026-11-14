@@ -58,7 +58,10 @@ export function buildServer(o: ServerOpts): FastifyInstance {
     return { ok: true };
   });
 
-  app.get("/api/state", async () => panelState(o.db, o.merchantId, { gateway: o.gateway.name, simulated: o.gateway.simulated, bankSim: o.bankSim }));
+  app.get("/api/state", async () => ({
+    ...(await panelState(o.db, o.merchantId, { gateway: o.gateway.name, simulated: o.gateway.simulated, bankSim: o.bankSim })),
+    n2bis: await o.service.n2bis().then((s) => s && { pct: s.pct, level: s.level, limit: s.limit_cents.toString(), received: s.received_cents.toString(), remaining: s.remaining_cents.toString(), message: s.message }),
+  }));
 
   app.post("/webhooks/pey", async (req, reply) => {
     const headers = Object.fromEntries(Object.entries(req.headers).map(([k, v]) => [k, Array.isArray(v) ? v[0] : v]));

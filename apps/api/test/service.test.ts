@@ -57,7 +57,7 @@ async function setup(gateway?: (db: Awaited<ReturnType<typeof createTestDb>>["db
   const gw = gateway ? gateway(db) : new FakePey();
   const svc = new CuadraService({
     db, merchantId: M, ownerId: DEMO.ownerId, interpreters: [new RuleInterpreter(), new RuleInterpreter(), new RuleInterpreter()],
-    gateway: gw, verify: async () => false, now: () => NOW, publicUrl: null, peyWebhookSecret: SECRET, bankSim: false, log: () => {},
+    gateway: gw, verify: async () => false, now: () => NOW, publicUrl: null, peyWebhookSecret: SECRET, bankSim: false, udi: 8_500_000n, log: () => {},
   });
   const msgs = async (thread = "comercio") =>
     (await db.select().from(schema.messages).where(eq(schema.messages.thread, thread)).orderBy(schema.messages.id)).map((m) => m);
@@ -186,6 +186,23 @@ describe("QR en mostrador y un solo cobro abierto", () => {
     await f.svc.handleMerchantMessage("Cóbrale a Doña Lupe");
     await f.svc.confirm(await f.lastAction());
     expect((f.gw as FakePey).pushes[0]).toMatchObject({ bank_account_id: "01JBAVWE4NS5TGXHWGMX3KH23Q" });
+  });
+});
+
+describe("monitor Nivel 2 Bis", () => {
+  it("consulta y aviso al rebasar 70 % del tope del mes", async () => {
+    const f = await setup();
+    await f.svc.handleMerchantMessage("¿Cuánto me queda del tope?");
+    expect((await f.msgs()).at(-1)!.body).toMatch(/0% del tope mensual de tu cuenta Nivel 2 Bis; te quedan \$127,500\.00/);
+    // Fiado y pago de $90,000 (70.5 % de $127,500 con UDI de prueba = 8.5).
+    await f.svc.handleMerchantMessage("Doña Lupe se llevó $90,000");
+    await f.svc.confirm(await f.lastAction());
+    await f.svc.handleMerchantMessage("Cóbrale a Doña Lupe");
+    await f.svc.confirm(await f.lastAction());
+    (f.gw as FakePey).pay("01TX1");
+    const [raw, h] = webhook({ type: "codi.pn.payment_received", transactionId: "01TX1", amount: 90000 });
+    await f.svc.handlePeyWebhook(raw, h);
+    expect((await f.msgs()).at(-1)!.body).toMatch(/Ojo: vas en 70% del tope/);
   });
 });
 

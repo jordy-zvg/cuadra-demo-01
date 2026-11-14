@@ -15,7 +15,11 @@ detiene un guard determinista que explica por qué.
 - **Banxico homologó la experiencia CoDi:** el mismo flujo en cualquier banco, y todos los bancos deben
   habilitarlo a más tardar el **14 de diciembre**. Pagar con QR o con una solicitud al celular ya es más fácil
   que capturar una CLABE.
-- **Cuenta N2:** pagos digitales de alrededor de 130 mil pesos al mes sin mezclarlos con la fiscalización.
+- **Cuenta Nivel 2 Bis** ([comunicado de Banxico, 17-jun-2026](https://www.banxico.org.mx/publicaciones-y-prensa/miscelaneos/%7BEA247344-5771-6144-71DC-5688A28E78A1%7D.pdf)):
+  pequeños comercios pueden recibir hasta **15,000 UDIs al mes** (~$134 mil), de las cuales **al menos 12,000
+  deben venir de pagos digitales**; más de 4.4 millones de comercios podrían usarla. Alguien tiene que vigilar
+  esos topes todos los días: **Cuadra lo hace desde el lado del comercio** (panel y aviso en el chat al pasar
+  del 70 % y del 90 %; “¿cuánto me queda del tope?”), y al pasar el fiado a CoDi ayuda a cumplir la parte digital.
 - **pey pone el cobro** (solicitud CoDi al celular, QR, cuenta receptora por cobro); **Cuadra pone el producto**:
   el agente que cobra sin mandar un QR, lleva el fiado y concilia solo.
 
@@ -96,5 +100,6 @@ DATABASE_URL=postgres://... pnpm start:api        # http://localhost:3000
 DATABASE_URL=postgres://... pnpm start:executor
 ```
 
-Variables: ver [.env.example](./.env.example). Secretos (`PEY_API_KEY`, `PEY_WEBHOOK_SECRET`) solo por
+Variables: ver [.env.example](./.env.example). `UDI_VALOR` es el valor de la UDI de Banxico (serie SP68257);
+en producción está en 8.927827 (publicado para el 25-nov-2026) y se actualiza a mano. Secretos (`PEY_API_KEY`, `PEY_WEBHOOK_SECRET`) solo por
 variables de entorno; nunca en el repo.

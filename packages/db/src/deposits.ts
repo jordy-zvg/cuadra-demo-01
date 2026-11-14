@@ -6,7 +6,7 @@ import {
   identificarAbono,
   matchDeposit,
 } from "@cuadra/core";
-import { and, eq, isNull } from "drizzle-orm";
+import { and, eq, gte, isNull, sql } from "drizzle-orm";
 import type { Db } from "./client.js";
 import { ledgerBalance, postEntries } from "./ledger-repo.js";
 import { charges, customerOrderingClabes, customers, deposits } from "./schema.js";
@@ -116,6 +116,15 @@ export async function identifyDeposit(db: Db, merchantId: string, claveRastreo: 
     await tx.update(deposits).set({ customerId, matchMethod: "manual" }).where(eq(deposits.id, dep.id));
     await closePaidCharges(tx, merchantId, customerId);
   });
+}
+
+/** Abonos recibidos (digitales) del comercio desde una fecha. */
+export async function depositsSince(db: Db, merchantId: string, since: Date): Promise<bigint> {
+  const [r] = await db
+    .select({ s: sql<string>`coalesce(sum(${deposits.amountCents}), 0)::text` })
+    .from(deposits)
+    .where(and(eq(deposits.merchantId, merchantId), gte(deposits.receivedAt, since)));
+  return BigInt(r?.s ?? "0");
 }
 
 /** Abonos pendientes de identificar (cola de revisión). */

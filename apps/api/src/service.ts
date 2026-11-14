@@ -13,6 +13,9 @@ import {
   evaluateReminder,
   fiado,
   formatMXN,
+  mxPeriodStart,
+  n2bisStatus,
+  type UdiMicro,
 } from "@cuadra/core";
 import {
   type AssertionVerifier,
@@ -21,6 +24,7 @@ import {
   attachProviderCharge,
   bankSimCredit,
   customerPhone10,
+  depositsSince,
   globalKillSwitch,
   insertCharge,
   ledgerBalance,
@@ -50,6 +54,8 @@ export interface ServiceDeps {
   peyWebhookSecret: string | null;
   /** Los cobros recibidos también entran a la cuenta operativa simulada (demo). */
   bankSim: boolean;
+  /** Valor de la UDI (millonésimas de peso) para el monitor Nivel 2 Bis; null si no se configuró. */
+  udi: UdiMicro | null;
   log: (r: Record<string, unknown>) => void;
 }
 
@@ -188,6 +194,11 @@ export class CuadraService {
       case "query_balance":
         await this.answerBalance(intent.customer_name);
         return;
+      case "query_limit": {
+        const s = await this.n2bis();
+        await this.say("comercio", s ? s.message : "No tengo configurado el valor de la UDI para calcular tu tope Nivel 2 Bis.");
+        return;
+      }
       case "charge_qr": {
         const r = await this.resolve(await this.customers(), intent.customer_name);
         if (!r.ok) {
@@ -516,9 +527,18 @@ export class CuadraService {
       const rest = bal > 0n ? `Te falta ${formatMXN(bal)}.` : fav > 0n ? `Quedas al corriente y con ${formatMXN(fav)} a favor.` : "Quedas al corriente. ¡Gracias!";
       await this.say(cid, `🧾 Recibo: pagaste ${amount}. ${rest}`);
       await this.say("comercio", `💰 ${c?.name} pagó ${amount} por CoDi. Conciliado solo${bal > 0n ? `; aún debe ${formatMXN(bal)}` : "; queda en ceros"}.`);
+      const s = await this.n2bis();
+      if (s && s.level !== "ok") await this.say("comercio", `📈 ${s.message}`);
     } else {
       await this.say("comercio", `💰 Llegó un pago de ${amount} que no pude asignar. Quedó en “por identificar” (1300) para revisión.`);
     }
+  }
+
+  /** Tope mensual Nivel 2 Bis con los abonos digitales del mes (CDMX). */
+  async n2bis() {
+    if (this.d.udi === null) return null;
+    const digital = await depositsSince(this.d.db, this.d.merchantId, mxPeriodStart(this.d.now(), "month"));
+    return n2bisStatus({ udi: this.d.udi, digital_cents: digital, non_digital_cents: 0n });
   }
 
   // ---------- estado ----------

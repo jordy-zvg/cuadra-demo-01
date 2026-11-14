@@ -18,6 +18,7 @@ export const LlmExtraction = z.object({
     "charge_qr",
     "payout",
     "query_balance",
+    "query_limit",
     "out_of_scope",
     "unclear",
   ]),
@@ -40,6 +41,7 @@ Intenciones:
 - charge_qr: quiere un QR para que el cliente pague ahí mismo ("QR para Lupe", "cóbrale con QR a Beto").
 - payout: quiere pagarle a un proveedor ("paga al de los refrescos $1,200").
 - query_balance: pregunta cuánto le deben (customer_name opcional).
+- query_limit: pregunta cuánto le queda del tope mensual de su cuenta (Nivel 2 Bis).
 - out_of_scope: cualquier tema fuera de fiado, cobros, tandas y pagos a proveedores.
 - unclear: falta el cliente o el monto, o hay más de una interpretación; pon en question una pregunta corta en español.
 
@@ -119,6 +121,8 @@ export function toIntent(x: LlmExtraction): Intent {
       const n = name(x.customer_name);
       return n ? { kind: "query_balance", customer_name: n } : { kind: "query_balance" };
     }
+    case "query_limit":
+      return { kind: "query_limit" };
     case "out_of_scope":
       return { kind: "out_of_scope" };
     default:

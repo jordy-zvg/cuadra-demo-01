@@ -1,4 +1,5 @@
 import { PeyClient, verifyProposalAssertion } from "@cuadra/adapters";
+import { parseUdiValue } from "@cuadra/core";
 import { AnthropicInterpreter, FallbackInterpreter, type Interpreter, RuleInterpreter } from "@cuadra/agents";
 import { connectPostgres, migratePostgres } from "@cuadra/db/node";
 import { schema, seedDemo } from "@cuadra/db";
@@ -52,6 +53,7 @@ async function main(): Promise<void> {
     publicUrl,
     peyWebhookSecret: env("PEY_WEBHOOK_SECRET") ?? null,
     bankSim,
+    udi: env("UDI_VALOR") ? parseUdiValue(env("UDI_VALOR")!) : null,
     log,
   });
   const app = buildServer({

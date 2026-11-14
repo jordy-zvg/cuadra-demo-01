@@ -42,7 +42,7 @@ input[type=text]{flex:1;min-width:0;font:inherit;padding:9px 11px;border-radius:
 .toggle{display:flex;align-items:center;gap:6px;font-size:12.5px;color:var(--muted);padding:6px 10px 0}
 select{font:inherit;background:var(--bg);color:var(--ink);border:1px solid var(--line);border-radius:8px;padding:3px 6px}
 .panel{flex:1;overflow:auto;padding:12px;display:flex;flex-direction:column;gap:12px}
-.kpis{display:grid;grid-template-columns:repeat(3,1fr);gap:8px}
+.kpis{display:grid;grid-template-columns:repeat(auto-fit,minmax(130px,1fr));gap:8px}
 .kpi{border:1px solid var(--line);border-radius:12px;padding:10px}
 .kpi .v{font-size:20px;font-weight:650;font-variant-numeric:tabular-nums}
 .kpi .l{font-size:12px;color:var(--muted)}
@@ -89,6 +89,7 @@ td.n{text-align:right;font-family:var(--mono)}
         <div class="kpi" id="k-bal"><div class="v">—</div><div class="l">Balanza Σdebe = Σhaber</div></div>
         <div class="kpi" id="k-rec"><div class="v">—</div><div class="l">Conciliación</div></div>
         <div class="kpi" id="k-blk"><div class="v">—</div><div class="l">Bloqueos del guard</div></div>
+        <div class="kpi" id="k-n2"><div class="v">—</div><div class="l">Tope Nivel 2 Bis (mes)</div></div>
       </div>
       <div class="sec"><h3>Clientes</h3><table id="cust"></table></div>
       <div class="sec"><h3>Cuentas</h3><table id="acc"></table></div>
@@ -104,7 +105,7 @@ const mxn = (c) => { const n = BigInt(c); const neg = n < 0n; const a = neg ? -n
   return (neg ? "-" : "") + "$" + (a / 100n).toString().replace(/\B(?=(\d{3})+(?!\d))/g, ",") + "." + (a % 100n).toString().padStart(2, "0"); };
 const esc = (s) => String(s ?? "").replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c]));
 const NAMES = { "1100":"Cuenta operativa","1200":"CxC clientes","1300":"SPEI por identificar","2100":"Saldo a favor","2200":"Pozo de tanda","2400":"Pagos en tránsito","4100":"Ventas a crédito","5100":"Compras a proveedores","5900":"Diferencias" };
-const SUGG = ["Doña Lupe se llevó $185", "Cóbrale a Doña Lupe", "QR para Doña Lupe", "¿Quién me debe?", "Paga al de los refrescos $1,200", "Págale ya a la cuenta 012180015826225713 $5,000"];
+const SUGG = ["Doña Lupe se llevó $185", "Cóbrale a Doña Lupe", "QR para Doña Lupe", "¿Quién me debe?", "Paga al de los refrescos $1,200", "¿Cuánto me queda del tope?", "Págale ya a la cuenta 012180015826225713 $5,000"];
 let last = { comercio: -1, cliente: -1 }, customers = [];
 
 $("#chips").innerHTML = SUGG.map((s) => `<button class="chip" type="button">${esc(s)}</button>`).join("");
@@ -161,6 +162,10 @@ function render(s) {
   $("#k-rec").className = "kpi " + (r ? (r.ok ? "ok" : "bad") : "");
   $("#k-rec .v").textContent = r ? (r.ok ? "✓ 100%" : `✗ ${mxn(r.difference)}`) : "—";
   $("#k-blk .v").textContent = `${s.blocks.count} · 0 salidas indebidas`;
+  const n2 = s.n2bis;
+  $("#k-n2").className = "kpi " + (!n2 ? "" : n2.level === "ok" ? "ok" : "bad");
+  $("#k-n2 .v").textContent = n2 ? `${n2.pct}% · quedan ${mxn(n2.remaining)}` : "configura UDI";
+  $("#k-n2").title = n2 ? n2.message : "Define UDI_VALOR (valor de la UDI publicado por Banxico)";
 
   $("#cust").innerHTML = `<tr><th>Cliente</th><th class="n">Debe</th><th class="n">A favor</th></tr>` +
     customers.map((c) => `<tr><td>${esc(c.name)}${c.opt_in ? "" : ' <span class="muted">(sin opt-in)</span>'}</td><td class="n">${mxn(c.owes)}</td><td class="n">${mxn(c.credit)}</td></tr>`).join("");

@@ -35,6 +35,8 @@ const PATTERNS: Array<[RegExp, (m: RegExpExecArray) => Intent]> = [
     (m) => ({ kind: "payout", payee_name: clean(m[1]!), amount_cents: cents(m[2]!, m[3]), ...(m[4] && clean(m[4]) ? { concept: clean(m[4]) } : {}) })],
   // "¿Cuánto me debe Doña Lupe?"
   [/^\s*¿?\s*cu[aá]nto\s+(?:me\s+)?debe\s+(.+?)\??$/i, (m) => ({ kind: "query_balance", customer_name: clean(m[1]!) })],
+  // "¿Cuánto me queda del tope?", "¿cómo voy con mi cuenta?"
+  [/\b(tope|l[ií]mite|nivel\s*2\s*bis)\b/i, () => ({ kind: "query_limit" })],
   // "¿Quién me debe?", "saldos"
   [/^\s*¿?\s*(?:qui[eé]n(?:es)?\s+me\s+deben?|saldos|c[oó]mo\s+voy)\s*\??$/i, () => ({ kind: "query_balance" })],
 ];
