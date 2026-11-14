@@ -1,0 +1,54 @@
+/**
+ * Proceso executor: ÚNICO con credenciales del proveedor de pagos.
+ * Consume la cola "outflows" (solo { proposal_id }) y revalida todo antes de enviar.
+ */
+import { MockPaymentProvider, type PaymentProvider, verifyProposalAssertion } from "@cuadra/adapters";
+import { connectPostgres } from "@cuadra/db/node";
+import { Worker } from "bullmq";
+import { Redis } from "ioredis";
+import { executeOutflow } from "./execute.js";
+
+export const OUTFLOW_QUEUE = "outflows";
+
+function env(name: string): string {
+  const v = process.env[name];
+  if (!v) throw new Error(`Falta la variable de entorno ${name}`);
+  return v;
+}
+
+function log(record: Record<string, unknown>): void {
+  process.stdout.write(`${JSON.stringify({ ts: new Date().toISOString(), service: "executor", ...record })}\n`);
+}
+
+function buildProvider(): PaymentProvider {
+  const kind = env("PAYMENTS_PROVIDER");
+  if (kind === "mock") return new MockPaymentProvider(env("MOCK_WEBHOOK_SECRET"));
+  throw new Error(`Proveedor de pagos no soportado: ${kind}`);
+}
+
+async function main(): Promise<void> {
+  const { db } = await connectPostgres(env("DATABASE_URL"));
+  const provider = buildProvider();
+  const config = { rpID: env("WEBAUTHN_RP_ID"), origins: env("WEBAUTHN_ORIGINS").split(",") };
+  const connection = new Redis(env("REDIS_URL"), { maxRetriesPerRequest: null });
+
+  const worker = new Worker(
+    OUTFLOW_QUEUE,
+    (job) =>
+      executeOutflow(job.data, {
+        db,
+        provider,
+        verify: (a) => verifyProposalAssertion({ ...a, config }),
+        now: () => new Date(),
+        log,
+      }),
+    { connection, concurrency: 1 },
+  );
+  worker.on("failed", (job, err) => log({ msg: "job_failed", job_id: job?.id, error: err.message }));
+  log({ msg: "executor_started", provider: provider.name });
+}
+
+main().catch((e: unknown) => {
+  log({ msg: "fatal", error: e instanceof Error ? e.message : String(e) });
+  process.exit(1);
+});

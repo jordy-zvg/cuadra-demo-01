@@ -147,3 +147,28 @@ describe("proposals", () => {
     expect(canonicalJson({ b: [1n, null], a: undefined, c: "x" })).toBe('{"b":["1",null],"c":"x"}');
   });
 });
+
+describe("adiciones: periodos, en vuelo y salidaCreada", async () => {
+  const { mxPeriodStart, salidaCreada, LedgerError } = await import("../src/index.js");
+  it("inicio de periodo en CDMX", () => {
+    // sábado 14 nov 2026, 23:30 CDMX = domingo 05:30 UTC
+    const now = new Date("2026-11-15T05:30:00Z");
+    expect(mxPeriodStart(now, "day").toISOString()).toBe("2026-11-14T06:00:00.000Z");
+    expect(mxPeriodStart(now, "week").toISOString()).toBe("2026-11-09T06:00:00.000Z");
+    expect(mxPeriodStart(now, "month").toISOString()).toBe("2026-11-01T06:00:00.000Z");
+    expect(mxPeriodStart(at("10:00", "2026-11-09"), "week").toISOString()).toBe("2026-11-09T06:00:00.000Z");
+    expect(mxPeriodStart(at("10:00", "2026-11-15"), "week").toISOString()).toBe("2026-11-09T06:00:00.000Z");
+  });
+  it("checkBalance descuenta lo enviado y no confirmado", () => {
+    expect(checkBalance(1000n, 700n, 300n).ok).toBe(true);
+    expect(checkBalance(1000n, 700n, 0n)).toMatchObject({ ok: false, difference: 300n });
+  });
+  it("salidaCreada según propósito", () => {
+    const b = { merchant_id: "m", idempotency_key: "k", amount: 10n };
+    expect(salidaCreada({ ...b, purpose: "proveedor" }).kind).toBe("pago_proveedor_creado");
+    expect(salidaCreada({ ...b, purpose: "tanda", tanda_id: "t" }).kind).toBe("tanda_dispersion");
+    expect(salidaCreada({ ...b, purpose: "devolucion", customer_id: "c" }).kind).toBe("devolucion_saldo_a_favor");
+    expect(() => salidaCreada({ ...b, purpose: "tanda" })).toThrow(LedgerError);
+    expect(() => salidaCreada({ ...b, purpose: "devolucion" })).toThrow(LedgerError);
+  });
+});

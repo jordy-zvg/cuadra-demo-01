@@ -220,3 +220,19 @@ export function appendEntries(
   }
   return out;
 }
+
+/** Asiento de creación de una salida según su propósito (los tres acreditan 2400). */
+export function salidaCreada(
+  b: Base & { purpose: "proveedor" | "tanda" | "devolucion"; tanda_id?: string; customer_id?: string },
+): JournalEntry {
+  switch (b.purpose) {
+    case "proveedor":
+      return pagoProveedorCreado(b);
+    case "tanda":
+      if (!b.tanda_id) throw new LedgerError("Dispersión de tanda sin tanda_id");
+      return tandaDispersion({ ...b, tanda_id: b.tanda_id });
+    case "devolucion":
+      if (!b.customer_id) throw new LedgerError("Devolución sin customer_id");
+      return devolucionSaldoAFavor({ ...b, customer_id: b.customer_id });
+  }
+}

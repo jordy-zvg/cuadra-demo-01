@@ -67,14 +67,22 @@ export function matchDeposit(d: Deposit, ctx: MatchContext): MatchResult {
 
 export interface BalanceCheck {
   ok: boolean;
-  /** ledger − proveedor. */
+  /** (ledger − en vuelo) − proveedor. */
   difference: Centavos;
   freeze_outflows: boolean;
 }
 
-/** Principio 9: si el ledger (1100) ≠ saldo del proveedor, se congelan salidas. */
-export function checkBalance(ledger_1100: Centavos, provider_balance: Centavos): BalanceCheck {
-  const difference = ledger_1100 - provider_balance;
+/**
+ * Principio 9: si el ledger (1100) ≠ saldo del proveedor, se congelan salidas.
+ * in_flight: transferencias ya enviadas (el proveedor ya las debitó) que aún no se
+ * confirman; la 1100 solo baja al confirmarse, así que se descuentan para comparar.
+ */
+export function checkBalance(
+  ledger_1100: Centavos,
+  provider_balance: Centavos,
+  in_flight: Centavos = 0n,
+): BalanceCheck {
+  const difference = ledger_1100 - in_flight - provider_balance;
   const ok = difference === 0n;
   return { ok, difference, freeze_outflows: !ok };
 }

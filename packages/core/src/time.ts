@@ -37,3 +37,18 @@ export function isWithinMxHours(d: Date, fromHour: number, toHour: number): bool
 
 export const HOUR_MS = 60 * 60 * 1000;
 export const MINUTE_MS = 60 * 1000;
+
+/**
+ * Inicio del periodo (día, semana que empieza en lunes, o mes) en hora de CDMX.
+ * America/Mexico_City no tiene horario de verano desde 2022: UTC−6 fijo.
+ */
+export function mxPeriodStart(now: Date, period: "day" | "week" | "month"): Date {
+  const key = mxDateKey(now);
+  const [y, m, d] = key.split("-").map(Number) as [number, number, number];
+  let start = new Date(Date.UTC(y, m - 1, period === "month" ? 1 : d));
+  if (period === "week") {
+    const dow = (start.getUTCDay() + 6) % 7; // lunes = 0
+    start = new Date(start.getTime() - dow * 24 * HOUR_MS);
+  }
+  return new Date(start.getTime() + 6 * HOUR_MS);
+}
