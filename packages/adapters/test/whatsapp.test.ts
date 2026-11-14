@@ -82,7 +82,7 @@ describe("WhatsAppClient", () => {
     const f = fake(ok());
     const id = await new WhatsAppClient({ token: "t", phoneNumberId: "PN1", fetch: f.fn }).sendText("525512345678", "hola");
     expect(id).toBe("wamid.1");
-    expect(f.calls[0]!.url).toBe("https://graph.facebook.com/v27.0/PN1/messages");
+    expect(f.calls[0]!.url).toBe("https://graph.facebook.com/v25.0/PN1/messages");
     expect((f.calls[0]!.init.headers as Record<string, string>).Authorization).toBe("Bearer t");
     expect(JSON.parse(String(f.calls[0]!.init.body))).toEqual({
       messaging_product: "whatsapp", recipient_type: "individual", to: "525512345678", type: "text", text: { body: "hola", preview_url: true },
@@ -125,7 +125,7 @@ describe("WhatsAppClient", () => {
     const c = new WhatsAppClient({ token: "t", phoneNumberId: "PN1", fetch: fn });
     const id = await c.uploadMedia(new Uint8Array([1, 2, 3]), "image/png");
     await c.sendImage("52", id, "QR de $185.00");
-    expect(calls[0]!.url).toBe("https://graph.facebook.com/v27.0/PN1/media");
+    expect(calls[0]!.url).toBe("https://graph.facebook.com/v25.0/PN1/media");
     const form = calls[0]!.init.body as FormData;
     expect(form.get("messaging_product")).toBe("whatsapp");
     expect(form.get("type")).toBe("image/png");

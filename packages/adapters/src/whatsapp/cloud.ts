@@ -8,7 +8,8 @@ import { createHmac, timingSafeEqual } from "node:crypto";
 import { z } from "zod";
 
 export const WHATSAPP_GRAPH_URL = "https://graph.facebook.com";
-export const WHATSAPP_GRAPH_VERSION = "v27.0";
+/** Versión que usa el panel de Meta en sus ejemplos (14-nov-2026). */
+export const WHATSAPP_GRAPH_VERSION = "v25.0";
 
 /** Límites de Meta para botones de respuesta. */
 const MAX_BUTTONS = 3;
