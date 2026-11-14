@@ -29,6 +29,17 @@ class FakePey implements ChargeGateway {
     });
     return { provider_charge_id: id };
   }
+  qrs: Array<Record<string, unknown>> = [];
+  async createQr(r: Parameters<ChargeGateway["createQr"]>[0]) {
+    this.qrs.push(r);
+    const id = `01QRTX${++this.n}`;
+    this.txs.set(id, {
+      id, status: "PENDING", amount_cents: r.amount_cents, base_cents: r.amount_cents, tip_cents: 0n, fee_cents: 0n,
+      payment_method: "CODI", payable_type: "API_CODI_QR", payable_id: id, date_paid: null,
+      payer_clabe: null, tracking_key: null, external_metadata: { ...r.metadata },
+    });
+    return { provider_charge_id: id, image_png_base64: "iVBORw0KGgo=" };
+  }
   async getTransaction(id: string) {
     const t = this.txs.get(id);
     if (!t) throw new Error("404");
@@ -139,6 +150,42 @@ describe("fiado y cobro con pey", () => {
     await f.svc.confirm(await f.lastAction());
     expect((await f.msgs()).at(-1)!.body).toMatch(/no ha aceptado recibir mensajes/);
     expect((f.gw as FakePey).pushes).toHaveLength(0);
+  });
+});
+
+describe("QR en mostrador y un solo cobro abierto", () => {
+  it("QR por el saldo; mientras esté abierto no se emite otro cobro; el pago lo cierra", async () => {
+    const f = await setup();
+    await f.svc.handleMerchantMessage("Doña Lupe se llevó $185");
+    await f.svc.confirm(await f.lastAction());
+    await f.svc.handleMerchantMessage("QR para Doña Lupe");
+    const gw = f.gw as FakePey;
+    expect(gw.qrs[0]).toMatchObject({ amount_cents: 18500n, metadata: { cuadra_charge_id: expect.stringMatching(/^ch_/) } });
+    const msg = (await f.msgs()).at(-1)!;
+    expect(msg.actions?.[0]).toMatchObject({ kind: "qr", url: expect.stringMatching(/^data:image\/png;base64,/) });
+
+    await f.svc.handleMerchantMessage("QR para Doña Lupe");
+    expect((await f.msgs()).at(-1)!.body).toMatch(/ya tiene un cobro abierto/);
+    await f.svc.handleMerchantMessage("Cóbrale a Doña Lupe");
+    await f.svc.confirm(await f.lastAction());
+    expect((await f.msgs()).at(-1)!.body).toMatch(/No mando/);
+    expect(gw.pushes).toHaveLength(0);
+
+    const qrTx = [...gw.txs.keys()][0]!;
+    gw.pay(qrTx);
+    const [raw, h] = webhook({ type: "codi.qr.payment_received", transactionId: qrTx, amount: 185, codiQrId: "X" });
+    await f.svc.handlePeyWebhook(raw, h);
+    expect(await ledgerBalance(f.db, M, "1200", "c_lupe")).toBe(0n);
+  });
+
+  it("cobro a la cuenta receptora del comercio (bankAccountId)", async () => {
+    const f = await setup();
+    await f.db.update(schema.merchants).set({ peyBankAccountId: "01JBAVWE4NS5TGXHWGMX3KH23Q" }).where(eq(schema.merchants.id, M));
+    await f.svc.handleMerchantMessage("Doña Lupe se llevó $10");
+    await f.svc.confirm(await f.lastAction());
+    await f.svc.handleMerchantMessage("Cóbrale a Doña Lupe");
+    await f.svc.confirm(await f.lastAction());
+    expect((f.gw as FakePey).pushes[0]).toMatchObject({ bank_account_id: "01JBAVWE4NS5TGXHWGMX3KH23Q" });
   });
 });
 

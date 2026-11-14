@@ -95,7 +95,17 @@ export function normalizeTransaction(raw: z.infer<typeof PeyTransactionSchema>):
   };
 }
 
+const BankAccountRef = z.object({
+  id: z.string(),
+  codiStatus: z.enum(["PENDING", "PROCESSING", "ACTIVE", "ERROR"]),
+  clabe: z.string().optional(),
+  alias: z.string().optional(),
+  errorMessage: z.string().nullable().optional(),
+});
+
 export interface ChargeRequest {
+  /** Cuenta receptora registrada en pey (ACTIVE). Sin ella, va a la cuenta de la API key. */
+  bank_account_id?: string;
   amount_cents: Centavos;
   concept: string;
   /** Referencia numérica, hasta 7 dígitos. */
@@ -140,6 +150,20 @@ export class PeyClient {
     if (numRef !== undefined && !/^[0-9]{1,7}$/.test(numRef)) throw new Error("numRef debe tener de 1 a 7 dígitos");
   }
 
+  /**
+   * POST /bank-account: registra una CLABE para recibir cobros CoDi. Queda PENDING y pasa a
+   * ACTIVE (hasta 5 días hábiles); luego se usa como bankAccountId.
+   */
+  async registerBankAccount(r: { alias: string; name: string; clabe: string; entity: "BUSINESS" | "PERSON" }) {
+    if (!/^[0-9]{18}$/.test(r.clabe)) throw new Error("CLABE inválida");
+    return this.call("POST", "/bank-account", BankAccountRef, r);
+  }
+
+  /** GET /bank-account/{id}: estado del alta CoDi de la cuenta. */
+  async getBankAccount(id: string) {
+    return this.call("GET", `/bank-account/${encodeURIComponent(id)}`, BankAccountRef);
+  }
+
   /** POST /codi/pn: notificación push CoDi al celular (10 dígitos). Expira en ≥ 360 s. */
   async createPushNotification(
     r: ChargeRequest & { phone10: string; expiration_s?: number },
@@ -157,6 +181,7 @@ export class PeyClient {
         concept: r.concept,
         expiration: Math.max(360, r.expiration_s ?? 360),
         ...(r.num_ref ? { numRef: r.num_ref } : {}),
+        ...(r.bank_account_id ? { bankAccountId: r.bank_account_id } : {}),
         ...(r.metadata ? { metadata: r.metadata } : {}),
       },
     );
@@ -177,6 +202,7 @@ export class PeyClient {
         expiration: exp,
         ...(r.num_ref ? { numRef: r.num_ref } : {}),
         ...(r.generate_image ? { generateImage: true } : {}),
+        ...(r.bank_account_id ? { bankAccountId: r.bank_account_id } : {}),
         ...(r.metadata ? { metadata: r.metadata } : {}),
       },
     );

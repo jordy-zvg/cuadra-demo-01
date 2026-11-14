@@ -188,6 +188,15 @@ export class CuadraService {
       case "query_balance":
         await this.answerBalance(intent.customer_name);
         return;
+      case "charge_qr": {
+        const r = await this.resolve(await this.customers(), intent.customer_name);
+        if (!r.ok) {
+          await this.say("comercio", r.options.length ? `¿Cuál? ${r.options.map((o) => o.name).join(", ")}` : `No tengo a “${intent.customer_name}” en tus clientes.`);
+          return;
+        }
+        await this.chargeWithQr(r.row.id);
+        return;
+      }
       case "add_credit":
       case "send_reminder": {
         const r = await this.resolve(await this.customers(), intent.customer_name);
@@ -332,6 +341,12 @@ export class CuadraService {
       template_id: REMINDER_TEMPLATE,
       approved_template_ids: [REMINDER_TEMPLATE],
     });
+    const open = await this.openCharge(customerId);
+    if (policy.allow && open) {
+      await setProposalStatus(this.d.db, proposalId, "rejected", { open_charge: open.id });
+      await this.say("comercio", `${c.name} ya tiene un cobro abierto (ref. ${open.reference}). No mando otro para que no pague doble.`);
+      return;
+    }
     if (!policy.allow) {
       await setProposalStatus(this.d.db, proposalId, "rejected", policy);
       await this.say("comercio", `No mando el cobro:\n• ${policy.rules_failed.map((f) => f.reason).join("\n• ")}`);
@@ -354,6 +369,7 @@ export class CuadraService {
           concept,
           num_ref: reference,
           metadata: { cuadra_charge_id: chargeId },
+          ...(merchant?.peyBankAccountId ? { bank_account_id: merchant.peyBankAccountId } : {}),
         });
         await attachProviderCharge(this.d.db, chargeId, { provider: this.d.gateway.name, providerChargeId: pn.provider_charge_id, channel: "codi_pn" });
         pushed = true;
@@ -380,6 +396,55 @@ export class CuadraService {
         ? `📨 Cobro de ${amount} enviado a ${c.name} por CoDi${this.d.gateway.simulated ? " (simulado)" : " vía pey"}. Te aviso cuando pague.`
         : `⚠️ No pude mandar la solicitud CoDi a ${c.name}${failure ? `: ${failure}` : " (no tiene celular)"}. Le dejé el recordatorio con la referencia ${reference}.`,
     );
+  }
+
+  private async openCharge(customerId: string) {
+    const [open] = await this.d.db
+      .select()
+      .from(schema.charges)
+      .where(and(eq(schema.charges.customerId, customerId), eq(schema.charges.status, "open")))
+      .limit(1);
+    return open ?? null;
+  }
+
+  /** Cobro en mostrador: QR CoDi por el saldo exacto, que el cliente escanea con su banco. */
+  private async chargeWithQr(customerId: string): Promise<void> {
+    const now = this.d.now();
+    const [c] = await this.d.db.select().from(schema.customers).where(eq(schema.customers.id, customerId));
+    if (!c) return;
+    const balance = await ledgerBalance(this.d.db, this.d.merchantId, "1200", customerId);
+    if (balance <= 0n) {
+      await this.say("comercio", `${c.name} no te debe nada.`);
+      return;
+    }
+    const open = await this.openCharge(customerId);
+    if (open) {
+      await this.say("comercio", `${c.name} ya tiene un cobro abierto (ref. ${open.reference}). Espera a que se pague para no cobrar doble.`);
+      return;
+    }
+    const [merchant] = await this.d.db.select().from(schema.merchants).where(eq(schema.merchants.id, this.d.merchantId));
+    const chargeId = id("ch");
+    const reference = await newChargeReference(this.d.db, this.d.merchantId);
+    await insertCharge(this.d.db, { id: chargeId, merchantId: this.d.merchantId, customerId, reference, amountCents: balance, now });
+    try {
+      const qr = await this.d.gateway.createQr({
+        amount_cents: balance,
+        concept: `Fiado ${merchant?.name ?? ""}`.slice(0, 40),
+        num_ref: reference,
+        metadata: { cuadra_charge_id: chargeId },
+        ...(merchant?.peyBankAccountId ? { bank_account_id: merchant.peyBankAccountId } : {}),
+      });
+      await attachProviderCharge(this.d.db, chargeId, { provider: this.d.gateway.name, providerChargeId: qr.provider_charge_id, channel: "codi_qr" });
+      const amount = formatMXN(balance);
+      const actions: MessageAction[] = [
+        { kind: "qr", label: "QR CoDi", ...(qr.image_png_base64 ? { url: `data:image/png;base64,${qr.image_png_base64}` } : {}) },
+      ];
+      if (this.d.gateway.simulated) actions.push({ kind: "pay", label: `${c.name} escanea y paga (simulado)`, url: `/api/sim/pay/${chargeId}` });
+      await this.say("comercio", `📱 Que ${c.name} escanee este QR con la app de su banco: ${amount}, ref. ${reference}. Vale 30 min.`, actions);
+    } catch (e) {
+      await this.d.db.update(schema.charges).set({ status: "cancelled" }).where(eq(schema.charges.id, chargeId));
+      await this.say("comercio", `⚠️ No pude generar el QR: ${e instanceof Error ? e.message : String(e)}`);
+    }
   }
 
   // ---------- pagos recibidos ----------

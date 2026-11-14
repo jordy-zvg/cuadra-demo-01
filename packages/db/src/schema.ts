@@ -26,6 +26,7 @@ export const merchants = pgTable("merchants", {
   dailyLimitCents: cents("daily_limit_cents").notNull(),
   maxOutflowsPerHour: integer("max_outflows_per_hour").notNull(),
   providerAccountId: text("provider_account_id").unique(),
+  peyBankAccountId: text("pey_bank_account_id"),
   createdAt: ts("created_at").notNull().defaultNow(),
 });
 
@@ -239,7 +240,7 @@ export const reconciliationRuns = pgTable("reconciliation_runs", {
 });
 
 export interface MessageAction {
-  kind: "confirm" | "cancel" | "pay" | "approve" | "link";
+  kind: "confirm" | "cancel" | "pay" | "approve" | "link" | "qr";
   label: string;
   proposal_id?: string;
   url?: string;

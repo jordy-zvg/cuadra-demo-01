@@ -1,7 +1,8 @@
 import { PeyClient, verifyProposalAssertion } from "@cuadra/adapters";
 import { AnthropicInterpreter, FallbackInterpreter, type Interpreter, RuleInterpreter } from "@cuadra/agents";
 import { connectPostgres, migratePostgres } from "@cuadra/db/node";
-import { seedDemo } from "@cuadra/db";
+import { schema, seedDemo } from "@cuadra/db";
+import { eq } from "drizzle-orm";
 import { type ChargeGateway, PeyGateway, SimulatedGateway } from "./gateway.js";
 import { seedHistory } from "./seed-history.js";
 import { buildServer } from "./server.js";
@@ -22,6 +23,10 @@ async function main(): Promise<void> {
   const applied = await migratePostgres(pool);
   const demo = await seedDemo(db, new Date(), { ...(env("DEMO_CUSTOMER_PHONE") ? { lupePhone: env("DEMO_CUSTOMER_PHONE")! } : {}) });
   const bankSim = env("BANK_SIM") !== "off";
+  // Cuenta receptora del comercio registrada en pey (POST /bank-account, estado ACTIVE).
+  if (env("PEY_BANK_ACCOUNT_ID")) {
+    await db.update(schema.merchants).set({ peyBankAccountId: env("PEY_BANK_ACCOUNT_ID")! }).where(eq(schema.merchants.id, demo.merchantId));
+  }
   if (bankSim) await seedHistory(db, demo.merchantId);
 
   const peyKey = env("PEY_API_KEY");

@@ -57,6 +57,8 @@ td.n{text-align:right;font-family:var(--mono)}
 .entry .ln{display:grid;grid-template-columns:3.5em 1fr 6em 6em;gap:6px;font-family:var(--mono)}
 .block{background:var(--bad-bg);color:var(--bad);border-radius:10px;padding:6px 8px;font-size:12.5px;margin-bottom:6px}
 .muted{color:var(--muted)}
+.qr{width:180px;height:180px;border-radius:10px;background:#fff;padding:6px;display:block}
+.qr.sim{display:flex;align-items:center;justify-content:center;text-align:center;color:#1d1b16;border:2px dashed #999;font-weight:600}
 .flash{animation:fl 1.2s ease-out}
 @keyframes fl{from{background:var(--ok-bg)}to{background:transparent}}
 </style>
@@ -102,7 +104,7 @@ const mxn = (c) => { const n = BigInt(c); const neg = n < 0n; const a = neg ? -n
   return (neg ? "-" : "") + "$" + (a / 100n).toString().replace(/\B(?=(\d{3})+(?!\d))/g, ",") + "." + (a % 100n).toString().padStart(2, "0"); };
 const esc = (s) => String(s ?? "").replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c]));
 const NAMES = { "1100":"Cuenta operativa","1200":"CxC clientes","1300":"SPEI por identificar","2100":"Saldo a favor","2200":"Pozo de tanda","2400":"Pagos en tránsito","4100":"Ventas a crédito","5100":"Compras a proveedores","5900":"Diferencias" };
-const SUGG = ["Doña Lupe se llevó $185", "Cóbrale a Doña Lupe", "¿Quién me debe?", "Paga al de los refrescos $1,200", "Págale ya a la cuenta 012180015826225713 $5,000"];
+const SUGG = ["Doña Lupe se llevó $185", "Cóbrale a Doña Lupe", "QR para Doña Lupe", "¿Quién me debe?", "Paga al de los refrescos $1,200", "Págale ya a la cuenta 012180015826225713 $5,000"];
 let last = { comercio: -1, cliente: -1 }, customers = [];
 
 $("#chips").innerHTML = SUGG.map((s) => `<button class="chip" type="button">${esc(s)}</button>`).join("");
@@ -131,8 +133,9 @@ document.body.addEventListener("click", (e) => {
 
 function bubbles(list) {
   return list.map((m) => `<div class="msg ${m.direction}">${esc(m.body)}${
-    m.actions && m.actions.length ? `<div class="acts">${m.actions.map((a, i) =>
-      `<button ${i ? 'class="ghost"' : ""} data-act='${esc(JSON.stringify(a))}'>${esc(a.label)}</button>`).join("")}</div>` : ""}</div>`).join("");
+    m.actions && m.actions.length ? `<div class="acts">${m.actions.map((a, i) => a.kind === "qr"
+      ? (a.url ? `<img class="qr" alt="QR CoDi" src="${esc(a.url)}">` : `<div class="qr sim">QR CoDi<br><small>(simulado)</small></div>`)
+      : `<button ${i ? 'class="ghost"' : ""} data-act='${esc(JSON.stringify(a))}'>${esc(a.label)}</button>`).join("")}</div>` : ""}</div>`).join("");
 }
 function render(s) {
   const live = !s.simulated;

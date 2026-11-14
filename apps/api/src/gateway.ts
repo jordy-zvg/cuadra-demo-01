@@ -13,7 +13,16 @@ export interface ChargeGateway {
     concept: string;
     num_ref: string;
     metadata: Record<string, string>;
+    bank_account_id?: string;
   }): Promise<{ provider_charge_id: string }>;
+  /** QR CoDi para cobrar en mostrador. image: PNG base64 si el proveedor lo da. */
+  createQr(r: {
+    amount_cents: Centavos;
+    concept: string;
+    num_ref: string;
+    metadata: Record<string, string>;
+    bank_account_id?: string;
+  }): Promise<{ provider_charge_id: string; image_png_base64: string | null }>;
   getTransaction(id: string): Promise<PeyTransaction>;
 }
 
@@ -24,6 +33,11 @@ export class PeyGateway implements ChargeGateway {
   async requestPayment(r: Parameters<ChargeGateway["requestPayment"]>[0]) {
     const pn = await this.pey.createPushNotification({ ...r, expiration_s: 3600 });
     return { provider_charge_id: pn.transactionId };
+  }
+  async createQr(r: Parameters<ChargeGateway["createQr"]>[0]) {
+    // 30 min de vigencia (mínimo de pey: 360 s).
+    const qr = await this.pey.createQr({ ...r, expiration_s: 1800, generate_image: true });
+    return { provider_charge_id: qr.id, image_png_base64: qr.qrImage ?? null };
   }
   getTransaction(id: string) {
     return this.pey.getTransaction(id);
@@ -40,6 +54,9 @@ export class SimulatedGateway implements ChargeGateway {
   constructor(private readonly db: Db) {}
   async requestPayment(r: Parameters<ChargeGateway["requestPayment"]>[0]) {
     return { provider_charge_id: `simtx_${r.metadata.cuadra_charge_id}` };
+  }
+  async createQr(r: Parameters<ChargeGateway["createQr"]>[0]) {
+    return { provider_charge_id: `simqr_${r.metadata.cuadra_charge_id}`, image_png_base64: null };
   }
   async getTransaction(id: string): Promise<PeyTransaction> {
     const [c] = await this.db.select().from(schema.charges).where(eq(schema.charges.providerChargeId, id));

@@ -24,6 +24,9 @@ const PATTERNS: Array<[RegExp, (m: RegExpExecArray) => Intent]> = [
   // "Doña Lupe me pagó $100 en efectivo" / "Lupe abonó 50"
   [new RegExp(String.raw`^(.+?)\s+(?:me\s+)?(?:pag[oó]|abon[oó]|dio)\s+${MONEY}(?:\s+en\s+efectivo)?\s*$`, "i"),
     (m) => ({ kind: "register_cash_payment", customer_name: clean(m[1]!), amount_cents: cents(m[2]!, m[3]) })],
+  // "QR para Doña Lupe", "cóbrale con QR a Beto" (cobro en mostrador)
+  [/^(?:(?:hazme\s+(?:un|el)\s+)?qr\s+(?:para|de|a)|c[oó]brale\s+con\s+qr\s+a|cobro\s+con\s+qr\s+(?:a|para))\s+(.+)$/i,
+    (m) => ({ kind: "charge_qr", customer_name: clean(m[1]!) })],
   // "Cóbrale a Doña Lupe", "mándale recordatorio a Beto"
   [/^(?:c[oó]brale|cobrar(?:le)?|m[aá]ndale\s+(?:el\s+)?(?:cobro|recordatorio)|recu[eé]rdale)\s+a\s+(.+)$/i,
     (m) => ({ kind: "send_reminder", customer_name: clean(m[1]!) })],
