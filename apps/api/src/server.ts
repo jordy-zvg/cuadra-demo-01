@@ -1,0 +1,89 @@
+import { fileURLToPath } from "node:url";
+import fastifyStatic from "@fastify/static";
+import Fastify, { type FastifyInstance } from "fastify";
+import { z } from "zod";
+import type { Db } from "@cuadra/db";
+import { schema } from "@cuadra/db";
+import { and, eq } from "drizzle-orm";
+import type { CuadraService } from "./service.js";
+import { type PasskeyOpts, registerPasskeyRoutes } from "./passkey.js";
+import { panelState } from "./state.js";
+
+export interface ServerOpts {
+  db: Db;
+  service: CuadraService;
+  merchantId: string;
+  gateway: { name: string; simulated: boolean };
+  bankSim: boolean;
+  passkey: PasskeyOpts;
+  log: (r: Record<string, unknown>) => void;
+}
+
+const ChatBody = z.object({
+  text: z.string().min(1).max(1000),
+  provenance: z.enum(["user_direct", "user_voice", "third_party_content"]).default("user_direct"),
+});
+const ActionBody = z.object({ proposal_id: z.string().min(1).max(64) });
+
+export function buildServer(o: ServerOpts): FastifyInstance {
+  const app = Fastify({ logger: false, bodyLimit: 256 * 1024 });
+
+  // Los webhooks se verifican sobre el cuerpo crudo.
+  app.addContentTypeParser("application/json", { parseAs: "string" }, (_req, body, done) => done(null, body));
+  const json = (raw: unknown) => JSON.parse(typeof raw === "string" && raw ? raw : "{}") as unknown;
+
+  app.register(fastifyStatic, { root: fileURLToPath(new URL("../public/", import.meta.url)) });
+
+  app.get("/health", async () => ({ ok: true }));
+  registerPasskeyRoutes(app, o.passkey);
+
+  app.post("/api/chat", async (req, reply) => {
+    const b = ChatBody.safeParse(json(req.body));
+    if (!b.success) return reply.code(400).send({ error: "mensaje inválido" });
+    await o.service.handleMerchantMessage(b.data.text, b.data.provenance);
+    return { ok: true };
+  });
+
+  app.post("/api/confirm", async (req, reply) => {
+    const b = ActionBody.safeParse(json(req.body));
+    if (!b.success) return reply.code(400).send({ error: "inválido" });
+    await o.service.confirm(b.data.proposal_id);
+    return { ok: true };
+  });
+
+  app.post("/api/cancel", async (req, reply) => {
+    const b = ActionBody.safeParse(json(req.body));
+    if (!b.success) return reply.code(400).send({ error: "inválido" });
+    await o.service.cancel(b.data.proposal_id);
+    return { ok: true };
+  });
+
+  app.get("/api/state", async () => panelState(o.db, o.merchantId, { gateway: o.gateway.name, simulated: o.gateway.simulated, bankSim: o.bankSim }));
+
+  app.post("/webhooks/pey", async (req, reply) => {
+    const headers = Object.fromEntries(Object.entries(req.headers).map(([k, v]) => [k, Array.isArray(v) ? v[0] : v]));
+    try {
+      const r = await o.service.handlePeyWebhook(typeof req.body === "string" ? req.body : "", headers);
+      o.log({ msg: "pey_webhook", status: r.status, webhook_id: headers["webhook-id"] });
+      return reply.code(r.status).send(r.body);
+    } catch (e) {
+      o.log({ msg: "pey_webhook_error", webhook_id: headers["webhook-id"], error: e instanceof Error ? e.message : String(e) });
+      return reply.code(500).send({ error: "reintentar" });
+    }
+  });
+
+  // Solo en modo simulado: el cliente "aprueba" el cobro CoDi en su banco.
+  app.post("/api/sim/pay/:chargeId", async (req, reply) => {
+    if (!o.gateway.simulated) return reply.code(404).send({ error: "no disponible" });
+    const { chargeId } = req.params as { chargeId: string };
+    const [c] = await o.db
+      .select()
+      .from(schema.charges)
+      .where(and(eq(schema.charges.id, chargeId), eq(schema.charges.merchantId, o.merchantId)));
+    if (!c?.providerChargeId || c.status !== "open") return reply.code(409).send({ error: "cobro no disponible" });
+    await o.service.simulatePaid(c.providerChargeId);
+    return { ok: true };
+  });
+
+  return app;
+}

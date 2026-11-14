@@ -16,9 +16,9 @@ describe.skipIf(!url)("Postgres real (node-postgres)", () => {
       expect(await migratePostgres(pool)).toEqual([]);
       await seedDemo(db);
       const M = DEMO.merchantId;
-      await postEntries(db, [fiado({ merchant_id: M, idempotency_key: `smoke-${Date.now()}`, amount: 100n, customer_id: DEMO.customers.rosa.id })]);
+      await postEntries(db, [fiado({ merchant_id: M, idempotency_key: `smoke-${Date.now()}`, amount: 100n, customer_id: DEMO.customers.lupe.id })]);
       const before = await ledgerBalance(db, M, "1100");
-      await recordDeposit(db, M, { clave_rastreo: `SMK${Date.now()}`, amount: 100n, destination_clabe: DEMO.customers.rosa.virtualClabe });
+      await recordDeposit(db, M, { clave_rastreo: `SMK${Date.now()}`, amount: 100n, destination_clabe: DEMO.customers.lupe.virtualClabe });
       expect(await ledgerBalance(db, M, "1100")).toBe(before + 100n);
       await expect(
         pool.query(`DO $$ BEGIN

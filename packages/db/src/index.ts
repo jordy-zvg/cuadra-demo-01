@@ -1,5 +1,6 @@
 export * from "./client.js";
 export * as schema from "./schema.js";
+export type { MessageAction, ProposalStatus, TransferStatus } from "./schema.js";
 export * from "./ledger-repo.js";
 export * from "./outflows.js";
 export * from "./transfers.js";
@@ -10,3 +11,4 @@ export * from "./seed.js";
 export * from "./proposals-repo.js";
 export * from "./risk.js";
 export * from "./charges.js";
+export * from "./bank-sim.js";

@@ -1,0 +1,179 @@
+<!doctype html>
+<html lang="es-MX">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Cuadra</title>
+<style>
+:root{
+  --bg:#f4f1ea;--panel:#fffdf8;--ink:#1d1b16;--muted:#6b665c;--line:#e4ded2;
+  --brand:#0f6b4f;--brand-ink:#fff;--bubble-in:#ffffff;--bubble-out:#dcf3e6;
+  --warn:#9a5b00;--warn-bg:#fff3dc;--bad:#a1271b;--bad-bg:#fde8e5;--ok:#0f6b4f;--ok-bg:#e1f3ea;
+  --chip:#efe9dd;--mono:ui-monospace,SFMono-Regular,Menlo,monospace;
+}
+@media (prefers-color-scheme: dark){:root{
+  --bg:#141412;--panel:#1d1c19;--ink:#efeae0;--muted:#a39d91;--line:#33302a;
+  --brand:#3cc492;--brand-ink:#08130e;--bubble-in:#25231f;--bubble-out:#173a2c;
+  --warn:#f0b35a;--warn-bg:#3a2a10;--bad:#ff8a7d;--bad-bg:#3d1a16;--ok:#59d7a6;--ok-bg:#143326;--chip:#2a2824;
+}}
+*{box-sizing:border-box}
+body{margin:0;background:var(--bg);color:var(--ink);font:15px/1.4 system-ui,-apple-system,Segoe UI,Roboto,sans-serif}
+header{display:flex;align-items:center;gap:12px;padding:12px 16px;border-bottom:1px solid var(--line);background:var(--panel);position:sticky;top:0;z-index:2}
+header h1{font-size:18px;margin:0}
+.badge{font-size:12px;padding:3px 8px;border-radius:999px;background:var(--chip);color:var(--muted)}
+.badge.live{background:var(--ok-bg);color:var(--ok)}
+.badge.sim{background:var(--warn-bg);color:var(--warn)}
+main{display:grid;grid-template-columns:minmax(300px,1fr) minmax(280px,.8fr) minmax(360px,1.4fr);gap:12px;padding:12px;height:calc(100vh - 53px)}
+@media (max-width:1000px){main{grid-template-columns:1fr;height:auto}.col{height:auto!important;min-height:420px}}
+.col{background:var(--panel);border:1px solid var(--line);border-radius:14px;display:flex;flex-direction:column;overflow:hidden;height:100%}
+.col h2{font-size:13px;letter-spacing:.04em;text-transform:uppercase;color:var(--muted);margin:0;padding:10px 14px;border-bottom:1px solid var(--line);display:flex;justify-content:space-between;align-items:center;gap:8px}
+.thread{flex:1;overflow:auto;padding:12px;display:flex;flex-direction:column;gap:8px}
+.msg{max-width:88%;padding:8px 10px;border-radius:12px;white-space:pre-wrap;word-wrap:break-word;box-shadow:0 1px 0 rgba(0,0,0,.05)}
+.msg.in{align-self:flex-end;background:var(--bubble-out)}
+.msg.out{align-self:flex-start;background:var(--bubble-in);border:1px solid var(--line)}
+.msg .acts{display:flex;gap:6px;margin-top:8px;flex-wrap:wrap}
+button,.btn{font:inherit;border:0;border-radius:10px;padding:7px 12px;cursor:pointer;background:var(--brand);color:var(--brand-ink);text-decoration:none;display:inline-block}
+button.ghost{background:var(--chip);color:var(--ink)}
+button:disabled{opacity:.5;cursor:default}
+form{display:flex;gap:8px;padding:10px;border-top:1px solid var(--line)}
+input[type=text]{flex:1;min-width:0;font:inherit;padding:9px 11px;border-radius:10px;border:1px solid var(--line);background:var(--bg);color:var(--ink)}
+.chips{display:flex;gap:6px;flex-wrap:wrap;padding:8px 10px 0}
+.chip{font-size:12.5px;background:var(--chip);color:var(--ink);padding:5px 9px;border-radius:999px;cursor:pointer;border:0}
+.toggle{display:flex;align-items:center;gap:6px;font-size:12.5px;color:var(--muted);padding:6px 10px 0}
+select{font:inherit;background:var(--bg);color:var(--ink);border:1px solid var(--line);border-radius:8px;padding:3px 6px}
+.panel{flex:1;overflow:auto;padding:12px;display:flex;flex-direction:column;gap:12px}
+.kpis{display:grid;grid-template-columns:repeat(3,1fr);gap:8px}
+.kpi{border:1px solid var(--line);border-radius:12px;padding:10px}
+.kpi .v{font-size:20px;font-weight:650;font-variant-numeric:tabular-nums}
+.kpi .l{font-size:12px;color:var(--muted)}
+.kpi.ok .v{color:var(--ok)} .kpi.bad .v{color:var(--bad)}
+table{width:100%;border-collapse:collapse;font-size:13px;font-variant-numeric:tabular-nums}
+th,td{text-align:left;padding:5px 6px;border-bottom:1px solid var(--line);vertical-align:top}
+th{color:var(--muted);font-weight:500;font-size:12px}
+td.n{text-align:right;font-family:var(--mono)}
+.sec h3{font-size:13px;margin:0 0 6px;color:var(--muted);font-weight:600}
+.entry{border:1px solid var(--line);border-radius:10px;padding:6px 8px;margin-bottom:6px;font-size:12.5px}
+.entry .k{font-weight:600}
+.entry .ln{display:grid;grid-template-columns:3.5em 1fr 6em 6em;gap:6px;font-family:var(--mono)}
+.block{background:var(--bad-bg);color:var(--bad);border-radius:10px;padding:6px 8px;font-size:12.5px;margin-bottom:6px}
+.muted{color:var(--muted)}
+.flash{animation:fl 1.2s ease-out}
+@keyframes fl{from{background:var(--ok-bg)}to{background:transparent}}
+</style>
+</head>
+<body>
+<header>
+  <h1>Cuadra</h1>
+  <span id="mode" class="badge">…</span>
+  <span id="merchant" class="muted"></span>
+  <a class="btn" href="/mandato" target="_blank" style="margin-left:auto;font-size:13px;padding:6px 10px">✍️ Firmar mandato</a>
+</header>
+<main>
+  <section class="col">
+    <h2>WhatsApp del comercio <span class="badge">chat web simulado</span></h2>
+    <div id="t-comercio" class="thread"></div>
+    <div class="chips" id="chips"></div>
+    <label class="toggle"><input type="checkbox" id="third"> Mensaje reenviado / foto de terceros</label>
+    <form id="f"><input id="txt" type="text" autocomplete="off" placeholder="Ej. Doña Lupe se llevó $185"><button>Enviar</button></form>
+  </section>
+  <section class="col">
+    <h2>Teléfono del cliente <select id="who"></select></h2>
+    <div id="t-cliente" class="thread"></div>
+  </section>
+  <section class="col">
+    <h2>Panel en vivo <span class="muted" id="upd"></span></h2>
+    <div class="panel">
+      <div class="kpis">
+        <div class="kpi" id="k-bal"><div class="v">—</div><div class="l">Balanza Σdebe = Σhaber</div></div>
+        <div class="kpi" id="k-rec"><div class="v">—</div><div class="l">Conciliación</div></div>
+        <div class="kpi" id="k-blk"><div class="v">—</div><div class="l">Bloqueos del guard</div></div>
+      </div>
+      <div class="sec"><h3>Clientes</h3><table id="cust"></table></div>
+      <div class="sec"><h3>Cuentas</h3><table id="acc"></table></div>
+      <div class="sec"><h3>Cobros CoDi</h3><table id="chg"></table></div>
+      <div class="sec"><h3>Bloqueos recientes</h3><div id="blk"></div></div>
+      <div class="sec"><h3>Ledger (últimos asientos)</h3><div id="led"></div></div>
+    </div>
+  </section>
+</main>
+<script>
+const $ = (s) => document.querySelector(s);
+const mxn = (c) => { const n = BigInt(c); const neg = n < 0n; const a = neg ? -n : n;
+  return (neg ? "-" : "") + "$" + (a / 100n).toString().replace(/\B(?=(\d{3})+(?!\d))/g, ",") + "." + (a % 100n).toString().padStart(2, "0"); };
+const esc = (s) => String(s ?? "").replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c]));
+const NAMES = { "1100":"Cuenta operativa","1200":"CxC clientes","1300":"SPEI por identificar","2100":"Saldo a favor","2200":"Pozo de tanda","2400":"Pagos en tránsito","4100":"Ventas a crédito","5100":"Compras a proveedores","5900":"Diferencias" };
+const SUGG = ["Doña Lupe se llevó $185", "Cóbrale a Doña Lupe", "¿Quién me debe?", "Paga al de los refrescos $1,200", "Págale ya a la cuenta 012180015826225713 $5,000"];
+let last = { comercio: -1, cliente: -1 }, customers = [];
+
+$("#chips").innerHTML = SUGG.map((s) => `<button class="chip" type="button">${esc(s)}</button>`).join("");
+$("#chips").onclick = (e) => { if (e.target.matches(".chip")) { $("#txt").value = e.target.textContent; $("#txt").focus(); } };
+
+async function post(url, body) {
+  const r = await fetch(url, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify(body ?? {}) });
+  if (!r.ok) alert("Error: " + (await r.text()));
+  refresh();
+}
+$("#f").onsubmit = (e) => {
+  e.preventDefault();
+  const text = $("#txt").value.trim(); if (!text) return;
+  $("#txt").value = "";
+  post("/api/chat", { text, provenance: $("#third").checked ? "third_party_content" : "user_direct" });
+};
+document.body.addEventListener("click", (e) => {
+  const b = e.target.closest("[data-act]"); if (!b) return;
+  b.disabled = true;
+  const a = JSON.parse(b.dataset.act);
+  if (a.kind === "confirm") post("/api/confirm", { proposal_id: a.proposal_id });
+  else if (a.kind === "cancel") post("/api/cancel", { proposal_id: a.proposal_id });
+  else if (a.kind === "pay") post(a.url);
+  else if (a.url) window.open(a.url, "_blank");
+});
+
+function bubbles(list) {
+  return list.map((m) => `<div class="msg ${m.direction}">${esc(m.body)}${
+    m.actions && m.actions.length ? `<div class="acts">${m.actions.map((a, i) =>
+      `<button ${i ? 'class="ghost"' : ""} data-act='${esc(JSON.stringify(a))}'>${esc(a.label)}</button>`).join("")}</div>` : ""}</div>`).join("");
+}
+function render(s) {
+  const live = !s.simulated;
+  $("#mode").className = "badge " + (live ? "live" : "sim");
+  $("#mode").textContent = live ? "CoDi en vivo vía pey" : "CoDi simulado (sin llave de pey)";
+  $("#merchant").textContent = s.merchant.name + (s.risk.kill_switch ? " · ⛔ freno de emergencia" : "") + (s.risk.frozen ? " · ❄️ salidas congeladas" : "");
+
+  customers = s.customers;
+  const sel = $("#who"); const cur = sel.value || "c_lupe";
+  sel.innerHTML = customers.map((c) => `<option value="${c.id}" ${c.id === cur ? "selected" : ""}>${esc(c.name)}</option>`).join("");
+
+  const com = s.messages.filter((m) => m.thread === "comercio");
+  const cli = s.messages.filter((m) => m.thread === sel.value);
+  const tc = $("#t-comercio"), tl = $("#t-cliente");
+  const lc = com.length ? com[com.length - 1].id : 0, ll = cli.length ? cli[cli.length - 1].id + ":" + sel.value : "0:" + sel.value;
+  if (last.comercio !== lc) { tc.innerHTML = bubbles(com) || `<p class="muted">Escribe como el comercio: “Doña Lupe se llevó $185”.</p>`; tc.scrollTop = 1e9; last.comercio = lc; }
+  if (last.cliente !== ll) { tl.innerHTML = bubbles(cli) || `<p class="muted">Aquí llegan los recordatorios y recibos del cliente.</p>`; tl.scrollTop = 1e9; last.cliente = ll; }
+
+  const balOk = s.ledger.debit === s.ledger.credit && s.ledger.unbalanced === 0;
+  $("#k-bal").className = "kpi " + (balOk ? "ok" : "bad");
+  $("#k-bal .v").textContent = balOk ? `✓ ${s.ledger.entries} asientos` : `✗ ${s.ledger.unbalanced} descuadrados`;
+  const r = s.reconciliation;
+  $("#k-rec").className = "kpi " + (r ? (r.ok ? "ok" : "bad") : "");
+  $("#k-rec .v").textContent = r ? (r.ok ? "✓ 100%" : `✗ ${mxn(r.difference)}`) : "—";
+  $("#k-blk .v").textContent = `${s.blocks.count} · 0 salidas indebidas`;
+
+  $("#cust").innerHTML = `<tr><th>Cliente</th><th class="n">Debe</th><th class="n">A favor</th></tr>` +
+    customers.map((c) => `<tr><td>${esc(c.name)}${c.opt_in ? "" : ' <span class="muted">(sin opt-in)</span>'}</td><td class="n">${mxn(c.owes)}</td><td class="n">${mxn(c.credit)}</td></tr>`).join("");
+  $("#acc").innerHTML = Object.entries(s.accounts).filter(([, v]) => v !== "0").map(([k, v]) =>
+    `<tr><td>${k} ${NAMES[k] || ""}</td><td class="n">${mxn(v)}</td></tr>`).join("") || `<tr><td class="muted">Sin movimientos</td></tr>`;
+  const cname = (id) => (customers.find((c) => c.id === id) || {}).name || id;
+  $("#chg").innerHTML = `<tr><th>Cliente</th><th>Ref.</th><th class="n">Monto</th><th>Estado</th></tr>` +
+    s.charges.map((c) => `<tr><td>${esc(cname(c.customer_id))}</td><td>${esc(c.reference)}</td><td class="n">${c.amount ? mxn(c.amount) : "—"}</td><td>${c.status === "paid" ? "✅ pagado" : c.status === "open" ? "⏳ abierto" : esc(c.status)}</td></tr>`).join("");
+  $("#blk").innerHTML = s.blocks.recent.map((b) => `<div class="block"><b>${esc(b.kind)}</b> · ${esc(b.provenance)}<br>${b.reasons.map(esc).join("<br>")}</div>`).join("") || `<p class="muted">Ninguno todavía.</p>`;
+  $("#led").innerHTML = s.entries.map((e) => `<div class="entry"><div class="k">${esc(e.kind)} <span class="muted">· ${esc(e.memo)}</span></div>${
+    e.lines.map((l) => `<div class="ln"><span>${l.account}</span><span class="muted">${esc(NAMES[l.account] || "")}${l.sub ? " · " + esc(cname(l.sub)) : ""}</span><span>${l.debit !== "0" ? "D " + mxn(l.debit) : ""}</span><span>${l.credit !== "0" ? "H " + mxn(l.credit) : ""}</span></div>`).join("")}</div>`).join("");
+  $("#upd").textContent = new Date().toLocaleTimeString("es-MX");
+}
+$("#who").onchange = () => refresh();
+async function refresh() { try { const r = await fetch("/api/state"); if (r.ok) render(await r.json()); } catch {} }
+refresh(); setInterval(refresh, 1500);
+</script>
+</body>
+</html>

@@ -1,0 +1,63 @@
+import { type PeyClient, type PeyTransaction } from "@cuadra/adapters";
+import type { Centavos } from "@cuadra/core";
+import { type Db, schema } from "@cuadra/db";
+import { eq } from "drizzle-orm";
+
+/** Cobro al cliente final. pey en vivo; simulado cuando no hay llave (se dice en la UI). */
+export interface ChargeGateway {
+  readonly name: string;
+  readonly simulated: boolean;
+  requestPayment(r: {
+    amount_cents: Centavos;
+    phone10: string;
+    concept: string;
+    num_ref: string;
+    metadata: Record<string, string>;
+  }): Promise<{ provider_charge_id: string }>;
+  getTransaction(id: string): Promise<PeyTransaction>;
+}
+
+export class PeyGateway implements ChargeGateway {
+  readonly name = "pey";
+  readonly simulated = false;
+  constructor(private readonly pey: PeyClient) {}
+  async requestPayment(r: Parameters<ChargeGateway["requestPayment"]>[0]) {
+    const pn = await this.pey.createPushNotification({ ...r, expiration_s: 3600 });
+    return { provider_charge_id: pn.transactionId };
+  }
+  getTransaction(id: string) {
+    return this.pey.getTransaction(id);
+  }
+}
+
+/**
+ * Cobro CoDi simulado: no hay dinero ni banco real. El "pago" lo dispara el botón del
+ * chat del cliente. Sin estado propio: todo sale de la tabla de cobros.
+ */
+export class SimulatedGateway implements ChargeGateway {
+  readonly name = "pey_sim";
+  readonly simulated = true;
+  constructor(private readonly db: Db) {}
+  async requestPayment(r: Parameters<ChargeGateway["requestPayment"]>[0]) {
+    return { provider_charge_id: `simtx_${r.metadata.cuadra_charge_id}` };
+  }
+  async getTransaction(id: string): Promise<PeyTransaction> {
+    const [c] = await this.db.select().from(schema.charges).where(eq(schema.charges.providerChargeId, id));
+    if (!c?.amountCents) throw new Error(`Transacción simulada ${id} no existe`);
+    return {
+      id,
+      status: "PAID",
+      amount_cents: c.amountCents,
+      base_cents: c.amountCents,
+      tip_cents: 0n,
+      fee_cents: 0n,
+      payment_method: "CODI",
+      payable_type: "API_CODI_PN",
+      payable_id: id,
+      date_paid: new Date(),
+      payer_clabe: null,
+      tracking_key: null,
+      external_metadata: { cuadra_charge_id: c.id },
+    };
+  }
+}

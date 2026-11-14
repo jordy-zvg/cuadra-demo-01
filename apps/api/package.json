@@ -1,0 +1,32 @@
+{
+  "name": "@cuadra/api",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "main": "src/index.ts",
+  "scripts": {
+    "test": "vitest run",
+    "typecheck": "tsc --noEmit",
+    "start": "tsx src/main.ts"
+  },
+  "dependencies": {
+    "@cuadra/adapters": "workspace:*",
+    "@cuadra/agents": "workspace:*",
+    "@cuadra/core": "workspace:*",
+    "@cuadra/db": "workspace:*",
+    "@fastify/static": "^8.3.0",
+    "@simplewebauthn/server": "^13.3.3",
+    "drizzle-orm": "^0.45.4",
+    "fastify": "^5.12.8",
+    "pg": "^8.23.1",
+    "tsx": "^4.20.0",
+    "zod": "^3.23.8"
+  },
+  "devDependencies": {
+    "@electric-sql/pglite": "^0.5.16",
+    "@types/node": "^20.14.0",
+    "@types/pg": "^8.23.1",
+    "typescript": "^5.6.0",
+    "vitest": "^2.1.0"
+  }
+}

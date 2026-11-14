@@ -237,3 +237,32 @@ export const reconciliationRuns = pgTable("reconciliation_runs", {
   providerBalanceCents: cents("provider_balance_cents").notNull(),
   ok: boolean("ok").notNull(),
 });
+
+export interface MessageAction {
+  kind: "confirm" | "cancel" | "pay" | "approve" | "link";
+  label: string;
+  proposal_id?: string;
+  url?: string;
+}
+
+export const messages = pgTable("messages", {
+  id: bigserial("id", { mode: "number" }).primaryKey(),
+  merchantId: text("merchant_id").notNull(),
+  channel: text("channel").notNull().default("websim"),
+  thread: text("thread").notNull(),
+  direction: text("direction").$type<"in" | "out">().notNull(),
+  body: text("body").notNull(),
+  actions: jsonb("actions").$type<MessageAction[]>(),
+  proposalId: text("proposal_id"),
+  createdAt: ts("created_at").notNull().defaultNow(),
+});
+
+export const guardBlocks = pgTable("guard_blocks", {
+  id: bigserial("id", { mode: "number" }).primaryKey(),
+  merchantId: text("merchant_id").notNull(),
+  kind: text("kind").notNull(),
+  provenance: text("provenance").notNull(),
+  reasons: jsonb("reasons").$type<string[]>().notNull(),
+  source: text("source").notNull().default("chat"),
+  createdAt: ts("created_at").notNull().defaultNow(),
+});
