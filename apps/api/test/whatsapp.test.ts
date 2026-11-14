@@ -83,6 +83,21 @@ describe("canal WhatsApp", () => {
     expect(await ledgerBalance(f.db, M, "1200", "c_lupe")).toBe(18500n);
   });
 
+  it("si no entiende, siempre manda opciones; tocar una equivale a escribirla", async () => {
+    const f = await setup();
+    await f.channel.handleInbound([f.text("asdf qwerty")], f.svc);
+    expect(f.wa.sent.at(-1)!.buttons.map((b) => b.id)).toEqual(["say:¿Quién me debe?", "say:¿Cuánto me queda del tope?"]);
+
+    await f.channel.handleInbound([f.text("Doña Lupe se llevó $185")], f.svc);
+    await f.channel.handleInbound([{ kind: "button", id: "b1", from: OWNER_WA, button_id: f.wa.sent.at(-1)!.buttons[0]!.id }], f.svc);
+    await f.channel.handleInbound([f.text("hola")], f.svc);
+    const opts = f.wa.sent.at(-1)!.buttons;
+    expect(opts.map((b) => b.title)).toEqual(["¿Quién me debe?", "Cobrar a Doña Lupe", "QR para Doña Lupe"]);
+
+    await f.channel.handleInbound([{ kind: "button", id: "b2", from: OWNER_WA, button_id: opts[0]!.id }], f.svc);
+    expect(f.wa.sent.at(-1)!.body).toMatch(/Te deben:\n• Doña Lupe: \$185\.00/);
+  });
+
   it("un reintento de Meta con el mismo id no se procesa dos veces", async () => {
     const f = await setup();
     const m = f.text("Doña Lupe se llevó $185");

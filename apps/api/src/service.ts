@@ -186,10 +186,34 @@ export class CuadraService {
     const c = await interpretWithConsensus(this.d.interpreters, body);
     if (!c.agreed) {
       const opts = c.candidates.map(describeIntent).filter(Boolean).join(" o ");
-      await this.say("comercio", opts ? `No estoy seguro. ¿Quisiste decir ${opts}? Escríbelo de nuevo, por favor.` : "No te entendí. Prueba: “Doña Lupe se llevó $185”.");
+      await this.say(
+        "comercio",
+        opts ? `No estoy seguro. ¿Quisiste decir ${opts}? Escríbelo de nuevo o elige una opción.` : "No te entendí. Elige una opción o escribe, por ejemplo: “Doña Lupe se llevó $185”.",
+        await this.suggestions(),
+      );
       return;
     }
     await this.route(c.intent, provenance);
+  }
+
+  /**
+   * Opciones para cuando no se entendió el mensaje: siempre "¿Quién me debe?" y, si alguien debe,
+   * cobrarle a quien más debe (a distancia o con QR). Máximo 3 (límite de botones de WhatsApp).
+   */
+  private async suggestions(): Promise<MessageAction[]> {
+    let top: { name: string; balance: bigint } | null = null;
+    for (const c of await this.customers()) {
+      const b = await ledgerBalance(this.d.db, this.d.merchantId, "1200", c.id);
+      if (b > 0n && (!top || b > top.balance)) top = { name: c.name, balance: b };
+    }
+    const out: MessageAction[] = [{ kind: "say", label: "¿Quién me debe?", text: "¿Quién me debe?" }];
+    if (top) {
+      out.push({ kind: "say", label: `Cobrar a ${top.name}`, text: `Cóbrale a ${top.name}` });
+      out.push({ kind: "say", label: `QR para ${top.name}`, text: `QR para ${top.name}` });
+    } else {
+      out.push({ kind: "say", label: "Mi tope del mes", text: "¿Cuánto me queda del tope?" });
+    }
+    return out;
   }
 
   private async blockBankDataFromChat(provenance: Provenance): Promise<void> {
@@ -221,10 +245,14 @@ export class CuadraService {
   private async route(intent: Intent, provenance: Provenance): Promise<void> {
     switch (intent.kind) {
       case "out_of_scope":
-        await this.say("comercio", "Solo te ayudo con fiado, cobros, tandas y pagos a proveedores.");
+        await this.say("comercio", "Solo te ayudo con fiado, cobros, tandas y pagos a proveedores. Elige una opción:", await this.suggestions());
         return;
       case "unclear":
-        await this.say("comercio", intent.question ?? "No te entendí. Prueba: “Doña Lupe se llevó $185” o “Cóbrale a Doña Lupe”.");
+        await this.say(
+          "comercio",
+          intent.question ?? "No te entendí. Elige una opción o escribe, por ejemplo: “Doña Lupe se llevó $185”.",
+          await this.suggestions(),
+        );
         return;
       case "register_cash_payment":
         await this.say("comercio", "Por ahora solo registro pagos por CoDi/SPEI, que se concilian solos. El efectivo aún no está habilitado.");

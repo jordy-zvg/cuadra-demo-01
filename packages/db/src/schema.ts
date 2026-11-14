@@ -241,10 +241,12 @@ export const reconciliationRuns = pgTable("reconciliation_runs", {
 });
 
 export interface MessageAction {
-  kind: "confirm" | "cancel" | "pay" | "approve" | "link" | "qr";
+  /** say: sugerencia; al tocarla se envía `text` como si el comercio la hubiera escrito. */
+  kind: "confirm" | "cancel" | "pay" | "approve" | "link" | "qr" | "say";
   label: string;
   proposal_id?: string;
   url?: string;
+  text?: string;
 }
 
 export const messages = pgTable("messages", {

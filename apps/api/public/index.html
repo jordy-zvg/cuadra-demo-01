@@ -151,6 +151,7 @@ document.body.addEventListener("click", (e) => {
   if (a.kind === "confirm") post("/api/confirm", { proposal_id: a.proposal_id });
   else if (a.kind === "cancel") post("/api/cancel", { proposal_id: a.proposal_id });
   else if (a.kind === "pay") post(a.url);
+  else if (a.kind === "say") post("/api/chat", { text: a.text });
   else if (a.url) window.open(a.url, "_blank");
 });
 

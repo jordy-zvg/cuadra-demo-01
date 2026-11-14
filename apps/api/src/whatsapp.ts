@@ -51,6 +51,7 @@ export class WhatsAppChannel implements OutboundChannel {
       const qr = a.kind === "qr" && a.url ? QR_DATA_URL.exec(a.url) : null;
       if (qr) qrPng = Buffer.from(qr[1]!, "base64");
       else if ((a.kind === "confirm" || a.kind === "cancel") && a.proposal_id) buttons.push({ id: `${a.kind}:${a.proposal_id}`, title: a.label });
+      else if (a.kind === "say" && a.text) buttons.push({ id: `say:${a.text}`, title: a.label });
       else if (a.url?.startsWith("http")) links.push(`${a.label}: ${a.url}`);
     }
     const text = [msg.body, ...links].join("\n\n");
@@ -84,9 +85,13 @@ export class WhatsAppChannel implements OutboundChannel {
       if (m.kind === "text") {
         await service.handleMerchantMessage(m.text, m.forwarded ? "third_party_content" : "user_direct");
       } else if (m.kind === "button") {
-        const [action, proposalId] = m.button_id.split(":");
-        if (proposalId && action === "confirm") await service.confirm(proposalId);
-        else if (proposalId && action === "cancel") await service.cancel(proposalId);
+        const sep = m.button_id.indexOf(":");
+        const action = m.button_id.slice(0, sep);
+        const arg = m.button_id.slice(sep + 1);
+        if (sep > 0 && arg && action === "confirm") await service.confirm(arg);
+        else if (sep > 0 && arg && action === "cancel") await service.cancel(arg);
+        // Sugerencia: se procesa como si el comercio la hubiera escrito.
+        else if (sep > 0 && arg && action === "say") await service.handleMerchantMessage(arg, "user_direct");
       } else {
         await this.send({
           merchantId: this.d.merchantId,
