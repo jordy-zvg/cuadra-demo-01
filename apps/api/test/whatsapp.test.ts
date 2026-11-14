@@ -12,6 +12,7 @@ import { TEMPLATES, type TemplateName, templateArity, templateCreateBody } from 
 const NOW = new Date("2026-11-14T11:00:00-06:00");
 const M = DEMO.merchantId;
 const OWNER_WA = "5215511112222"; // así llega un celular de México en el webhook
+const OWNER_TO = "525511112222"; // así se le responde (52 + 10 dígitos; 521 da error 131030 con el número de prueba)
 
 class FakeWhatsApp {
   sent: Array<{ to: string; body: string; buttons: WhatsAppButton[] }> = [];
@@ -74,7 +75,7 @@ describe("canal WhatsApp", () => {
     const f = await setup();
     await f.channel.handleInbound([f.text("Doña Lupe se llevó $185")], f.svc);
     const reply = f.wa.sent.at(-1)!;
-    expect(reply.to).toBe(OWNER_WA); // responde al wa_id con el que escribió
+    expect(reply.to).toBe(OWNER_TO);
     const confirm = reply.buttons.find((b) => b.id.startsWith("confirm:"))!;
     expect(confirm).toBeDefined();
 
@@ -129,7 +130,7 @@ describe("canal WhatsApp", () => {
     await f.channel.handleInbound([f.text("QR para Doña Lupe")], f.svc);
     expect(Buffer.from(f.wa.uploads[0]!).toString()).toBe("PNG-de-prueba");
     const img = f.wa.images[0]!;
-    expect(img).toMatchObject({ to: OWNER_WA, mediaId: "media_1" });
+    expect(img).toMatchObject({ to: OWNER_TO, mediaId: "media_1" });
     expect(img.caption).toMatch(/escanee este QR.*\$185\.00, ref\. \d{7}/s);
     // El link del banco simulado es relativo: no se manda por WhatsApp.
     expect(img.caption).not.toMatch(/\/api\/sim/);

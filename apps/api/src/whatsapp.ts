@@ -27,9 +27,6 @@ const QR_DATA_URL = /^data:image\/png;base64,([A-Za-z0-9+/=]+)$/;
 
 export class WhatsAppChannel implements OutboundChannel {
   readonly name = "whatsapp";
-  /** wa_id con el que escribió el comercio por última vez (México puede llegar como 521...). */
-  private ownerWaId: string | null = null;
-
   constructor(private readonly d: WhatsAppChannelDeps) {}
 
   /**
@@ -39,7 +36,10 @@ export class WhatsAppChannel implements OutboundChannel {
    */
   async send(msg: OutboundMessage): Promise<void> {
     const comercio = msg.thread === "comercio";
-    const to = comercio && this.ownerWaId ? this.ownerWaId : `52${msg.phone10}`;
+    // Siempre 52 + 10 dígitos. El webhook trae los celulares de México como 521..., pero ese formato
+    // no coincide con la lista de destinatarios del número de prueba (error 131030); Meta convierte
+    // 52... a 521... por su cuenta (probado el 14-nov-2026).
+    const to = `52${msg.phone10}`;
     if (msg.template && !comercio) {
       await this.d.client.sendTemplate(to, msg.template.name, TEMPLATE_LANGUAGE, msg.template.params);
       return;
@@ -80,7 +80,6 @@ export class WhatsAppChannel implements OutboundChannel {
         this.d.log({ msg: "whatsapp_ignored_sender", message_id: m.id });
         continue;
       }
-      this.ownerWaId = m.from;
 
       if (m.kind === "text") {
         await service.handleMerchantMessage(m.text, m.forwarded ? "third_party_content" : "user_direct");
