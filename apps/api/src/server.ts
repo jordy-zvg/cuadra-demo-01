@@ -42,7 +42,8 @@ export function buildServer(o: ServerOpts): FastifyInstance {
     const expected = createHash("sha256").update(o.demoPassword).digest();
     app.addHook("onRequest", async (req, reply) => {
       const path = req.url.split("?")[0] ?? "";
-      if (path === "/health" || path.startsWith("/webhooks/")) return;
+      // El aviso de privacidad es público: Meta lo exige para publicar la app de WhatsApp.
+      if (path === "/health" || path === "/privacidad" || path.startsWith("/webhooks/")) return;
       const auth = req.headers.authorization ?? "";
       const m = /^Basic\s+(.+)$/i.exec(auth);
       const pass = m ? Buffer.from(m[1]!, "base64").toString("utf8").split(":").slice(1).join(":") : "";
@@ -54,6 +55,7 @@ export function buildServer(o: ServerOpts): FastifyInstance {
   }
 
   app.register(fastifyStatic, { root: fileURLToPath(new URL("../public/", import.meta.url)) });
+  app.get("/privacidad", async (_req, reply) => reply.type("text/html; charset=utf-8").sendFile("privacidad.html"));
 
   app.get("/health", async () => ({ ok: true }));
   registerPasskeyRoutes(app, o.passkey);

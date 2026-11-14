@@ -29,6 +29,10 @@ describe("login mínimo de la demo", () => {
     expect((await a.inject({ url: "/api/state", headers: { authorization: basic("s3creta") } })).statusCode).toBe(200);
     expect((await a.inject({ method: "POST", url: "/api/chat", payload: { text: "hola" } })).statusCode).toBe(401);
     expect((await a.inject({ url: "/health" })).statusCode).toBe(200);
+    // El aviso de privacidad es público (Meta lo revisa para publicar la app).
+    const priv = await a.inject({ url: "/privacidad" });
+    expect(priv.statusCode).toBe(200);
+    expect(priv.body).toMatch(/Aviso de privacidad de Cuadra/);
     // El webhook no pide contraseña (trae su propia firma): sin secreto configurado responde 503.
     expect((await a.inject({ method: "POST", url: "/webhooks/pey", payload: "{}", headers: { "content-type": "application/json" } })).statusCode).toBe(503);
   });
