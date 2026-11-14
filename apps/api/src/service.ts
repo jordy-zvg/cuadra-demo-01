@@ -39,6 +39,7 @@ import {
 import { and, desc, eq } from "drizzle-orm";
 import type { ChargeGateway } from "./gateway.js";
 import { TandaFlow } from "./tanda-flow.js";
+import type { TemplateRef } from "./whatsapp-templates.js";
 
 export const REMINDER_TEMPLATE = "cobro_amable";
 
@@ -59,7 +60,7 @@ export interface ServiceDeps {
   udi: UdiMicro | null;
   log: (r: Record<string, unknown>) => void;
   /** Canal externo (WhatsApp) que entrega cada respuesta además de guardarla. */
-  deliver?: (thread: string, body: string, actions?: MessageAction[]) => Promise<void>;
+  deliver?: (thread: string, body: string, actions?: MessageAction[], template?: TemplateRef) => Promise<void>;
 }
 
 export type Provenance = "user_direct" | "user_voice" | "third_party_content";
@@ -76,14 +77,14 @@ export class CuadraService {
       gateway: d.gateway,
       verify: d.verify,
       now: d.now,
-      say: (thread, body, actions) => this.say(thread, body, actions),
+      say: (thread, body, actions, template) => this.say(thread, body, actions, undefined, template),
       log: d.log,
     });
   }
 
   // ---------- mensajes ----------
 
-  private async say(thread: string, body: string, actions?: MessageAction[], proposalId?: string): Promise<void> {
+  private async say(thread: string, body: string, actions?: MessageAction[], proposalId?: string, template?: TemplateRef): Promise<void> {
     await this.d.db.insert(schema.messages).values({
       merchantId: this.d.merchantId,
       thread,
@@ -93,7 +94,7 @@ export class CuadraService {
       proposalId: proposalId ?? null,
       createdAt: this.d.now(),
     });
-    await this.d.deliver?.(thread, body, actions);
+    await this.d.deliver?.(thread, body, actions, template);
   }
 
   private async heard(thread: string, body: string): Promise<void> {
@@ -425,6 +426,8 @@ export class CuadraService {
           : `Ref. ${reference}.\n`) +
         "Si hoy no se puede, no pasa nada: dinos cuándo te queda bien. ¡Gracias por tu confianza!",
       actions,
+      undefined,
+      { name: "cuadra_cobro_fiado", params: [c.name, merchant?.name ?? "tu tienda", amount, reference] },
     );
     await this.say(
       "comercio",
@@ -552,7 +555,11 @@ export class CuadraService {
       const bal = await ledgerBalance(this.d.db, out.merchant_id, "1200", cid);
       const fav = await ledgerBalance(this.d.db, out.merchant_id, "2100", cid);
       const rest = bal > 0n ? `Te falta ${formatMXN(bal)}.` : fav > 0n ? `Quedas al corriente y con ${formatMXN(fav)} a favor.` : "Quedas al corriente. ¡Gracias!";
-      await this.say(cid, `🧾 Recibo: pagaste ${amount}. ${rest}`);
+      const [store] = await this.d.db.select({ name: schema.merchants.name }).from(schema.merchants).where(eq(schema.merchants.id, this.d.merchantId));
+      await this.say(cid, `🧾 Recibo: pagaste ${amount}. ${rest}`, undefined, undefined, {
+        name: "cuadra_recibo_fiado",
+        params: [store?.name ?? "tu tienda", amount, rest],
+      });
       await this.say("comercio", `💰 ${c?.name} pagó ${amount} por CoDi. Conciliado solo${bal > 0n ? `; aún debe ${formatMXN(bal)}` : "; queda en ceros"}.`);
       const s = await this.n2bis();
       if (s && s.level !== "ok") await this.say("comercio", `📈 ${s.message}`);

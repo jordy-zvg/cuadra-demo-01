@@ -7,7 +7,8 @@
   "scripts": {
     "test": "vitest run",
     "typecheck": "tsc --noEmit",
-    "start": "tsx src/main.ts"
+    "start": "tsx src/main.ts",
+    "templates:create": "tsx src/create-templates.ts"
   },
   "dependencies": {
     "@cuadra/adapters": "workspace:*",

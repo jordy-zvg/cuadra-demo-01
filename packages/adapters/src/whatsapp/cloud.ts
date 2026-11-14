@@ -94,6 +94,15 @@ export function parseWhatsAppWebhook(body: unknown): WhatsAppInbound[] {
   return out;
 }
 
+/** Error de Meta cuando la ventana de 24 h está cerrada y solo se puede mandar plantilla. */
+export const WHATSAPP_WINDOW_CLOSED = 131047;
+
+/** Parámetro de plantilla en una sola línea y sin espacios repetidos. */
+export function flattenParam(p: string): string {
+  const s = p.replace(/\s+/g, " ").trim();
+  return s || "-";
+}
+
 export class WhatsAppApiError extends Error {
   constructor(readonly status: number, readonly code: number | null, message: string) {
     super(message);
@@ -136,6 +145,24 @@ export class WhatsAppClient {
 
   sendText(to: string, body: string): Promise<string | null> {
     return this.send(to, { type: "text", text: { body: body.slice(0, 4096), preview_url: true } });
+  }
+
+  /**
+   * Plantilla aprobada con parámetros posicionales en el cuerpo ({{1}}, {{2}}...). Es la única forma
+   * de escribirle a alguien fuera de la ventana de 24 h. Meta no acepta saltos de línea ni
+   * tabuladores en los parámetros, así que se aplanan.
+   */
+  sendTemplate(to: string, name: string, language: string, params: string[]): Promise<string | null> {
+    return this.send(to, {
+      type: "template",
+      template: {
+        name,
+        language: { code: language },
+        ...(params.length
+          ? { components: [{ type: "body", parameters: params.map((p) => ({ type: "text", text: flattenParam(p) })) }] }
+          : {}),
+      },
+    });
   }
 
   /** Hasta 3 botones de respuesta; títulos recortados a 20 caracteres. */

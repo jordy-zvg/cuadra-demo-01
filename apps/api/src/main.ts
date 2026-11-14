@@ -9,6 +9,7 @@ import { seedHistory } from "./seed-history.js";
 import { buildServer } from "./server.js";
 import { CuadraService } from "./service.js";
 import { WhatsAppChannel } from "./whatsapp.js";
+import type { TemplateRef } from "./whatsapp-templates.js";
 
 const env = (k: string) => process.env[k] || undefined;
 const req = (k: string) => {
@@ -79,7 +80,7 @@ async function main(): Promise<void> {
     bankSim,
     udi: env("UDI_VALOR") ? parseUdiValue(env("UDI_VALOR")!) : null,
     log,
-    ...(whatsapp ? { deliver: (t: string, b: string, a?: MessageAction[]) => whatsapp.channel.deliver(t, b, a) } : {}),
+    ...(whatsapp ? { deliver: (t: string, b: string, a?: MessageAction[], tpl?: TemplateRef) => whatsapp.channel.deliver(t, b, a, tpl) } : {}),
   });
   const app = buildServer({
     db,

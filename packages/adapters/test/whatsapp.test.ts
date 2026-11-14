@@ -103,6 +103,18 @@ describe("WhatsAppClient", () => {
     expect(body.interactive.action.buttons[0]).toEqual({ type: "reply", reply: { id: "confirm:pr_1", title: "Confirmar este asien" } });
   });
 
+  it("plantilla con idioma y parámetros aplanados", async () => {
+    const f = fake(ok());
+    await new WhatsAppClient({ token: "t", phoneNumberId: "PN1", fetch: f.fn }).sendTemplate("52", "cuadra_recibo_fiado", "es_MX", ["La Esquina", "$185.00", "Te falta\n\t$10.00.", ""]);
+    expect(JSON.parse(String(f.calls[0]!.init.body)).template).toEqual({
+      name: "cuadra_recibo_fiado",
+      language: { code: "es_MX" },
+      components: [{ type: "body", parameters: [
+        { type: "text", text: "La Esquina" }, { type: "text", text: "$185.00" }, { type: "text", text: "Te falta $10.00." }, { type: "text", text: "-" },
+      ] }],
+    });
+  });
+
   it("propaga el error de Meta con su código", async () => {
     const f = fake(new Response(JSON.stringify({ error: { message: "Re-engagement message", code: 131047 } }), { status: 400 }));
     const e = await new WhatsAppClient({ token: "t", phoneNumberId: "PN1", fetch: f.fn }).sendText("52", "x").catch((x: unknown) => x);
