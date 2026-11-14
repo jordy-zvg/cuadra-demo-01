@@ -57,7 +57,8 @@ export function buildServer(o: ServerOpts): FastifyInstance {
   app.register(fastifyStatic, { root: fileURLToPath(new URL("../public/", import.meta.url)) });
   app.get("/privacidad", async (_req, reply) => reply.type("text/html; charset=utf-8").sendFile("privacidad.html"));
 
-  app.get("/health", async () => ({ ok: true }));
+  // commit: lo inyecta Railway en cada despliegue; sirve para saber qué versión está en vivo.
+  app.get("/health", async () => ({ ok: true, commit: process.env.RAILWAY_GIT_COMMIT_SHA?.slice(0, 7) ?? null }));
   registerPasskeyRoutes(app, o.passkey);
 
   app.post("/api/chat", async (req, reply) => {
