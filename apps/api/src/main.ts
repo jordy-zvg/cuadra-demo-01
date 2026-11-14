@@ -2,7 +2,7 @@ import { PeyClient, WhatsAppClient, verifyProposalAssertion } from "@cuadra/adap
 import { parseUdiValue } from "@cuadra/core";
 import { AnthropicInterpreter, FallbackInterpreter, type Interpreter, RuleInterpreter } from "@cuadra/agents";
 import { connectPostgres, migratePostgres } from "@cuadra/db/node";
-import { type MessageAction, schema, seedDemo } from "@cuadra/db";
+import { schema, seedDemo } from "@cuadra/db";
 import { eq } from "drizzle-orm";
 import { type ChargeGateway, PeyGateway, SimulatedGateway } from "./gateway.js";
 import { seedHistory } from "./seed-history.js";
@@ -10,7 +10,6 @@ import { buildServer } from "./server.js";
 import { CuadraService } from "./service.js";
 import { WhatsAppChannel } from "./whatsapp.js";
 import { parseReminderSchedule, startReminderScheduler } from "./scheduler.js";
-import type { TemplateRef } from "./whatsapp-templates.js";
 
 const env = (k: string) => process.env[k] || undefined;
 const req = (k: string) => {
@@ -27,7 +26,7 @@ async function main(): Promise<void> {
   const applied = await migratePostgres(pool);
   const demo = await seedDemo(db, new Date(), {
     ...(env("DEMO_CUSTOMER_PHONE") ? { lupePhone: env("DEMO_CUSTOMER_PHONE")! } : {}),
-    ...(env("DEMO_MERCHANT_PHONE") ? { ownerPhone: env("DEMO_MERCHANT_PHONE")! } : {}),
+    ...(env("DEMO_OWNER_PHONE") ? { ownerPhone: env("DEMO_OWNER_PHONE")! } : {}),
   });
   const bankSim = env("BANK_SIM") !== "off";
   // Cuenta receptora del comercio registrada en pey (POST /bank-account, estado ACTIVE).
@@ -81,7 +80,7 @@ async function main(): Promise<void> {
     bankSim,
     udi: env("UDI_VALOR") ? parseUdiValue(env("UDI_VALOR")!) : null,
     log,
-    ...(whatsapp ? { deliver: (t: string, b: string, a?: MessageAction[], tpl?: TemplateRef) => whatsapp.channel.deliver(t, b, a, tpl) } : {}),
+    ...(whatsapp ? { channels: [whatsapp.channel] } : {}),
   });
   const app = buildServer({
     db,
@@ -89,6 +88,7 @@ async function main(): Promise<void> {
     merchantId: demo.merchantId,
     gateway,
     bankSim,
+    demoPassword: env("DEMO_PASSWORD") ?? null,
     passkey: { gateway, db, merchantId: demo.merchantId, ownerId: demo.ownerId, rpID, origins, now: () => new Date() },
     log,
     ...(whatsapp ? { whatsapp } : {}),

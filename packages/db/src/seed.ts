@@ -9,11 +9,11 @@ const clabe = (first17: string) => first17 + clabeCheckDigit(first17);
 export const DEMO = {
   merchantId: "m_esquina",
   ownerId: "u_esquina",
-  ownerPhone: "+525500000001",
+  ownerPhone: "+520000000001",
   customers: {
-    lupe: { id: "c_lupe", name: "Doña Lupe", phone: "+525500000101", virtualClabe: clabe("64618000000000001") },
-    beto: { id: "c_beto", name: "Beto Ramírez", phone: "+525500000102", orderingClabe: clabe("01218000000000002") },
-    chela: { id: "c_chela", name: "Chela Gómez", phone: "+525500000103" },
+    lupe: { id: "c_lupe", name: "Doña Lupe", phone: "+520000000101", virtualClabe: clabe("64618000000000001") },
+    beto: { id: "c_beto", name: "Beto Ramírez", phone: "+520000000102", orderingClabe: clabe("01218000000000002") },
+    chela: { id: "c_chela", name: "Chela Gómez", phone: "+520000000103" },
   },
   payees: {
     refrescos: { id: "p_refrescos", alias: "Refrescos Pérez", clabe: clabe("03218000000000003"), holder: "Refrescos Pérez SA de CV" },
@@ -66,13 +66,22 @@ export async function seedDemo(db: Db, now = new Date(), opts: { lupePhone?: str
       .insert(charges)
       .values({ id: "ch_chela_1", merchantId: DEMO.merchantId, customerId: chela.id, reference: "4815162", uniqueAmountCents: 45017n })
       .onConflictDoNothing();
+    // Los celulares de demo empiezan con 0 (no existen en México): nunca se les envía nada.
+    // Limpia los números ficticios anteriores, que sí podían ser de alguien real.
+    for (const [old, fake] of [
+      ["+525500000101", "+520000000101"],
+      ["+525500000102", "+520000000102"],
+      ["+525500000103", "+520000000103"],
+    ] as const) {
+      await tx.update(customers).set({ phone: fake }).where(eq(customers.phone, old));
+    }
+    await tx.update(merchantUsers).set({ phone: DEMO.ownerPhone }).where(eq(merchantUsers.phone, "+525500000001"));
+    if (opts.ownerPhone) {
+      await tx.update(merchantUsers).set({ phone: opts.ownerPhone }).where(eq(merchantUsers.id, DEMO.ownerId));
+    }
     // El celular real de la demo se puede cambiar en cualquier arranque.
     if (opts.lupePhone) {
       await tx.update(customers).set({ phone: opts.lupePhone }).where(eq(customers.id, lupe.id));
-    }
-    // WhatsApp del comercio de la demo: el único número que puede darle instrucciones al agente.
-    if (opts.ownerPhone) {
-      await tx.update(merchantUsers).set({ phone: opts.ownerPhone }).where(eq(merchantUsers.id, DEMO.ownerId));
     }
   });
   return DEMO;

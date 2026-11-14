@@ -1,6 +1,6 @@
 /**
- * Canal WhatsApp: traduce mensajes de Meta al mismo agente que usa el chat web y entrega sus
- * respuestas. Solo el teléfono verificado del comercio puede darle instrucciones (R02).
+ * Canal WhatsApp: implementa OutboundChannel (salida) y traduce los mensajes de Meta al mismo agente
+ * que usa el chat web (entrada). Solo el teléfono del comercio puede darle instrucciones (R02).
  */
 import {
   type WhatsAppButton,
@@ -10,97 +10,63 @@ import {
   WhatsAppApiError,
   phone10,
 } from "@cuadra/adapters";
-import { type Db, type MessageAction, schema } from "@cuadra/db";
-import { and, eq } from "drizzle-orm";
+import { type Db, schema } from "@cuadra/db";
+import { type OutboundChannel, type OutboundMessage, resolveThreadPhone } from "./channel.js";
 import type { CuadraService } from "./service.js";
-import { TEMPLATE_LANGUAGE, type TemplateRef } from "./whatsapp-templates.js";
+import { TEMPLATE_LANGUAGE } from "./whatsapp-templates.js";
 
 export interface WhatsAppChannelDeps {
   db: Db;
   merchantId: string;
   ownerId: string;
-  client: Pick<WhatsAppClient, "sendText" | "sendButtons" | "sendTemplate">;
+  client: Pick<WhatsAppClient, "sendText" | "sendButtons" | "sendTemplate" | "uploadMedia" | "sendImage">;
   log: (r: Record<string, unknown>) => void;
 }
 
-export class WhatsAppChannel {
+const QR_DATA_URL = /^data:image\/png;base64,([A-Za-z0-9+/=]+)$/;
+
+export class WhatsAppChannel implements OutboundChannel {
+  readonly name = "whatsapp";
   /** wa_id con el que escribió el comercio por última vez (México puede llegar como 521...). */
   private ownerWaId: string | null = null;
 
   constructor(private readonly d: WhatsAppChannelDeps) {}
 
-  private async ownerPhone10(): Promise<string | null> {
-    const [u] = await this.d.db
-      .select({ phone: schema.merchantUsers.phone })
-      .from(schema.merchantUsers)
-      .where(and(eq(schema.merchantUsers.id, this.d.ownerId), eq(schema.merchantUsers.phoneVerified, true)));
-    return u ? phone10(u.phone) : null;
-  }
-
-  private async recipient(thread: string): Promise<string | null> {
-    if (thread === "comercio") {
-      if (this.ownerWaId) return this.ownerWaId;
-      const p = await this.ownerPhone10();
-      return p && `52${p}`;
-    }
-    // Integrante de tanda: tanda:<id>:<posición>. Dio su celular al firmar la tanda.
-    const tanda = /^tanda:(.+):(\d+)$/.exec(thread);
-    if (tanda) {
-      const [m] = await this.d.db
-        .select({ phone: schema.tandaMembers.phone })
-        .from(schema.tandaMembers)
-        .where(and(eq(schema.tandaMembers.tandaId, tanda[1]!), eq(schema.tandaMembers.position, Number(tanda[2]))));
-      const p = m ? phone10(m.phone) : null;
-      return p && `52${p}`;
-    }
-    const [c] = await this.d.db
-      .select({ phone: schema.customers.phone, optIn: schema.customers.optIn })
-      .from(schema.customers)
-      .where(and(eq(schema.customers.id, thread), eq(schema.customers.merchantId, this.d.merchantId)));
-    const p = c?.optIn && c.phone ? phone10(c.phone) : null;
-    return p && `52${p}`;
-  }
-
   /**
-   * Entrega una respuesta del agente. Nunca lanza: si WhatsApp falla, el mensaje ya quedó en la base.
-   * A clientes e integrantes (mensajes que inicia el negocio) se les manda la plantilla aprobada.
-   * Al comercio se le responde con texto y botones; si su ventana de 24 h ya cerró, va el aviso genérico.
+   * Clientes e integrantes (mensajes que inicia el negocio) reciben la plantilla aprobada.
+   * Al comercio: QR como imagen, propuestas con botones y lo demás como texto; si su ventana de
+   * 24 h ya cerró, el aviso genérico. Si algo falla, el servicio lo registra y el flujo sigue.
    */
-  async deliver(thread: string, body: string, actions?: MessageAction[], template?: TemplateRef): Promise<void> {
+  async send(msg: OutboundMessage): Promise<void> {
+    const comercio = msg.thread === "comercio";
+    const to = comercio && this.ownerWaId ? this.ownerWaId : `52${msg.phone10}`;
+    if (msg.template && !comercio) {
+      await this.d.client.sendTemplate(to, msg.template.name, TEMPLATE_LANGUAGE, msg.template.params);
+      return;
+    }
+    const buttons: WhatsAppButton[] = [];
+    const links: string[] = [];
+    let qrPng: Uint8Array | null = null;
+    for (const a of msg.actions) {
+      const qr = a.kind === "qr" && a.url ? QR_DATA_URL.exec(a.url) : null;
+      if (qr) qrPng = Buffer.from(qr[1]!, "base64");
+      else if ((a.kind === "confirm" || a.kind === "cancel") && a.proposal_id) buttons.push({ id: `${a.kind}:${a.proposal_id}`, title: a.label });
+      else if (a.url?.startsWith("http")) links.push(`${a.label}: ${a.url}`);
+    }
+    const text = [msg.body, ...links].join("\n\n");
     try {
-      const to = await this.recipient(thread);
-      if (!to) return;
-      if (template && thread !== "comercio") {
-        await this.d.client.sendTemplate(to, template.name, TEMPLATE_LANGUAGE, template.params);
-        return;
-      }
-      const buttons: WhatsAppButton[] = [];
-      const links: string[] = [];
-      for (const a of actions ?? []) {
-        if ((a.kind === "confirm" || a.kind === "cancel") && a.proposal_id) buttons.push({ id: `${a.kind}:${a.proposal_id}`, title: a.label });
-        else if (a.url) links.push(`${a.label}: ${a.url}`);
-      }
-      const text = [body, ...links].join("\n\n");
-      try {
-        await (buttons.length ? this.d.client.sendButtons(to, text, buttons) : this.d.client.sendText(to, text));
-      } catch (e) {
-        if (!(thread === "comercio" && e instanceof WhatsAppApiError && e.code === WHATSAPP_WINDOW_CLOSED)) throw e;
-        await this.d.client.sendTemplate(to, "cuadra_aviso_comercio", TEMPLATE_LANGUAGE, [body]);
-      }
+      if (qrPng) await this.d.client.sendImage(to, await this.d.client.uploadMedia(qrPng, "image/png"), text);
+      else if (buttons.length) await this.d.client.sendButtons(to, text, buttons);
+      else await this.d.client.sendText(to, text);
     } catch (e) {
-      this.d.log({
-        msg: "whatsapp_send_error",
-        thread,
-        template: template?.name ?? null,
-        code: e instanceof WhatsAppApiError ? e.code : null,
-        error: e instanceof Error ? e.message : String(e),
-      });
+      if (!(comercio && e instanceof WhatsAppApiError && e.code === WHATSAPP_WINDOW_CLOSED)) throw e;
+      await this.d.client.sendTemplate(to, "cuadra_aviso_comercio", TEMPLATE_LANGUAGE, [msg.body]);
     }
   }
 
   /** Procesa mensajes entrantes ya verificados por firma. Idempotente por id de mensaje de Meta. */
   async handleInbound(msgs: WhatsAppInbound[], service: CuadraService): Promise<void> {
-    const owner = await this.ownerPhone10();
+    const owner = await resolveThreadPhone(this.d.db, this.d.merchantId, this.d.ownerId, "comercio");
     for (const m of msgs) {
       const fresh = await this.d.db
         .insert(schema.webhookEvents)
@@ -123,7 +89,13 @@ export class WhatsAppChannel {
         if (proposalId && action === "confirm") await service.confirm(proposalId);
         else if (proposalId && action === "cancel") await service.cancel(proposalId);
       } else {
-        await this.deliver("comercio", "Por ahora solo leo mensajes de texto. Escríbeme, por ejemplo: “Doña Lupe se llevó $185”.");
+        await this.send({
+          merchantId: this.d.merchantId,
+          thread: "comercio",
+          phone10: owner,
+          body: "Por ahora solo leo mensajes de texto. Escríbeme, por ejemplo: “Doña Lupe se llevó $185”.",
+          actions: [],
+        });
       }
     }
   }

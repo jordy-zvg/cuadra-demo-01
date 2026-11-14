@@ -32,6 +32,24 @@ class FakeWhatsApp {
     this.templates.push({ to, name, language, params });
     return "wamid";
   }
+  uploads: Uint8Array[] = [];
+  images: Array<{ to: string; mediaId: string; caption?: string | undefined }> = [];
+  async uploadMedia(bytes: Uint8Array) {
+    this.uploads.push(bytes);
+    return `media_${this.uploads.length}`;
+  }
+  async sendImage(to: string, mediaId: string, caption?: string) {
+    this.images.push({ to, mediaId, caption });
+    return "wamid";
+  }
+}
+
+/** Banco simulado que sí devuelve la imagen del QR, como pey con generateImage. */
+class QrGateway extends SimulatedGateway {
+  override async createQr(r: Parameters<SimulatedGateway["createQr"]>[0]) {
+    const out = await super.createQr(r);
+    return { ...out, image_png_base64: Buffer.from("PNG-de-prueba").toString("base64") };
+  }
 }
 
 async function setup() {
@@ -42,9 +60,9 @@ async function setup() {
   const channel = new WhatsAppChannel({ db, merchantId: M, ownerId: DEMO.ownerId, client: wa, log: (r) => logs.push(r) });
   const svc = new CuadraService({
     db, merchantId: M, ownerId: DEMO.ownerId, interpreters: [new RuleInterpreter()],
-    gateway: new SimulatedGateway(db), verify: async () => false, now: () => NOW, publicUrl: null,
-    peyWebhookSecret: null, bankSim: false, udi: null, log: () => {},
-    deliver: (t, b, a, tpl) => channel.deliver(t, b, a, tpl),
+    gateway: new QrGateway(db), verify: async () => false, now: () => NOW, publicUrl: null,
+    peyWebhookSecret: null, bankSim: false, udi: null, log: (r) => logs.push(r),
+    channels: [channel],
   });
   let n = 0;
   const text = (body: string, from = OWNER_WA, forwarded = false): WhatsAppInbound => ({ kind: "text", id: `w${++n}`, from, text: body, forwarded });
@@ -101,7 +119,20 @@ describe("canal WhatsApp", () => {
     f.wa.fail = true;
     await f.svc.handleMerchantMessage("¿Cuánto me debe Doña Lupe?");
     expect(await f.db.select().from(schema.messages)).not.toHaveLength(0);
-    expect(f.logs.some((l) => l.msg === "whatsapp_send_error")).toBe(true);
+    expect(f.logs.some((l) => l.msg === "channel_send_failed" && l.channel === "whatsapp")).toBe(true);
+  });
+
+  it("QR para Doña Lupe: el comercio recibe la imagen del QR con monto y referencia", async () => {
+    const f = await setup();
+    await f.channel.handleInbound([f.text("Doña Lupe se llevó $185")], f.svc);
+    await f.channel.handleInbound([{ kind: "button", id: "b1", from: OWNER_WA, button_id: f.wa.sent.at(-1)!.buttons[0]!.id }], f.svc);
+    await f.channel.handleInbound([f.text("QR para Doña Lupe")], f.svc);
+    expect(Buffer.from(f.wa.uploads[0]!).toString()).toBe("PNG-de-prueba");
+    const img = f.wa.images[0]!;
+    expect(img).toMatchObject({ to: OWNER_WA, mediaId: "media_1" });
+    expect(img.caption).toMatch(/escanee este QR.*\$185\.00, ref\. \d{7}/s);
+    // El link del banco simulado es relativo: no se manda por WhatsApp.
+    expect(img.caption).not.toMatch(/\/api\/sim/);
   });
 
   it("recordatorio y recibo al cliente salen como plantilla con sus parámetros", async () => {

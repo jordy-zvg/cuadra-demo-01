@@ -10,6 +10,7 @@
     "typecheck": "pnpm -r typecheck",
     "coverage": "pnpm -r coverage",
     "start:api": "pnpm --filter @cuadra/api start",
-    "start:executor": "pnpm --filter @cuadra/executor start:poll"
+    "start:executor": "pnpm --filter @cuadra/executor start:poll",
+    "pey:check": "pnpm --filter @cuadra/api pey:check"
   }
 }

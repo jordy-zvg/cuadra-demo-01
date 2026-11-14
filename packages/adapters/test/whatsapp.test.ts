@@ -115,6 +115,24 @@ describe("WhatsAppClient", () => {
     });
   });
 
+  it("sube la imagen por multipart y la manda con pie de foto", async () => {
+    const calls: Array<{ url: string; init: RequestInit }> = [];
+    const responses = [new Response(JSON.stringify({ id: "MEDIA1" }), { status: 200 }), ok()];
+    const fn = (async (url: string | URL, init?: RequestInit) => {
+      calls.push({ url: String(url), init: init ?? {} });
+      return responses.shift()!;
+    }) as typeof fetch;
+    const c = new WhatsAppClient({ token: "t", phoneNumberId: "PN1", fetch: fn });
+    const id = await c.uploadMedia(new Uint8Array([1, 2, 3]), "image/png");
+    await c.sendImage("52", id, "QR de $185.00");
+    expect(calls[0]!.url).toBe("https://graph.facebook.com/v27.0/PN1/media");
+    const form = calls[0]!.init.body as FormData;
+    expect(form.get("messaging_product")).toBe("whatsapp");
+    expect(form.get("type")).toBe("image/png");
+    expect((form.get("file") as Blob).size).toBe(3);
+    expect(JSON.parse(String(calls[1]!.init.body))).toMatchObject({ type: "image", image: { id: "MEDIA1", caption: "QR de $185.00" } });
+  });
+
   it("propaga el error de Meta con su código", async () => {
     const f = fake(new Response(JSON.stringify({ error: { message: "Re-engagement message", code: 131047 } }), { status: 400 }));
     const e = await new WhatsAppClient({ token: "t", phoneNumberId: "PN1", fetch: f.fn }).sendText("52", "x").catch((x: unknown) => x);

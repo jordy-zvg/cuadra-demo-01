@@ -165,6 +165,24 @@ export class WhatsAppClient {
     });
   }
 
+  /** POST /{phone-number-id}/media (multipart): sube una imagen y devuelve su id (vigente 30 días). */
+  async uploadMedia(bytes: Uint8Array, mime: "image/png" | "image/jpeg"): Promise<string> {
+    const form = new FormData();
+    form.append("messaging_product", "whatsapp");
+    form.append("type", mime);
+    form.append("file", new Blob([bytes], { type: mime }), mime === "image/png" ? "qr.png" : "imagen.jpg");
+    const url = `${this.cfg.baseUrl ?? WHATSAPP_GRAPH_URL}/${this.cfg.version ?? WHATSAPP_GRAPH_VERSION}/${encodeURIComponent(this.cfg.phoneNumberId)}/media`;
+    const res = await this.http(url, { method: "POST", headers: { Authorization: `Bearer ${this.cfg.token}` }, body: form });
+    const json = (await res.json().catch(() => null)) as { id?: string; error?: { message?: string; code?: number } } | null;
+    if (!res.ok || !json?.id) throw new WhatsAppApiError(res.status, json?.error?.code ?? null, json?.error?.message ?? `WhatsApp media ${res.status}`);
+    return json.id;
+  }
+
+  /** Imagen ya subida, con pie de foto (máx. 1024). */
+  sendImage(to: string, mediaId: string, caption?: string): Promise<string | null> {
+    return this.send(to, { type: "image", image: { id: mediaId, ...(caption ? { caption: caption.slice(0, MAX_BODY) } : {}) } });
+  }
+
   /** Hasta 3 botones de respuesta; títulos recortados a 20 caracteres. */
   sendButtons(to: string, body: string, buttons: WhatsAppButton[]): Promise<string | null> {
     if (buttons.length === 0) return this.sendText(to, body);
