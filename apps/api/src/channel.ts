@@ -2,7 +2,7 @@
  * Canales de salida (WhatsApp, SMS, …). Cuadra guarda cada mensaje en `messages` y además lo
  * entrega a cada canal configurado. Un canal solo traduce: nunca decide ni mueve dinero.
  */
-import { type Db, type MessageAction, schema } from "@cuadra/db";
+import { type Db, type MessageAction, realPhone10, schema } from "@cuadra/db";
 import { and, eq } from "drizzle-orm";
 
 export interface OutboundMessage {
@@ -21,10 +21,7 @@ export interface OutboundChannel {
   send(msg: OutboundMessage): Promise<void>;
 }
 
-const ten = (p: string | null | undefined) => {
-  const d = (p ?? "").replace(/\D/g, "");
-  return d.length >= 10 ? d.slice(-10) : null;
-};
+const ten = realPhone10;
 
 /** Celular del destinatario de una conversación, tomado de la base (nunca del texto). */
 export async function resolveThreadPhone(db: Db, merchantId: string, ownerId: string, thread: string): Promise<string | null> {

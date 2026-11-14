@@ -151,7 +151,15 @@ export async function recordProviderPayment(
 
 export async function customerPhone10(db: Db, customerId: string): Promise<string | null> {
   const [c] = await db.select({ phone: customers.phone }).from(customers).where(eq(customers.id, customerId));
-  const digits = c?.phone?.replace(/\D/g, "") ?? "";
+  return realPhone10(c?.phone);
+}
+
+/**
+ * Celular mexicano de 10 dígitos o null. Los números que empiezan con 0 no existen en México:
+ * se usan como ficticios en la demo y nunca se les envía nada.
+ */
+export function realPhone10(phone: string | null | undefined): string | null {
+  const digits = (phone ?? "").replace(/\D/g, "");
   const ten = digits.length >= 10 ? digits.slice(-10) : null;
-  return ten;
+  return ten && /^[1-9]\d{9}$/.test(ten) ? ten : null;
 }
