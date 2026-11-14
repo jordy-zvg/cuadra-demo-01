@@ -11,6 +11,7 @@ import {
   findTandaCharge,
   insertTandaCharge,
   openNextRound,
+  realPhone10,
   recordTandaPayment,
   schema,
   tandaMembersOf,
@@ -127,10 +128,17 @@ export class TandaFlow {
     const chargeId = newId("tch");
     const now = this.d.now();
     await insertTandaCharge(this.d.db, { id: chargeId, tandaId: t.id, round, payer: payer.position, recipient: recipient.position, amount: t.contributionCents, now });
+    // Nunca se manda a un número que no es un celular mexicano real (p. ej. los ficticios de la demo).
+    const phone10 = realPhone10(payer.phone);
+    if (!phone10) {
+      await this.d.db.update(schema.tandaCharges).set({ status: "expired" }).where(eq(schema.tandaCharges.id, chargeId));
+      await this.d.say("comercio", `⚠️ No le mandé la solicitud a ${payer.name}: su celular no es válido para CoDi.`);
+      return false;
+    }
     try {
       const r = await this.d.gateway.requestPayment({
         amount_cents: t.contributionCents,
-        phone10: payer.phone,
+        phone10,
         concept: `Tanda ${t.name} R${round}`.slice(0, 40),
         num_ref: String(randomInt(1_000_000, 10_000_000)),
         metadata: { cuadra_tanda_charge_id: chargeId },

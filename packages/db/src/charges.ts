@@ -194,11 +194,13 @@ export async function customerPhone10(db: Db, customerId: string): Promise<strin
 }
 
 /**
- * Celular mexicano de 10 dígitos o null. Los números que empiezan con 0 no existen en México:
- * se usan como ficticios en la demo y nunca se les envía nada.
+ * Celular mexicano de 10 dígitos o null. Acepta solo 10 dígitos, +52 y 10 dígitos, o +52 1 y 10
+ * dígitos: cualquier otra longitud es un error de captura y nunca se recorta (mandaría el cobro a
+ * otra persona). Los números que empiezan con 0 no existen en México: se usan como ficticios en la
+ * demo y nunca se les envía nada.
  */
 export function realPhone10(phone: string | null | undefined): string | null {
   const digits = (phone ?? "").replace(/\D/g, "");
-  const ten = digits.length >= 10 ? digits.slice(-10) : null;
-  return ten && /^[1-9]\d{9}$/.test(ten) ? ten : null;
+  const m = /^(?:52|521)?([1-9]\d{9})$/.exec(digits);
+  return m ? m[1]! : null;
 }
