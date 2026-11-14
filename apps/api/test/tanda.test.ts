@@ -34,7 +34,7 @@ class FakePey implements ChargeGateway {
   async accountStatus() { return "ACTIVE"; }
 }
 
-async function setup() {
+async function setup(phones = ["5511111111", "5522222222", "5533333333"]) {
   const { db, pg } = await createTestDb();
   await seedDemo(db, NOW);
   const auth = new SoftAuthenticator(RP.rpID, RP.origins[0]!);
@@ -47,7 +47,7 @@ async function setup() {
   });
   const proposal = CreateTanda.parse({
     type: "CreateTanda", merchant_id: M, provenance: "user_direct", name: "Tanda del mercado", contribution_cents: 50000, period: "week",
-    members: [{ name: "Ana", phone: "5511111111", clabe: CLABES[0] }, { name: "Bety", phone: "5522222222", clabe: CLABES[1] }, { name: "Caro", phone: "5533333333", clabe: CLABES[2] }],
+    members: [{ name: "Ana", phone: phones[0]!, clabe: CLABES[0] }, { name: "Bety", phone: phones[1]!, clabe: CLABES[1] }, { name: "Caro", phone: phones[2]!, clabe: CLABES[2] }],
   });
   const saved = await saveProposal(db, { id: "pr_t", actorId: DEMO.ownerId, proposal });
   await saveApproval(db, { id: "ap_t", proposalId: "pr_t", credentialId: auth.credentialId, assertion: auth.approve(saved.proposalHash), priorCounter: 0, now: NOW });
@@ -60,6 +60,14 @@ async function setup() {
 }
 
 describe("tanda sin pozo", () => {
+  it("nunca se manda una solicitud a un celular que no existe (empieza con 0)", async () => {
+    const f = await setup(["5511111111", "0522222222", "5533333333"]);
+    await f.svc.handleMerchantMessage("Cobra la tanda");
+    expect(f.gw.pushes.map((p) => p.phone10)).toEqual(["5533333333"]);
+    const msgs = await f.db.select().from(schema.messages).where(eq(schema.messages.thread, "comercio"));
+    expect(msgs.some((m) => /No le mandé la solicitud a Bety: su celular no es válido para CoDi/.test(m.body))).toBe(true);
+  });
+
   it("cada aportación va directo a la cuenta de quien le toca; la ronda se completa y avanza", async () => {
     const f = await setup();
     await f.svc.handleMerchantMessage("Cobra la tanda");

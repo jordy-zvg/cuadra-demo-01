@@ -18,7 +18,7 @@ export interface ChargeGateway {
     num_ref: string;
     metadata: Record<string, string>;
     bank_account_id?: string;
-  }): Promise<{ provider_charge_id: string }>;
+  }): Promise<{ provider_charge_id: string; codi_id?: string | null }>;
   /** QR CoDi para cobrar en mostrador. image: PNG base64 si el proveedor lo da. */
   createQr(r: {
     amount_cents: Centavos;
@@ -44,7 +44,8 @@ export class PeyGateway implements ChargeGateway {
   constructor(private readonly pey: PeyClient) {}
   async requestPayment(r: Parameters<ChargeGateway["requestPayment"]>[0]) {
     const pn = await this.pey.createPushNotification({ ...r, expiration_s: PN_TTL_S });
-    return { provider_charge_id: pn.transactionId };
+    // codiId: folio de Banxico; es lo que pey necesita para rastrear una solicitud que no llegó.
+    return { provider_charge_id: pn.transactionId, codi_id: pn.codiId };
   }
   async createQr(r: Parameters<ChargeGateway["createQr"]>[0]) {
     // 30 min de vigencia (mínimo de pey: 360 s).

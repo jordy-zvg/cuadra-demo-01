@@ -1,5 +1,6 @@
 import { randomUUID } from "node:crypto";
 import {
+  PeyApiError,
   type PeyTransaction,
   WebhookSignatureError,
   parsePeyWebhook,
@@ -453,7 +454,10 @@ export class CuadraService {
     const concept = `Fiado ${merchant?.name ?? ""}`.slice(0, 40);
 
     let pushed = false;
+    let codiId: string | null = null;
     let failure: string | null = null;
+    // pey respondió con un error 4xx: rechazó la solicitud (p. ej. celular sin CoDi). Si no, fue la red o pey.
+    let rejectedByProvider = false;
     if (phone) {
       try {
         const pn = await this.d.gateway.requestPayment({
@@ -471,9 +475,27 @@ export class CuadraService {
           expiresAt: new Date(now.getTime() + PN_TTL_S * 1000),
         });
         pushed = true;
+        codiId = pn.codi_id ?? null;
+        this.d.log({
+          msg: "pey_pn_sent",
+          merchant_id: this.d.merchantId,
+          proposal_id: proposalId,
+          charge_id: chargeId,
+          transaction_id: pn.provider_charge_id,
+          codi_id: codiId,
+        });
       } catch (e) {
         failure = e instanceof Error ? e.message : String(e);
-        this.d.log({ msg: "pey_pn_failed", merchant_id: this.d.merchantId, proposal_id: proposalId, error: failure });
+        rejectedByProvider = e instanceof PeyApiError && e.status < 500;
+        // Principio 12: se reporta lo que respondió pey (sin secretos) para poder escalarlo.
+        this.d.log({
+          msg: "pey_pn_failed",
+          merchant_id: this.d.merchantId,
+          proposal_id: proposalId,
+          charge_id: chargeId,
+          error: failure,
+          ...(e instanceof PeyApiError ? { status: e.status, type: e.type, request_id: e.requestId } : {}),
+        });
       }
     }
     const amount = formatMXN(balance);
@@ -486,12 +508,14 @@ export class CuadraService {
         await this.say(
           "comercio",
           `⚠️ No salió la solicitud CoDi de ${amount} a ${c.name}${failure ? `: ${failure}` : ""}. No le mandé nada. ` +
-            `Revisa que su celular esté registrado en CoDi en la app de su banco, o cóbrale con “QR para ${c.name}”.`,
+            (rejectedByProvider
+              ? `Revisa que su celular esté registrado en CoDi en la app de su banco, o cóbrale con “QR para ${c.name}”.`
+              : `pey no respondió bien en este momento: intenta en unos minutos o cóbrale con “QR para ${c.name}”.`),
         );
       }
       return false;
     }
-    await setProposalStatus(this.d.db, proposalId, "done", { charge_id: chargeId, pushed });
+    await setProposalStatus(this.d.db, proposalId, "done", { charge_id: chargeId, pushed, ...(codiId ? { codi_id: codiId } : {}) });
     const actions: MessageAction[] =
       pushed && this.d.gateway.simulated ? [{ kind: "pay", label: `Aprobar pago de ${amount} (banco simulado)`, url: `/api/sim/pay/${chargeId}` }] : [];
     await this.say(
@@ -508,8 +532,11 @@ export class CuadraService {
     await this.say(
       "comercio",
       pushed
-        ? `📨 Cobro de ${amount} enviado a ${c.name} por CoDi${this.d.gateway.simulated ? " (simulado)" : " vía pey"}. Te aviso cuando pague.`
-        : `⚠️ No pude mandar la solicitud CoDi a ${c.name}${failure ? `: ${failure}` : " (no tiene celular)"}. Le dejé el recordatorio con la referencia ${reference}.`,
+        ? this.d.gateway.simulated
+          ? `📨 Cobro de ${amount} enviado a ${c.name} por CoDi (simulado). Te aviso cuando pague.`
+          : `📨 pey aceptó la solicitud CoDi de ${amount} para ${c.name} (vigente ${PN_TTL_S / 60} min). ` +
+            `Le llega como notificación de la app de su banco si su celular está registrado en CoDi. Te aviso cuando pague.`
+        : `⚠️ ${c.name} no tiene un celular válido para CoDi. Le dejé el recordatorio con la referencia ${reference}; si está en la tienda, cóbrale con “QR para ${c.name}”.`,
     );
     return true;
   }
