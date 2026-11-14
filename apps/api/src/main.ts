@@ -9,6 +9,7 @@ import { seedHistory } from "./seed-history.js";
 import { buildServer } from "./server.js";
 import { CuadraService } from "./service.js";
 import { WhatsAppChannel } from "./whatsapp.js";
+import { parseReminderSchedule, startReminderScheduler } from "./scheduler.js";
 import type { TemplateRef } from "./whatsapp-templates.js";
 
 const env = (k: string) => process.env[k] || undefined;
@@ -92,9 +93,14 @@ async function main(): Promise<void> {
     log,
     ...(whatsapp ? { whatsapp } : {}),
   });
+  // Recordatorios programados: REMINDER_DAYS="5" (viernes) o "1,5", REMINDER_HOUR="10". Sin ellas, apagado.
+  const schedule = parseReminderSchedule(env("REMINDER_DAYS"), env("REMINDER_HOUR"));
+  if (schedule) {
+    startReminderScheduler({ db, merchantId: demo.merchantId, schedule, run: () => service.runScheduledReminders(), now: () => new Date(), log });
+  }
   const port = Number(env("PORT") ?? 3000);
   await app.listen({ port, host: "0.0.0.0" });
-  log({ msg: "api_started", port, migrations: applied, gateway: gateway.name, simulated: gateway.simulated, interpreter: interpreters[0]!.name, whatsapp: Boolean(whatsapp) });
+  log({ msg: "api_started", port, migrations: applied, gateway: gateway.name, simulated: gateway.simulated, interpreter: interpreters[0]!.name, whatsapp: Boolean(whatsapp), reminders: schedule });
 }
 
 main().catch((e: unknown) => {

@@ -41,7 +41,8 @@ import type { ChargeGateway } from "./gateway.js";
 import { TandaFlow } from "./tanda-flow.js";
 import type { TemplateRef } from "./whatsapp-templates.js";
 
-export const REMINDER_TEMPLATE = "cobro_amable";
+/** Debe coincidir con la plantilla aprobada en Meta (whatsapp-templates.ts). */
+export const REMINDER_TEMPLATE = "cuadra_cobro_fiado";
 
 export interface ServiceDeps {
   db: Db;
@@ -357,10 +358,39 @@ export class CuadraService {
     await this.say("comercio", "Cancelado. No anoté nada.");
   }
 
-  private async sendReminder(proposalId: string, customerId: string): Promise<void> {
+  /**
+   * Recordatorios programados (reglas del comercio, p. ej. viernes 10:00): un SendReminder por cada
+   * cliente con saldo y opt-in. La política (72 h, horario, opt-in, un cobro abierto) se aplica igual
+   * que en el chat; los que no pasan se omiten en silencio y al final va un solo resumen al comercio.
+   */
+  async runScheduledReminders(): Promise<{ sent: number; skipped: number }> {
+    const rows = await this.d.db
+      .select({ id: schema.customers.id })
+      .from(schema.customers)
+      .where(and(eq(schema.customers.merchantId, this.d.merchantId), eq(schema.customers.optIn, true)));
+    let sent = 0;
+    let skipped = 0;
+    for (const r of rows) {
+      if ((await ledgerBalance(this.d.db, this.d.merchantId, "1200", r.id)) <= 0n) continue;
+      const p = await this.newProposal({ type: "SendReminder", customer_id: r.id }, "user_direct");
+      if (await this.sendReminder(p.id, r.id, { scheduled: true })) sent++;
+      else skipped++;
+    }
+    if (sent + skipped > 0) {
+      await this.say(
+        "comercio",
+        `🔔 Recordatorios programados: mandé ${sent} cobro${sent === 1 ? "" : "s"}` +
+          (skipped ? `; ${skipped} no salieron (cobro abierto, recordatorio en las últimas 72 h o fuera de horario).` : "."),
+      );
+    }
+    return { sent, skipped };
+  }
+
+  /** true si el recordatorio salió. Con scheduled, los rechazos no se le avisan uno por uno al comercio. */
+  private async sendReminder(proposalId: string, customerId: string, opts: { scheduled?: boolean } = {}): Promise<boolean> {
     const now = this.d.now();
     const [c] = await this.d.db.select().from(schema.customers).where(eq(schema.customers.id, customerId));
-    if (!c) return;
+    if (!c) return false;
     const balance = await ledgerBalance(this.d.db, this.d.merchantId, "1200", customerId);
     const [last] = await this.d.db
       .select({ at: schema.charges.createdAt })
@@ -380,13 +410,13 @@ export class CuadraService {
     const open = await this.openCharge(customerId);
     if (policy.allow && open) {
       await setProposalStatus(this.d.db, proposalId, "rejected", { open_charge: open.id });
-      await this.say("comercio", `${c.name} ya tiene un cobro abierto (ref. ${open.reference}). No mando otro para que no pague doble.`);
-      return;
+      if (!opts.scheduled) await this.say("comercio", `${c.name} ya tiene un cobro abierto (ref. ${open.reference}). No mando otro para que no pague doble.`);
+      return false;
     }
     if (!policy.allow) {
       await setProposalStatus(this.d.db, proposalId, "rejected", policy);
-      await this.say("comercio", `No mando el cobro:\n• ${policy.rules_failed.map((f) => f.reason).join("\n• ")}`);
-      return;
+      if (!opts.scheduled) await this.say("comercio", `No mando el cobro:\n• ${policy.rules_failed.map((f) => f.reason).join("\n• ")}`);
+      return false;
     }
     const chargeId = id("ch");
     const reference = await newChargeReference(this.d.db, this.d.merchantId);
@@ -435,6 +465,7 @@ export class CuadraService {
         ? `📨 Cobro de ${amount} enviado a ${c.name} por CoDi${this.d.gateway.simulated ? " (simulado)" : " vía pey"}. Te aviso cuando pague.`
         : `⚠️ No pude mandar la solicitud CoDi a ${c.name}${failure ? `: ${failure}` : " (no tiene celular)"}. Le dejé el recordatorio con la referencia ${reference}.`,
     );
+    return true;
   }
 
   private async openCharge(customerId: string) {
