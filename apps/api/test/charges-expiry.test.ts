@@ -401,6 +401,7 @@ describe("reenvío de la solicitud CoDi (vencida sin pago)", () => {
     f.advance(9);
     const r = await f.svc.runScheduledReminders();
     expect(r).toEqual({ sent: 0, skipped: 1 });
+    expect(await f.lastBody()).toMatch(/1 no salieron/);
     expect(f.gw.pushes).toHaveLength(1);
   });
 
@@ -568,7 +569,7 @@ describe("más casos de reenvío", () => {
     expect(await f.lastBody()).toMatch(/que vence hoy a las 11:09/); // 11:06:30 + 2 min → 11:09, no 11:08
   });
 
-  it("cliente sin celular válido: se dice al proponer y después el QR sí sale", async () => {
+  it("cliente sin celular válido: se dice al proponer, el QR sí sale y el recordatorio con referencia se conserva", async () => {
     const f = await setup();
     await f.fiado("Beto se llevó $50");
     await f.say("Cóbrale a Beto");
@@ -577,5 +578,118 @@ describe("más casos de reenvío", () => {
     expect(f.gw.pushes).toHaveLength(0);
     await f.say("QR para Beto");
     expect(f.gw.qrs).toHaveLength(1);
+    const beto = await f.db.select().from(schema.charges).where(eq(schema.charges.customerId, "c_beto")).orderBy(schema.charges.createdAt);
+    expect(beto.map((c) => [c.status, c.channel])).toEqual([["open", null], ["open", "codi_qr"]]);
+    f.advance(40);
+    await f.say("Cóbrale a Beto"); // sigue contando como recordatorio: no se le manda otro en 72 h
+    expect(await f.lastBody()).toMatch(/ya tiene un cobro abierto/);
+    expect((await f.thread("c_beto")).length).toBe(1);
+  });
+});
+
+describe("fallas a medio camino (segunda revisión)", () => {
+  it("si pey aceptó y guardar su id falla dos veces: se avisa que pudo llegar y el QR queda bloqueado", async () => {
+    const f = await setup();
+    await f.fiado("Doña Lupe se llevó $0.01");
+    await f.say("Cóbrale a Doña Lupe");
+    const db = f.db as unknown as { update: (...a: unknown[]) => unknown };
+    const original = db.update.bind(db);
+    let fails = 2;
+    db.update = (...a: unknown[]) => {
+      if (fails > 0 && a[0] === schema.charges) {
+        fails--;
+        throw new Error("conexión perdida");
+      }
+      return original(...a);
+    };
+    await f.confirmLast();
+    db.update = original;
+    expect(f.gw.pushes).toHaveLength(1);
+    expect(await f.lastBody()).toMatch(/Algo falló después de pedirle la solicitud a pey \(conexión perdida\)\. Puede que le haya llegado a Doña Lupe: para no cobrarle doble, no mando otra hasta que venza \(hoy a las 11:08\)/);
+    const [ch] = await f.lupeCharges();
+    expect(ch).toMatchObject({ status: "open", channel: "codi_pn", provider: "pey" });
+    expect(ch!.expiresAt!.getTime()).toBe(T0.getTime() + 360_000);
+    await f.say("QR para Doña Lupe");
+    expect(f.gw.qrs).toHaveLength(0);
+    expect((await f.lupeCharges()).map((c) => c.status)).toEqual(["open"]);
+  });
+
+  it("una solicitud que vence mientras se consulta a pey sigue contando como viva (misma hora para todo)", async () => {
+    const f = await setup();
+    await f.fiado("Doña Lupe se llevó $0.01");
+    await f.say("Cóbrale a Doña Lupe");
+    await f.confirmLast(); // TX1 11:00 → vence 11:08
+    f.advance(9);
+    await f.say("vuélvele a mandar la notificación");
+    await f.confirmLast(); // TX2 11:09 → vence 11:17
+    f.gw.pay("TX2"); // pagada, sin webhook
+    f.advance(7.95); // 11:16:57
+    const real = f.gw.getTransaction.bind(f.gw);
+    f.gw.getTransaction = async (id) => {
+      f.advance(10 / 60); // pey tarda 10 s: ya son las 11:17:07
+      return real(id);
+    };
+    await f.say("QR para Doña Lupe");
+    expect(f.gw.qrs).toHaveLength(0);
+    expect(await f.lastBody()).toMatch(/ya tiene una solicitud CoDi abierta/);
+  });
+
+  it("recordatorio programado con resultado desconocido: se avisa y el resumen no lo esconde", async () => {
+    const f = await setup();
+    await f.fiado("Doña Lupe se llevó $0.01");
+    f.gw.requestPayment = async () => {
+      throw new TypeError("fetch failed");
+    };
+    const r = await f.svc.runScheduledReminders();
+    expect(r).toEqual({ sent: 0, skipped: 0, unknown: 1 });
+    const bodies = (await f.thread("comercio")).map((m) => m.body);
+    expect(bodies.some((b) => /pey no respondió bien \(fetch failed\)/.test(b))).toBe(true);
+    expect(bodies.at(-1)).toMatch(/con 1 pey no respondió y puede que sí les haya llegado/);
+  });
+
+  it("un botón Confirmar sin lo que se propuso (versión anterior) se vuelve a pedir", async () => {
+    const f = await setup();
+    await f.fiado("Doña Lupe se llevó $0.01");
+    await f.say("Cóbrale a Doña Lupe");
+    const msgs = await f.db.select().from(schema.messages).orderBy(schema.messages.id);
+    const pid = msgs.filter((m) => m.actions?.some((a) => a.kind === "confirm")).at(-1)!.actions![0]!.proposal_id!;
+    await f.db.update(schema.proposals).set({ decision: null }).where(eq(schema.proposals.id, pid));
+    await f.svc.confirm(pid);
+    expect(f.gw.pushes).toHaveLength(0);
+    expect(await f.lastBody()).toMatch(/Esa propuesta ya no aplica/);
+  });
+
+  it("último reenvío con resultado desconocido: solo sugiere QR", async () => {
+    const f = await setup();
+    await f.fiado("Doña Lupe se llevó $0.01");
+    await f.say("Cóbrale a Doña Lupe");
+    await f.confirmLast();
+    for (let i = 1; i <= 3; i++) {
+      f.advance(9);
+      if (i === 3) {
+        f.gw.requestPayment = async () => {
+          throw new TypeError("fetch failed");
+        };
+      }
+      await f.say("vuélvele a mandar la notificación");
+      await f.confirmLast();
+    }
+    const body = await f.lastBody();
+    expect(body).toMatch(/Ya fue el último reenvío: después cóbrale con “QR para Doña Lupe”/);
+    expect(body).not.toMatch(/vuélvele a mandar/);
+  });
+
+  it("una ejecución que quedó a medias (reinicio) no deja el botón atorado para siempre", async () => {
+    const f = await setup();
+    await f.fiado("Doña Lupe se llevó $0.01");
+    await f.say("Cóbrale a Doña Lupe");
+    const msgs = await f.db.select().from(schema.messages).orderBy(schema.messages.id);
+    const pid = msgs.filter((m) => m.actions?.some((a) => a.kind === "confirm")).at(-1)!.actions![0]!.proposal_id!;
+    await f.db.update(schema.proposals).set({ status: "executing", updatedAt: new Date(Date.now() - 3 * 60_000) }).where(eq(schema.proposals.id, pid));
+    await f.svc.confirm(pid);
+    expect(await f.lastBody()).toMatch(/quedó a medias/);
+    const [p] = await f.db.select().from(schema.proposals).where(eq(schema.proposals.id, pid));
+    expect(p!.status).toBe("rejected");
+    expect(f.gw.pushes).toHaveLength(0);
   });
 });

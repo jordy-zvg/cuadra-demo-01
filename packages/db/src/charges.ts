@@ -36,6 +36,12 @@ export async function insertCharge(
     now: Date;
     /** Recordatorio original, si este cobro es un reenvío de su solicitud CoDi. */
     resendOf?: string | null;
+    /**
+     * Si el cobro va por un proveedor, se marca ANTES de llamarlo (proveedor, canal y vigencia): así,
+     * si la llamada o el guardado de su id fallan, el cobro igual bloquea otro hasta que venza y nunca
+     * parece un recordatorio solo con referencia. Sin esto: referencia sola, 72 h.
+     */
+    via?: { provider: string; channel: "codi_pn" | "codi_qr" | "payment_link"; expiresAt: Date };
   },
 ): Promise<void> {
   await db.insert(charges).values({
@@ -45,8 +51,9 @@ export async function insertCharge(
     reference: c.reference,
     amountCents: c.amountCents,
     createdAt: c.now,
-    expiresAt: new Date(c.now.getTime() + CHARGE_DEFAULT_TTL_MS),
+    expiresAt: c.via?.expiresAt ?? new Date(c.now.getTime() + CHARGE_DEFAULT_TTL_MS),
     resendOf: c.resendOf ?? null,
+    ...(c.via ? { provider: c.via.provider, channel: c.via.channel } : {}),
   });
 }
 
@@ -54,16 +61,19 @@ export async function insertCharge(
  * Cobro abierto vigente del cliente. Los que ya vencieron en el proveedor se marcan como
  * vencidos y no bloquean un cobro nuevo.
  */
-export async function openChargeFor(db: Db, customerId: string, now: Date) {
+export async function openChargeFor(db: Db, customerId: string, now: Date, opts: { payableOnly?: boolean } = {}) {
   const open = await db
     .select()
     .from(charges)
-    .where(and(eq(charges.customerId, customerId), eq(charges.status, "open")));
+    .where(and(eq(charges.customerId, customerId), eq(charges.status, "open")))
+    .orderBy(charges.createdAt);
   let live: (typeof open)[number] | null = null;
   for (const c of open) {
     if (c.expiresAt && c.expiresAt.getTime() + CHARGE_EXPIRY_GRACE_MS < now.getTime()) {
       await db.update(charges).set({ status: "expired" }).where(and(eq(charges.id, c.id), eq(charges.status, "open")));
-    } else {
+    } else if (!(opts.payableOnly && c.channel === null)) {
+      // payableOnly: un recordatorio solo con referencia (sin canal) no es una solicitud que se pueda
+      // aprobar en la app del banco, así que no impide un QR en mostrador.
       live ??= c;
     }
   }

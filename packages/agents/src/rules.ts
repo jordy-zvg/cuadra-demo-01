@@ -14,14 +14,21 @@ const clean = (s: string) => s.trim().replace(/[.,;:!?¡¿]+$/g, "").trim();
 
 const OUT_OF_SCOPE = /\b(chiste|clima|f[uú]tbol|receta|pol[ií]tica|horóscopo|horoscopo|canci[oó]n|cr[eé]dito bancario|pr[eé]stamo|inversi[oó]n|bitcoin|cripto)\b/i;
 
-// Reenvío de la solicitud de cobro. Las frases de tanda, recibos o comprobantes son otra intención.
-const RESEND_NOT = String.raw`(?!.*\b(?:tanda|recibo|comprobante|ticket)\b)`;
+// Reenvío de la solicitud de cobro. Las frases de tanda, recibos, comprobantes o pagos son otra
+// intención ("solicitud de pago" sí es reenvío).
+const RESEND_NOT = String.raw`(?!.*\b(?:tandas?|recibos?|comprobantes?|tickets?|transferencias?|dep[oó]sitos?)\b)(?!.*(?<!de\s)\bpagos?\b)`;
 const RESEND_VERB = String.raw`(?:vu[eé]lve(?:le)?\s+a\s+(?:mandar|enviar|cobrar)(?:le|selo|sela)?|reenv[ií](?:a|ar)(?:le|selo|sela)?|(?:m[aá]nda|env[ií]a)(?:le|selo|sela)?\s+(?:otra\s+vez|de\s+nuevo))`;
 const RESEND_WHAT = String.raw`(?:\s+(?:(?:la|el)\s+)?(?:notificaci[oó]n|cobro|solicitud|recordatorio|petici[oó]n)(?:\s+de\s+(?:pago|cobro))?)`;
 const AGAIN = String.raw`(?:\s+(?:otra\s+vez|de\s+nuevo))?`;
-const RESEND_WHO = String.raw`(?:\s+(?:a|de)\s+(.+))?`;
-const resend = (m: RegExpExecArray): Intent =>
-  m[1] && clean(m[1]) ? { kind: "resend_reminder", customer_name: clean(m[1]) } : { kind: "resend_reminder" };
+// El nombre puede llevar después lo que se reenvía ("a Lupe la notificación"); nada más.
+const RESEND_WHO = String.raw`(?:\s+(?:a|de)\s+(.+?)(?:\s+(?:la|el|su)\s+(?:notificaci[oó]n|cobro|solicitud|recordatorio|petici[oó]n)(?:\s+de\s+(?:pago|cobro))?)?(?:\s+(?:otra\s+vez|de\s+nuevo))?)?`;
+const resend = (m: RegExpExecArray): Intent => {
+  const name = m[1] ? clean(m[1]) : "";
+  if (!name) return { kind: "resend_reminder" };
+  // "Reenvíale a Lupe su/sus …" con otra cosa que un cobro: no se adivina.
+  if (/\bsus?\b/i.test(name)) return { kind: "unclear" };
+  return { kind: "resend_reminder", customer_name: name };
+};
 
 const PATTERNS: Array<[RegExp, (m: RegExpExecArray) => Intent]> = [
   // "Doña Lupe se llevó $185", "Beto se llevó 2 refrescos de $40"

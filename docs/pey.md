@@ -75,5 +75,7 @@ Para que nunca haya dos solicitudes que el cliente pueda pagar:
   otra; si pey no responde, no se manda nada.
 - **Si pey no responde al crear la solicitud** (red, 5xx o 20 s sin respuesta), pudo haberse creado: el cobro
   queda abierto hasta que venza y bloquea otra solicitud o un QR. Solo un rechazo explícito (4xx) la cancela.
+  El cobro se marca como solicitud CoDi (6 min) antes de llamar a pey, así que un reinicio o una falla al guardar
+  el id tampoco deja dos solicitudes vivas. Un recordatorio solo con referencia no impide el QR y se conserva.
 - Una propuesta se confirma una sola vez, dentro de 10 min y por el monto que se mostró; los cobros a un mismo
   cliente se ejecutan de uno en uno.

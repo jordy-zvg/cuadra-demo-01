@@ -61,6 +61,19 @@ const PROPOSAL_TTL_MS = 10 * 60_000;
 /** Solicitudes al celular que se revisan con pey antes de mandar otra (cubre vigencia + conciliación). */
 const RECENT_PROVIDER_CHECK_MS = 60 * 60_000;
 
+type ReminderOutcome = "sent" | "skipped" | "unknown" | "failed";
+
+/** Lo que se sabe de una ejecución en curso, para decir la verdad si falla a medio camino. */
+interface ExecState {
+  chargeId: string | null;
+  pushAttempted: boolean;
+  expiresAt: Date | null;
+  name: string;
+}
+
+/** Una ejecución "executing" sin terminar después de esto se dio por perdida (p. ej. reinicio). */
+const STUCK_EXECUTION_MS = 2 * 60_000;
+
 /** Lo que se le propuso al comercio; al confirmar debe seguir igual. */
 interface PlannedReminder {
   mode: "new" | "resend";
@@ -397,7 +410,22 @@ export class CuadraService {
       .where(and(eq(schema.proposals.id, proposalId), eq(schema.proposals.merchantId, this.d.merchantId)));
     if (!p) return;
     if (p.status === "executing") {
-      await this.say("comercio", "Ese cobro se está procesando; en un momento te digo cómo quedó.");
+      if (Date.now() - p.updatedAt.getTime() < STUCK_EXECUTION_MS) {
+        await this.say("comercio", "Ese cobro se está procesando; en un momento te digo cómo quedó.");
+        return;
+      }
+      // Quedó a medias (p. ej. se reinició el servidor): se cierra y se dice qué pudo pasar.
+      const [closed] = await this.d.db
+        .update(schema.proposals)
+        .set({ status: "rejected", decision: { interrupted: true }, updatedAt: new Date() })
+        .where(and(eq(schema.proposals.id, p.id), eq(schema.proposals.status, "executing")))
+        .returning({ id: schema.proposals.id });
+      if (closed) {
+        await this.say(
+          "comercio",
+          "Ese cobro quedó a medias (se interrumpió mientras lo enviaba). Si era una solicitud al celular, puede que le haya llegado: revisa el panel y pídemelo de nuevo si hace falta.",
+        );
+      }
       return;
     }
     if (p.status !== "pending") return;
@@ -444,29 +472,34 @@ export class CuadraService {
    * cliente con saldo y opt-in. La política (72 h, horario, opt-in, un cobro abierto) se aplica igual
    * que en el chat; los que no pasan se omiten en silencio y al final va un solo resumen al comercio.
    */
-  async runScheduledReminders(): Promise<{ sent: number; skipped: number }> {
+  async runScheduledReminders(): Promise<{ sent: number; skipped: number; unknown?: number; failed?: number }> {
     const rows = await this.d.db
       .select({ id: schema.customers.id })
       .from(schema.customers)
       .where(and(eq(schema.customers.merchantId, this.d.merchantId), eq(schema.customers.optIn, true)));
     let sent = 0;
     let skipped = 0;
+    let unknown = 0;
+    let failed = 0;
     for (const r of rows) {
       if ((await ledgerBalance(this.d.db, this.d.merchantId, "1200", r.id)) <= 0n) continue;
       const p = await this.newProposal({ type: "SendReminder", customer_id: r.id }, "user_direct");
-      if (await this.sendReminder(p.id, r.id, { scheduled: true })) sent++;
+      const o = await this.sendReminder(p.id, r.id, { scheduled: true });
+      if (o === "sent") sent++;
+      else if (o === "unknown") unknown++;
+      else if (o === "failed") failed++;
       else skipped++;
     }
-    if (sent + skipped > 0) {
-      await this.say(
-        "comercio",
-        `🔔 Recordatorios programados: mandé ${sent} cobro${sent === 1 ? "" : "s"}` +
-          (skipped
-            ? `; ${skipped} no salieron (cobro abierto, recordatorio en las últimas ${this.d.reminderCooldownHours ?? REMINDER_MIN_INTERVAL_HOURS} h o fuera de horario).`
-            : "."),
-      );
+    if (sent + skipped + unknown + failed > 0) {
+      const parts = [`mandé ${sent} cobro${sent === 1 ? "" : "s"}`];
+      if (skipped) {
+        parts.push(`${skipped} no salieron (cobro abierto, recordatorio en las últimas ${this.d.reminderCooldownHours ?? REMINDER_MIN_INTERVAL_HOURS} h o fuera de horario)`);
+      }
+      if (unknown) parts.push(`con ${unknown} pey no respondió y puede que sí les haya llegado (te avisé arriba)`);
+      if (failed) parts.push(`${failed} fallaron por un error; inténtalo desde el chat`);
+      await this.say("comercio", `🔔 Recordatorios programados: ${parts.join("; ")}.`);
     }
-    return { sent, skipped };
+    return { sent, skipped, ...(unknown ? { unknown } : {}), ...(failed ? { failed } : {}) };
   }
 
   /**
@@ -476,8 +509,9 @@ export class CuadraService {
    * - "resend": solo la solicitud CoDi, si lo único que lo impide es P03 y la anterior venció sin
    *   pago (evaluateResend). Nunca hay dos solicitudes vivas: así no puede pagar doble.
    */
-  private async planReminder(customerId: string, opts: { scheduled?: boolean } = {}): Promise<ReminderPlan> {
-    const now = this.d.now();
+  private async planReminder(customerId: string, opts: { scheduled?: boolean } = {}, at?: Date): Promise<ReminderPlan> {
+    // Una sola hora por ejecución: lo que estaba vivo al consultar a pey sigue vivo al decidir.
+    const now = at ?? this.d.now();
     const [c] = await this.d.db.select().from(schema.customers).where(eq(schema.customers.id, customerId));
     if (!c) return { ok: false, name: "", message: "No encontré a ese cliente.", decision: { reason: "customer_not_found" } };
     const balance = await ledgerBalance(this.d.db, this.d.merchantId, "1200", customerId);
@@ -490,7 +524,7 @@ export class CuadraService {
       };
     }
     // Marca como vencidos los cobros que ya vencieron; uno vivo impide otra solicitud (pagaría doble).
-    const open = await this.openCharge(customerId);
+    const open = await this.openCharge(customerId, now);
     // Recordatorios previos = cobros que sí le llegaron al cliente por este canal: no cuentan los QR
     // de mostrador, los cancelados (la solicitud no salió) ni los simulados cuando el cobro es real.
     const delivered = and(
@@ -654,10 +688,10 @@ export class CuadraService {
    * Cuadra dio por vencidas con su reloj. Si alguna ya se pagó (webhook perdido o tardío), se
    * registra ahí mismo. Si pey no responde, no se manda nada: podría estar pagada (fail closed).
    */
-  private async settleRecentWithProvider(customerId: string): Promise<{ ok: true } | { ok: false; error: string }> {
+  private async settleRecentWithProvider(customerId: string, at: Date): Promise<{ ok: true } | { ok: false; error: string }> {
     if (this.d.gateway.simulated) return { ok: true };
-    await this.openCharge(customerId); // marca como vencidas las que ya pasaron su vigencia
-    const since = new Date(this.d.now().getTime() - RECENT_PROVIDER_CHECK_MS);
+    await this.openCharge(customerId, at); // marca como vencidas las que ya pasaron su vigencia
+    const since = new Date(at.getTime() - RECENT_PROVIDER_CHECK_MS);
     const rows = await this.d.db
       .select()
       .from(schema.charges)
@@ -683,34 +717,51 @@ export class CuadraService {
     return { ok: true };
   }
 
-  /** true si el recordatorio salió. Con scheduled, los rechazos no se le avisan uno por uno al comercio. */
-  private sendReminder(proposalId: string, customerId: string, opts: { scheduled?: boolean } = {}): Promise<boolean> {
+  /**
+   * "sent": salió. "skipped": la política o el estado no lo permitieron (con scheduled no se avisa uno
+   * por uno). "unknown": pudo haber salido (pey no respondió). "failed": no salió por un error.
+   */
+  private sendReminder(proposalId: string, customerId: string, opts: { scheduled?: boolean } = {}): Promise<ReminderOutcome> {
     return this.serialized(customerId, () => this.sendReminderNow(proposalId, customerId, opts));
   }
 
-  private async sendReminderNow(proposalId: string, customerId: string, opts: { scheduled?: boolean }): Promise<boolean> {
+  private async sendReminderNow(proposalId: string, customerId: string, opts: { scheduled?: boolean }): Promise<ReminderOutcome> {
     // Una propuesta se ejecuta una sola vez aunque llegue "Confirmar" dos veces.
     const [claimed] = await this.d.db
       .update(schema.proposals)
       .set({ status: "executing", updatedAt: new Date() })
       .where(and(eq(schema.proposals.id, proposalId), eq(schema.proposals.status, "pending")))
       .returning({ id: schema.proposals.id, decision: schema.proposals.decision });
-    if (!claimed) return false;
+    if (!claimed) return "skipped";
 
     // Estado del cobro para limpiar si algo falla a medio camino.
-    const st: { chargeId: string | null; pushAttempted: boolean } = { chargeId: null, pushAttempted: false };
+    const st: ExecState = { chargeId: null, pushAttempted: false, expiresAt: null, name: "" };
     try {
       return await this.executeReminder(proposalId, customerId, opts, claimed.decision as { planned?: PlannedReminder } | null, st);
     } catch (e) {
       const error = e instanceof Error ? e.message : String(e);
-      this.d.log({ msg: "reminder_failed", merchant_id: this.d.merchantId, proposal_id: proposalId, error });
-      // Si la solicitud nunca se intentó, el cobro no existe para el cliente: se cancela.
+      this.d.log({ msg: "reminder_failed", merchant_id: this.d.merchantId, proposal_id: proposalId, error, push_attempted: st.pushAttempted });
       if (st.chargeId && !st.pushAttempted) {
+        // La solicitud nunca se pidió: el cobro no existe para el cliente y se cancela.
         await this.d.db.update(schema.charges).set({ status: "cancelled" }).where(eq(schema.charges.id, st.chargeId)).catch(() => undefined);
+        await setProposalStatus(this.d.db, proposalId, "rejected", { error }).catch(() => undefined);
+        if (!opts.scheduled) await this.say("comercio", `⚠️ No pude completar el cobro: ${error}. Intenta de nuevo.`).catch(() => undefined);
+        return "failed";
+      }
+      if (st.chargeId) {
+        // Ya se le pidió a pey: pudo haber salido. El cobro ya está marcado como solicitud y bloquea
+        // otra hasta que venza; se dice la verdad, aun en los recordatorios programados.
+        await setProposalStatus(this.d.db, proposalId, "done", { charge_id: st.chargeId, push: "unknown", error }).catch(() => undefined);
+        const until = st.expiresAt ? ` hasta que venza (${formatMxWhen(ceilToMinute(new Date(st.expiresAt.getTime() + CHARGE_EXPIRY_GRACE_MS)), this.d.now())})` : "";
+        await this.say(
+          "comercio",
+          `⚠️ Algo falló después de pedirle la solicitud a pey (${error}). Puede que le haya llegado a ${st.name}: para no cobrarle doble, no mando otra${until}.`,
+        ).catch(() => undefined);
+        return "unknown";
       }
       await setProposalStatus(this.d.db, proposalId, "rejected", { error }).catch(() => undefined);
       if (!opts.scheduled) await this.say("comercio", `⚠️ No pude completar el cobro: ${error}. Intenta de nuevo.`).catch(() => undefined);
-      return false;
+      return "failed";
     }
   }
 
@@ -719,19 +770,25 @@ export class CuadraService {
     customerId: string,
     opts: { scheduled?: boolean },
     decision: { planned?: PlannedReminder } | null,
-    st: { chargeId: string | null; pushAttempted: boolean },
-  ): Promise<boolean> {
-    const reject = async (message: string, why: Record<string, unknown>) => {
+    st: ExecState,
+  ): Promise<ReminderOutcome> {
+    const reject = async (message: string, why: Record<string, unknown>): Promise<ReminderOutcome> => {
       await setProposalStatus(this.d.db, proposalId, "rejected", why);
       if (!opts.scheduled) await this.say("comercio", message);
-      return false;
+      return "skipped";
     };
+    const at = this.d.now();
     const planned = decision?.planned ?? null;
-    if (planned && this.d.now().getTime() - Date.parse(planned.at) > PROPOSAL_TTL_MS) {
+    // Lo que el comercio confirma desde el chat siempre trae lo que se le propuso; sin eso (p. ej. un
+    // botón de antes de esta versión) no se sabe qué aprobó, así que se vuelve a pedir.
+    if (!opts.scheduled && !planned) {
+      return reject("Esa propuesta ya no aplica. Pídemelo de nuevo y te digo cómo queda.", { stale_proposal: true });
+    }
+    if (planned && at.getTime() - Date.parse(planned.at) > PROPOSAL_TTL_MS) {
       return reject("Esa propuesta ya venció (dura 10 min). Pídemelo de nuevo y te digo cómo queda.", { expired_proposal: true, planned });
     }
     // Un pago que pey ya tenía y Cuadra no (webhook perdido) se registra antes de decidir.
-    const settled = await this.settleRecentWithProvider(customerId);
+    const settled = await this.settleRecentWithProvider(customerId, at);
     if (!settled.ok) {
       const [c] = await this.d.db.select({ name: schema.customers.name }).from(schema.customers).where(eq(schema.customers.id, customerId));
       return reject(
@@ -739,7 +796,7 @@ export class CuadraService {
         { provider_check_failed: settled.error },
       );
     }
-    const plan = await this.planReminder(customerId, opts);
+    const plan = await this.planReminder(customerId, opts, at);
     if (!plan.ok) return reject(plan.message, plan.decision);
     if (planned && (planned.mode !== plan.mode || planned.amount !== plan.amount.toString())) {
       const now = plan.mode === "resend" ? `reenviarle la solicitud de ${formatMXN(plan.amount)}` : `mandarle un cobro de ${formatMXN(plan.amount)}`;
@@ -752,14 +809,27 @@ export class CuadraService {
 
     const now = this.d.now();
     const { phone, amount: balance, name } = plan;
+    st.name = name;
     const chargeId = id("ch");
     const reference = await newChargeReference(this.d.db, this.d.merchantId);
-    await insertCharge(this.d.db, { id: chargeId, merchantId: this.d.merchantId, customerId, reference, amountCents: balance, now, resendOf: plan.resendOf });
+    const expiresAt = new Date(now.getTime() + PN_TTL_S * 1000);
+    // Con celular, el cobro nace marcado como solicitud CoDi (proveedor, canal, 6 min): si algo falla
+    // después de llamar a pey, igual bloquea otra solicitud o un QR hasta que venza.
+    await insertCharge(this.d.db, {
+      id: chargeId,
+      merchantId: this.d.merchantId,
+      customerId,
+      reference,
+      amountCents: balance,
+      now,
+      resendOf: plan.resendOf,
+      ...(phone ? { via: { provider: this.d.gateway.name, channel: "codi_pn" as const, expiresAt } } : {}),
+    });
     st.chargeId = chargeId;
+    if (phone) st.expiresAt = expiresAt;
     const [merchant] = await this.d.db.select().from(schema.merchants).where(eq(schema.merchants.id, this.d.merchantId));
     const concept = `Fiado ${merchant?.name ?? ""}`.slice(0, 40);
     const amount = formatMXN(balance);
-    const expiresAt = new Date(now.getTime() + PN_TTL_S * 1000);
 
     // Resultado de la solicitud: "sent" (pey la aceptó), "rejected" (pey la rechazó, 4xx: no existe),
     // "unknown" (red, 5xx o tiempo agotado: pudo haberse creado y el cliente pagarla).
@@ -807,16 +877,12 @@ export class CuadraService {
           ...(plan.resendOf ? { resend_of: plan.resendOf, resend_number: plan.resendNumber } : {}),
         });
       }
-      if (outcome === "sent" || outcome === "unknown") {
-        // Una solicitud que pudo salir nunca se cancela: queda abierta hasta que venza, así bloquea
-        // otra solicitud o un QR y, si llega su pago, se aplica (por id o por la metadata).
-        // Sin id del proveedor (resultado desconocido), el pago tardío se reconoce por la metadata.
+      if (outcome === "sent" && providerChargeId) {
+        // El cobro ya está marcado como solicitud; aquí solo se guarda el id de pey (con un reintento).
+        // Si aun así falla, el cobro sigue abierto hasta que venza y el pago se reconoce por la metadata.
+        const id = providerChargeId;
         const attach = async (): Promise<void> => {
-          if (providerChargeId) {
-            await attachProviderCharge(this.d.db, chargeId, { provider: this.d.gateway.name, providerChargeId, channel: "codi_pn", expiresAt });
-          } else {
-            await this.d.db.update(schema.charges).set({ provider: this.d.gateway.name, channel: "codi_pn", expiresAt }).where(eq(schema.charges.id, chargeId));
-          }
+          await attachProviderCharge(this.d.db, chargeId, { provider: this.d.gateway.name, providerChargeId: id, channel: "codi_pn", expiresAt });
         };
         await attach().catch(async (e: unknown) => {
           this.d.log({ msg: "attach_charge_failed", charge_id: chargeId, error: e instanceof Error ? e.message : String(e) });
@@ -829,23 +895,26 @@ export class CuadraService {
       // pey rechazó la solicitud (p. ej. el celular no está registrado en CoDi): no existe, así que
       // el cobro se cancela, no cuenta como recordatorio y al cliente no se le manda nada.
       await this.d.db.update(schema.charges).set({ status: "cancelled" }).where(eq(schema.charges.id, chargeId));
-      return reject(
+      await reject(
         `⚠️ No salió la solicitud CoDi de ${amount} a ${name}${failure ? `: ${failure}` : ""}. No le mandé nada. ` +
           `Revisa que su celular esté registrado en CoDi en la app de su banco, o cóbrale con “QR para ${name}”.`,
         { charge_id: chargeId, push_failed: failure },
       );
+      return "failed";
     }
     if (outcome === "unknown") {
       await setProposalStatus(this.d.db, proposalId, "done", { charge_id: chargeId, push: "unknown", error: failure });
-      if (!opts.scheduled) {
-        await this.say(
-          "comercio",
-          `⚠️ pey no respondió bien${failure ? ` (${failure})` : ""}. Puede que la solicitud de ${amount} sí le haya llegado a ${name}: ` +
-            `para no cobrarle doble, no mando otra hasta que venza (${formatMxWhen(ceilToMinute(new Date(expiresAt.getTime() + CHARGE_EXPIRY_GRACE_MS)), now)}). ` +
-            `Después pídeme “vuélvele a mandar la notificación” o cóbrale con “QR para ${name}”.`,
-        );
-      }
-      return false;
+      // Se avisa aunque sea un recordatorio programado: puede haber una solicitud viva en su celular.
+      const lastResend = plan.mode === "resend" && plan.resendNumber >= REMINDER_MAX_RESENDS;
+      await this.say(
+        "comercio",
+        `⚠️ pey no respondió bien${failure ? ` (${failure})` : ""}. Puede que la solicitud de ${amount} sí le haya llegado a ${name}: ` +
+          `para no cobrarle doble, no mando otra hasta que venza (${formatMxWhen(ceilToMinute(new Date(expiresAt.getTime() + CHARGE_EXPIRY_GRACE_MS)), now)}). ` +
+          (lastResend
+            ? `Ya fue el último reenvío: después cóbrale con “QR para ${name}”.`
+            : `Después pídeme “vuélvele a mandar la notificación” o cóbrale con “QR para ${name}”.`),
+      );
+      return "unknown";
     }
 
     const pushed = outcome === "sent";
@@ -867,7 +936,7 @@ export class CuadraService {
           `Le llega como notificación de la app de su banco. Te aviso cuando pague.`,
         simPay,
       );
-      return true;
+      return "sent";
     }
     await this.say(
       customerId,
@@ -889,12 +958,12 @@ export class CuadraService {
             `Le llega como notificación de la app de su banco si su celular está registrado en CoDi. Te aviso cuando pague.`
         : `⚠️ ${name} no tiene un celular válido para CoDi. Le dejé el recordatorio con la referencia ${reference}; si está en la tienda, cóbrale con “QR para ${name}”.`,
     );
-    return true;
+    return "sent";
   }
 
   /** Cobro vigente del cliente; los vencidos en el proveedor ya no bloquean uno nuevo. */
-  private async openCharge(customerId: string) {
-    return openChargeFor(this.d.db, customerId, this.d.now());
+  private async openCharge(customerId: string, at?: Date, opts: { payableOnly?: boolean } = {}) {
+    return openChargeFor(this.d.db, customerId, at ?? this.d.now(), opts);
   }
 
   /** Cobro en mostrador: QR CoDi por el saldo exacto, que el cliente escanea con su banco. */
@@ -902,7 +971,7 @@ export class CuadraService {
     const now = this.d.now();
     const [c] = await this.d.db.select().from(schema.customers).where(eq(schema.customers.id, customerId));
     if (!c) return;
-    const settled = await this.settleRecentWithProvider(customerId);
+    const settled = await this.settleRecentWithProvider(customerId, now);
     if (!settled.ok) {
       await this.say(
         "comercio",
@@ -915,16 +984,9 @@ export class CuadraService {
       await this.say("comercio", `${c.name} no te debe nada.`);
       return;
     }
-    let open = await this.openCharge(customerId);
-    if (open && open.provider === null && open.channel === null) {
-      // Un recordatorio solo con referencia (sin solicitud CoDi) no se puede pagar dos veces por CoDi:
-      // el QR lo reemplaza para que haya un solo cobro vigente.
-      await this.d.db
-        .update(schema.charges)
-        .set({ status: "cancelled" })
-        .where(and(eq(schema.charges.id, open.id), eq(schema.charges.status, "open")));
-      open = null;
-    }
+    // Un recordatorio solo con referencia no es una solicitud que se apruebe en el banco: no impide el
+    // QR y se conserva (sigue contando para la política y para identificar una transferencia).
+    const open = await this.openCharge(customerId, now, { payableOnly: true });
     if (open) {
       await this.say("comercio", this.openChargeMessage(c.name, open, now));
       return;
@@ -932,7 +994,15 @@ export class CuadraService {
     const [merchant] = await this.d.db.select().from(schema.merchants).where(eq(schema.merchants.id, this.d.merchantId));
     const chargeId = id("ch");
     const reference = await newChargeReference(this.d.db, this.d.merchantId);
-    await insertCharge(this.d.db, { id: chargeId, merchantId: this.d.merchantId, customerId, reference, amountCents: balance, now });
+    await insertCharge(this.d.db, {
+      id: chargeId,
+      merchantId: this.d.merchantId,
+      customerId,
+      reference,
+      amountCents: balance,
+      now,
+      via: { provider: this.d.gateway.name, channel: "codi_qr", expiresAt: new Date(now.getTime() + QR_TTL_S * 1000) },
+    });
     try {
       const qr = await this.d.gateway.createQr({
         amount_cents: balance,
