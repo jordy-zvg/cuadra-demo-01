@@ -62,6 +62,7 @@ async function main(): Promise<void> {
     merchantId: demo.merchantId,
     gateway,
     bankSim,
+    demoPassword: env("DEMO_PASSWORD") ?? null,
     passkey: { gateway, db, merchantId: demo.merchantId, ownerId: demo.ownerId, rpID, origins, now: () => new Date() },
     log,
   });

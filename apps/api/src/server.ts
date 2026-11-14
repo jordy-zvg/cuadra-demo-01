@@ -1,3 +1,4 @@
+import { createHash, timingSafeEqual } from "node:crypto";
 import { fileURLToPath } from "node:url";
 import fastifyStatic from "@fastify/static";
 import Fastify, { type FastifyInstance } from "fastify";
@@ -16,6 +17,8 @@ export interface ServerOpts {
   gateway: { name: string; simulated: boolean };
   bankSim: boolean;
   passkey: PasskeyOpts;
+  /** Si existe, toda la app (salvo /health y /webhooks/*) pide esta contraseña (HTTP Basic). */
+  demoPassword?: string | null;
   log: (r: Record<string, unknown>) => void;
 }
 
@@ -31,6 +34,21 @@ export function buildServer(o: ServerOpts): FastifyInstance {
   // Los webhooks se verifican sobre el cuerpo crudo.
   app.addContentTypeParser("application/json", { parseAs: "string" }, (_req, body, done) => done(null, body));
   const json = (raw: unknown) => JSON.parse(typeof raw === "string" && raw ? raw : "{}") as unknown;
+
+  if (o.demoPassword) {
+    const expected = createHash("sha256").update(o.demoPassword).digest();
+    app.addHook("onRequest", async (req, reply) => {
+      const path = req.url.split("?")[0] ?? "";
+      if (path === "/health" || path.startsWith("/webhooks/")) return;
+      const auth = req.headers.authorization ?? "";
+      const m = /^Basic\s+(.+)$/i.exec(auth);
+      const pass = m ? Buffer.from(m[1]!, "base64").toString("utf8").split(":").slice(1).join(":") : "";
+      const given = createHash("sha256").update(pass).digest();
+      if (!m || !timingSafeEqual(given, expected)) {
+        return reply.code(401).header("WWW-Authenticate", 'Basic realm="Cuadra", charset="UTF-8"').send({ error: "Acceso restringido" });
+      }
+    });
+  }
 
   app.register(fastifyStatic, { root: fileURLToPath(new URL("../public/", import.meta.url)) });
 
