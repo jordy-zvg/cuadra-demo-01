@@ -48,6 +48,14 @@ describe("login mínimo de la demo", () => {
     expect(portal.body).toContain("Mi Cuadra");
     expect((await open.inject({ url: "/login" })).body).toContain("Mi Cuadra");
     expect((await open.inject({ url: "/logo.svg" })).statusCode).toBe(200);
+    // PWA: manifiesto, service worker e íconos.
+    const man = await open.inject({ url: "/manifest.webmanifest" });
+    expect(man.statusCode).toBe(200);
+    expect(JSON.parse(man.body).start_url).toBe("/login");
+    const sw = await open.inject({ url: "/sw.js" });
+    expect(sw.headers["content-type"]).toMatch(/javascript/);
+    expect(sw.body).not.toMatch(/caches?\.(open|match)\([^)]*\/api/);
+    expect((await open.inject({ url: "/icons/icon-512.png" })).statusCode).toBe(200);
     const locked = await app("s3creta");
     expect((await locked.inject({ url: "/portal" })).statusCode).toBe(401);
     expect((await locked.inject({ url: "/login" })).statusCode).toBe(401);
