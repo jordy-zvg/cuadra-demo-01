@@ -192,6 +192,12 @@ export const deposits = pgTable("deposits", {
   concept: text("concept"),
   customerId: text("customer_id"),
   matchMethod: text("match_method"),
+  provider: text("provider"),
+  grossCents: cents("gross_cents"),
+  tipCents: cents("tip_cents"),
+  feeCents: cents("fee_cents"),
+  trackingKey: text("tracking_key"),
+  chargeId: text("charge_id"),
   receivedAt: ts("received_at").notNull().defaultNow(),
 });
 
@@ -202,6 +208,11 @@ export const charges = pgTable("charges", {
   reference: text("reference").notNull(),
   uniqueAmountCents: cents("unique_amount_cents"),
   status: text("status").$type<"open" | "paid" | "cancelled">().notNull().default("open"),
+  amountCents: cents("amount_cents"),
+  provider: text("provider"),
+  providerChargeId: text("provider_charge_id"),
+  paymentUrl: text("payment_url"),
+  channel: text("channel").$type<"codi_pn" | "codi_qr" | "payment_link">(),
   createdAt: ts("created_at").notNull().defaultNow(),
 });
 
