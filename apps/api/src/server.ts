@@ -56,6 +56,8 @@ export function buildServer(o: ServerOpts): FastifyInstance {
 
   app.register(fastifyStatic, { root: fileURLToPath(new URL("../public/", import.meta.url)) });
   app.get("/privacidad", async (_req, reply) => reply.type("text/html; charset=utf-8").sendFile("privacidad.html"));
+  // Portal sencillo para el comercio (letra grande, un paso por pantalla). Usa la misma API que el chat.
+  app.get("/portal", async (_req, reply) => reply.type("text/html; charset=utf-8").sendFile("portal.html"));
 
   app.get("/health", async () => ({ ok: true }));
   registerPasskeyRoutes(app, o.passkey);
