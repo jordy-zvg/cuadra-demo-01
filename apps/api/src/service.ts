@@ -58,6 +58,8 @@ export interface ServiceDeps {
   /** Valor de la UDI (millonésimas de peso) para el monitor Nivel 2 Bis; null si no se configuró. */
   udi: UdiMicro | null;
   log: (r: Record<string, unknown>) => void;
+  /** Canal externo (WhatsApp) que entrega cada respuesta además de guardarla. */
+  deliver?: (thread: string, body: string, actions?: MessageAction[]) => Promise<void>;
 }
 
 export type Provenance = "user_direct" | "user_voice" | "third_party_content";
@@ -91,6 +93,7 @@ export class CuadraService {
       proposalId: proposalId ?? null,
       createdAt: this.d.now(),
     });
+    await this.d.deliver?.(thread, body, actions);
   }
 
   private async heard(thread: string, body: string): Promise<void> {

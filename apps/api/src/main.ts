@@ -1,13 +1,14 @@
-import { PeyClient, verifyProposalAssertion } from "@cuadra/adapters";
+import { PeyClient, WhatsAppClient, verifyProposalAssertion } from "@cuadra/adapters";
 import { parseUdiValue } from "@cuadra/core";
 import { AnthropicInterpreter, FallbackInterpreter, type Interpreter, RuleInterpreter } from "@cuadra/agents";
 import { connectPostgres, migratePostgres } from "@cuadra/db/node";
-import { schema, seedDemo } from "@cuadra/db";
+import { type MessageAction, schema, seedDemo } from "@cuadra/db";
 import { eq } from "drizzle-orm";
 import { type ChargeGateway, PeyGateway, SimulatedGateway } from "./gateway.js";
 import { seedHistory } from "./seed-history.js";
 import { buildServer } from "./server.js";
 import { CuadraService } from "./service.js";
+import { WhatsAppChannel } from "./whatsapp.js";
 
 const env = (k: string) => process.env[k] || undefined;
 const req = (k: string) => {
@@ -22,7 +23,10 @@ function log(r: Record<string, unknown>): void {
 async function main(): Promise<void> {
   const { db, pool } = await connectPostgres(req("DATABASE_URL"));
   const applied = await migratePostgres(pool);
-  const demo = await seedDemo(db, new Date(), { ...(env("DEMO_CUSTOMER_PHONE") ? { lupePhone: env("DEMO_CUSTOMER_PHONE")! } : {}) });
+  const demo = await seedDemo(db, new Date(), {
+    ...(env("DEMO_CUSTOMER_PHONE") ? { lupePhone: env("DEMO_CUSTOMER_PHONE")! } : {}),
+    ...(env("DEMO_MERCHANT_PHONE") ? { ownerPhone: env("DEMO_MERCHANT_PHONE")! } : {}),
+  });
   const bankSim = env("BANK_SIM") !== "off";
   // Cuenta receptora del comercio registrada en pey (POST /bank-account, estado ACTIVE).
   if (env("PEY_BANK_ACCOUNT_ID")) {
@@ -42,6 +46,26 @@ async function main(): Promise<void> {
     ? [1, 2, 3].map(() => new FallbackInterpreter(new AnthropicInterpreter(), rules))
     : [rules];
 
+  // WhatsApp Cloud API: se activa solo con las cuatro variables; si no, queda el chat web.
+  const waToken = env("WHATSAPP_TOKEN");
+  const waPhoneId = env("WHATSAPP_PHONE_NUMBER_ID");
+  const waSecret = env("WHATSAPP_APP_SECRET");
+  const waVerify = env("WHATSAPP_VERIFY_TOKEN");
+  const whatsapp =
+    waToken && waPhoneId && waSecret && waVerify
+      ? {
+          channel: new WhatsAppChannel({
+            db,
+            merchantId: demo.merchantId,
+            ownerId: demo.ownerId,
+            client: new WhatsAppClient({ token: waToken, phoneNumberId: waPhoneId, ...(env("WHATSAPP_GRAPH_VERSION") ? { version: env("WHATSAPP_GRAPH_VERSION")! } : {}) }),
+            log,
+          }),
+          appSecret: waSecret,
+          verifyToken: waVerify,
+        }
+      : undefined;
+
   const service = new CuadraService({
     db,
     merchantId: demo.merchantId,
@@ -55,6 +79,7 @@ async function main(): Promise<void> {
     bankSim,
     udi: env("UDI_VALOR") ? parseUdiValue(env("UDI_VALOR")!) : null,
     log,
+    ...(whatsapp ? { deliver: (t: string, b: string, a?: MessageAction[]) => whatsapp.channel.deliver(t, b, a) } : {}),
   });
   const app = buildServer({
     db,
@@ -64,10 +89,11 @@ async function main(): Promise<void> {
     bankSim,
     passkey: { gateway, db, merchantId: demo.merchantId, ownerId: demo.ownerId, rpID, origins, now: () => new Date() },
     log,
+    ...(whatsapp ? { whatsapp } : {}),
   });
   const port = Number(env("PORT") ?? 3000);
   await app.listen({ port, host: "0.0.0.0" });
-  log({ msg: "api_started", port, migrations: applied, gateway: gateway.name, simulated: gateway.simulated, interpreter: interpreters[0]!.name });
+  log({ msg: "api_started", port, migrations: applied, gateway: gateway.name, simulated: gateway.simulated, interpreter: interpreters[0]!.name, whatsapp: Boolean(whatsapp) });
 }
 
 main().catch((e: unknown) => {

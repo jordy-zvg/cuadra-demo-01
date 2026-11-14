@@ -6,3 +6,4 @@ export * from "./passkey/verify.js";
 export * from "./pey/money.js";
 export * from "./pey/client.js";
 export * from "./pey/webhooks.js";
+export * from "./whatsapp/cloud.js";

@@ -1,0 +1,155 @@
+/**
+ * WhatsApp Cloud API (Meta). Fuentes:
+ * - Envío y botones: https://developers.facebook.com/docs/whatsapp/cloud-api/messages/interactive-reply-buttons-messages
+ * - Verificación y firma del webhook: https://developers.facebook.com/docs/graph-api/webhooks/getting-started
+ * Solo transporta mensajes: no decide nada ni toca dinero.
+ */
+import { createHmac, timingSafeEqual } from "node:crypto";
+import { z } from "zod";
+
+export const WHATSAPP_GRAPH_URL = "https://graph.facebook.com";
+export const WHATSAPP_GRAPH_VERSION = "v27.0";
+
+/** Límites de Meta para botones de respuesta. */
+const MAX_BUTTONS = 3;
+const MAX_TITLE = 20;
+const MAX_BODY = 1024;
+
+/** Últimos 10 dígitos: así se compara un número de México sin importar si llega como 52 o 521. */
+export function phone10(raw: string): string | null {
+  const d = raw.replace(/\D/g, "");
+  return d.length >= 10 ? d.slice(-10) : null;
+}
+
+/** GET de verificación: devuelve el challenge si el token coincide; si no, null. */
+export function verifyWhatsAppSubscription(q: Record<string, unknown>, verifyToken: string): string | null {
+  const mode = q["hub.mode"];
+  const token = q["hub.verify_token"];
+  const challenge = q["hub.challenge"];
+  if (mode !== "subscribe" || typeof token !== "string" || typeof challenge !== "string") return null;
+  const a = Buffer.from(token);
+  const b = Buffer.from(verifyToken);
+  return a.length === b.length && timingSafeEqual(a, b) ? challenge : null;
+}
+
+/** X-Hub-Signature-256: "sha256=" + HMAC-SHA256 (hex) del cuerpo crudo con el App Secret. */
+export function verifyWhatsAppSignature(rawBody: string, header: string | undefined, appSecret: string): boolean {
+  if (!header?.startsWith("sha256=")) return false;
+  const got = Buffer.from(header.slice(7), "hex");
+  const want = createHmac("sha256", appSecret).update(rawBody, "utf8").digest();
+  return got.length === want.length && timingSafeEqual(got, want);
+}
+
+const Message = z
+  .object({
+    from: z.string(),
+    id: z.string(),
+    type: z.string(),
+    text: z.object({ body: z.string() }).optional(),
+    interactive: z
+      .object({ type: z.string(), button_reply: z.object({ id: z.string(), title: z.string() }).optional() })
+      .optional(),
+    context: z.object({ forwarded: z.boolean().optional(), frequently_forwarded: z.boolean().optional() }).passthrough().optional(),
+  })
+  .passthrough();
+
+const Payload = z.object({
+  object: z.string(),
+  entry: z.array(
+    z.object({
+      changes: z.array(
+        z.object({
+          field: z.string(),
+          value: z.object({ messages: z.array(Message).optional() }).passthrough(),
+        }),
+      ),
+    }),
+  ),
+});
+
+export type WhatsAppInbound =
+  | { kind: "text"; id: string; from: string; text: string; forwarded: boolean }
+  | { kind: "button"; id: string; from: string; button_id: string }
+  | { kind: "unsupported"; id: string; from: string; type: string };
+
+/** Mensajes entrantes del webhook (ignora estados de entrega y otros campos). */
+export function parseWhatsAppWebhook(body: unknown): WhatsAppInbound[] {
+  const p = Payload.safeParse(body);
+  if (!p.success || p.data.object !== "whatsapp_business_account") return [];
+  const out: WhatsAppInbound[] = [];
+  for (const e of p.data.entry)
+    for (const c of e.changes) {
+      if (c.field !== "messages") continue;
+      for (const m of c.value.messages ?? []) {
+        if (m.type === "text" && m.text) {
+          const forwarded = Boolean(m.context?.forwarded || m.context?.frequently_forwarded);
+          out.push({ kind: "text", id: m.id, from: m.from, text: m.text.body, forwarded });
+        } else if (m.type === "interactive" && m.interactive?.button_reply) {
+          out.push({ kind: "button", id: m.id, from: m.from, button_id: m.interactive.button_reply.id });
+        } else {
+          out.push({ kind: "unsupported", id: m.id, from: m.from, type: m.type });
+        }
+      }
+    }
+  return out;
+}
+
+export class WhatsAppApiError extends Error {
+  constructor(readonly status: number, readonly code: number | null, message: string) {
+    super(message);
+  }
+}
+
+export interface WhatsAppConfig {
+  token: string;
+  phoneNumberId: string;
+  version?: string;
+  baseUrl?: string;
+  fetch?: typeof fetch;
+}
+
+export interface WhatsAppButton {
+  id: string;
+  title: string;
+}
+
+export class WhatsAppClient {
+  private readonly http: typeof fetch;
+  constructor(private readonly cfg: WhatsAppConfig) {
+    if (!cfg.token || !cfg.phoneNumberId) throw new Error("Falta la configuración de WhatsApp");
+    this.http = cfg.fetch ?? fetch;
+  }
+
+  private async send(to: string, payload: Record<string, unknown>): Promise<string | null> {
+    const url = `${this.cfg.baseUrl ?? WHATSAPP_GRAPH_URL}/${this.cfg.version ?? WHATSAPP_GRAPH_VERSION}/${encodeURIComponent(this.cfg.phoneNumberId)}/messages`;
+    const res = await this.http(url, {
+      method: "POST",
+      headers: { Authorization: `Bearer ${this.cfg.token}`, "content-type": "application/json" },
+      body: JSON.stringify({ messaging_product: "whatsapp", recipient_type: "individual", to, ...payload }),
+    });
+    const json = (await res.json().catch(() => null)) as
+      | { messages?: Array<{ id?: string }>; error?: { message?: string; code?: number } }
+      | null;
+    if (!res.ok) throw new WhatsAppApiError(res.status, json?.error?.code ?? null, json?.error?.message ?? `WhatsApp ${res.status}`);
+    return json?.messages?.[0]?.id ?? null;
+  }
+
+  sendText(to: string, body: string): Promise<string | null> {
+    return this.send(to, { type: "text", text: { body: body.slice(0, 4096), preview_url: true } });
+  }
+
+  /** Hasta 3 botones de respuesta; títulos recortados a 20 caracteres. */
+  sendButtons(to: string, body: string, buttons: WhatsAppButton[]): Promise<string | null> {
+    if (buttons.length === 0) return this.sendText(to, body);
+    return this.send(to, {
+      type: "interactive",
+      interactive: {
+        type: "button",
+        body: { text: body.slice(0, MAX_BODY) },
+        action: {
+          buttons: buttons.slice(0, MAX_BUTTONS).map((b) => ({ type: "reply", reply: { id: b.id.slice(0, 256), title: b.title.slice(0, MAX_TITLE) } })),
+        },
+      },
+    });
+  }
+}

@@ -22,7 +22,7 @@ export const DEMO = {
 } as const;
 
 /** opts.lupePhone: celular real (con CoDi) para la demo en vivo con pey. */
-export async function seedDemo(db: Db, now = new Date(), opts: { lupePhone?: string } = {}): Promise<typeof DEMO> {
+export async function seedDemo(db: Db, now = new Date(), opts: { lupePhone?: string; ownerPhone?: string } = {}): Promise<typeof DEMO> {
   const twoDaysAgo = new Date(now.getTime() - 48 * 3600_000);
   await db.transaction(async (tx) => {
     await tx
@@ -69,6 +69,10 @@ export async function seedDemo(db: Db, now = new Date(), opts: { lupePhone?: str
     // El celular real de la demo se puede cambiar en cualquier arranque.
     if (opts.lupePhone) {
       await tx.update(customers).set({ phone: opts.lupePhone }).where(eq(customers.id, lupe.id));
+    }
+    // WhatsApp del comercio de la demo: el único número que puede darle instrucciones al agente.
+    if (opts.ownerPhone) {
+      await tx.update(merchantUsers).set({ phone: opts.ownerPhone }).where(eq(merchantUsers.id, DEMO.ownerId));
     }
   });
   return DEMO;
