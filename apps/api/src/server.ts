@@ -7,6 +7,7 @@ import type { Db } from "@cuadra/db";
 import { schema } from "@cuadra/db";
 import { and, eq } from "drizzle-orm";
 import type { CuadraService } from "./service.js";
+import { PortalAuth } from "./auth.js";
 import { type PasskeyOpts, registerPasskeyRoutes } from "./passkey.js";
 import { panelState, providerReconState, tandaState } from "./state.js";
 import type { WhatsAppChannel } from "./whatsapp.js";
@@ -23,6 +24,8 @@ export interface ServerOpts {
   demoPassword?: string | null;
   log: (r: Record<string, unknown>) => void;
   whatsapp?: { channel: WhatsAppChannel; appSecret: string; verifyToken: string };
+  /** Login del portal (celular + NIP). Sin sesión solo quedan abiertas /login, webhooks y la aprobación con passkey. */
+  portalAuth: { shopCode: string | null; secureCookies: boolean; now?: () => Date };
 }
 
 const ChatBody = z.object({
@@ -53,6 +56,16 @@ export function buildServer(o: ServerOpts): FastifyInstance {
       }
     });
   }
+
+  const auth = new PortalAuth({
+    db: o.db,
+    merchantId: o.merchantId,
+    shopCode: o.portalAuth.shopCode,
+    secureCookies: o.portalAuth.secureCookies,
+    now: o.portalAuth.now ?? (() => new Date()),
+  });
+  app.addHook("onRequest", (req, reply) => auth.guard(req, reply));
+  auth.register(app, json);
 
   app.register(fastifyStatic, { root: fileURLToPath(new URL("../public/", import.meta.url)) });
   app.get("/privacidad", async (_req, reply) => reply.type("text/html; charset=utf-8").sendFile("privacidad.html"));

@@ -109,6 +109,20 @@ button:focus-visible,a:focus-visible{outline:4px solid var(--oro);outline-offset
 .alert{background:var(--bad-bg);color:var(--bad);border-radius:14px;padding:12px 14px;margin-top:14px;font-weight:600}
 .reply.warn{border-color:var(--oro);background:var(--warn-bg)}
 @media (max-width:480px){header .who span{display:none}}
+/* Entrar / registrarse */
+.hello{text-align:center;padding-top:18px}
+.hello img{width:120px;height:120px;margin:10px auto 4px;display:block}
+.hello h1{text-align:center}
+.field{display:block;width:100%;font:inherit;font-size:1.6rem;font-weight:700;letter-spacing:.06em;text-align:center;padding:14px;border-radius:16px;border:3px solid var(--vino-ink);background:var(--card);color:var(--ink);margin:6px 0 4px}
+.field.name{letter-spacing:0;font-size:1.3rem}
+.field:focus{outline:4px solid var(--oro);outline-offset:2px}
+.dots{display:flex;justify-content:center;gap:18px;margin:10px 0 18px}
+.dots span{width:26px;height:26px;border-radius:50%;border:3px solid var(--vino-ink);background:transparent}
+.dots span.on{background:var(--vino-ink)}
+.err{background:var(--bad-bg);color:var(--bad);border-radius:14px;padding:12px 14px;margin:8px 0;font-weight:700}
+.link{display:block;width:100%;min-height:56px;margin-top:10px;background:transparent;border:0;color:var(--ink);text-decoration:underline;font-weight:600}
+.steps{color:var(--muted);font-weight:700;font-size:.9rem;margin-top:18px}
+h1[tabindex="-1"]:focus{outline:none}
 .sr{position:absolute;width:1px;height:1px;overflow:hidden;clip:rect(0 0 0 0)}
 </style>
 </head>
@@ -164,8 +178,11 @@ function speak(text) {
 
 // ---------- datos ----------
 let state = null;
+class NeedLogin extends Error {}
+function checkAuth(r) { if (r.status === 401) { signedOut(); throw new NeedLogin(); } }
 async function load() {
   const r = await fetch("/api/state", { cache: "no-store" });
+  checkAuth(r);
   if (!r.ok) throw new Error("estado " + r.status);
   state = await r.json();
   $("#shop").textContent = state.merchant?.name || "Mi Cuadra";
@@ -174,7 +191,7 @@ async function load() {
 let payeesCache = null;
 async function payees() {
   if (payeesCache) return payeesCache;
-  try { const r = await fetch("/api/payees"); payeesCache = r.ok ? await r.json() : []; } catch { payeesCache = []; }
+  try { const r = await fetch("/api/payees"); checkAuth(r); payeesCache = r.ok ? await r.json() : []; } catch (e) { if (e instanceof NeedLogin) throw e; payeesCache = []; }
   return payeesCache;
 }
 const chat = () => (state?.messages || []).filter((m) => m.thread === "comercio");
@@ -182,6 +199,7 @@ const lastId = () => { const c = chat(); return c.length ? c[c.length - 1].id : 
 
 async function post(url, body) {
   const r = await fetch(url, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify(body ?? {}) });
+  checkAuth(r);
   if (!r.ok) throw new Error(await r.text());
 }
 
@@ -190,7 +208,7 @@ async function waitReply(afterId, ms = 25000) {
   const t0 = Date.now();
   while (Date.now() - t0 < ms) {
     await sleep(700);
-    try { await load(); } catch { continue; }
+    try { await load(); } catch (e) { if (e instanceof NeedLogin) throw e; continue; }
     const out = chat().filter((m) => m.id > afterId && m.direction === "out");
     if (out.length) { await sleep(400); await load(); return chat().filter((m) => m.id > afterId && m.direction === "out"); }
   }
@@ -223,7 +241,8 @@ const SCREENS = {};
 
 SCREENS.home = async () => {
   app.innerHTML = `<div class="wait"><div class="spin"></div>Cargando…</div>`;
-  try { await load(); } catch {
+  try { await load(); } catch (e) {
+    if (e instanceof NeedLogin) return;
     app.innerHTML = `<h1>No hay conexión</h1><p class="lead">Revisa tu internet y vuelve a intentar.</p><button class="go" type="button" id="retry">Intentar otra vez</button>`;
     $("#retry").onclick = home; return;
   }
@@ -231,7 +250,7 @@ SCREENS.home = async () => {
   const debtors = state.customers.filter((c) => BigInt(c.owes) > 0n).length;
   const frozen = state.risk?.kill_switch || state.risk?.frozen;
   app.innerHTML = `
-    <h1>Hola 👋 ¿Qué quieres hacer?</h1>
+    <h1>Hola${me ? ", " + esc(firstName(me.name)) : ""} 👋 ¿Qué quieres hacer?</h1>
     <div class="total" aria-label="Te deben en total ${esc(mxn(owes))}">
       <div class="l">Te deben en total</div>
       <div class="v">${esc(mxn(owes))}</div>
@@ -247,7 +266,9 @@ SCREENS.home = async () => {
     </div>
     <button class="big wide alt" type="button" id="install" hidden style="margin-top:12px;width:100%"><span class="ic" aria-hidden="true">📲</span>Poner Cuadra en mi pantalla</button>
     <h2 class="sec-title">Últimos avisos</h2>
-    <div id="avisos"></div>`;
+    <div id="avisos"></div>
+    <button class="go soft" type="button" id="logout" style="margin-top:28px">🚪 Salir de mi cuenta</button>`;
+  $("#logout").onclick = logout;
   app.querySelectorAll("[data-go]").forEach((b) => (b.onclick = () => go(b.dataset.go)));
   renderAvisos();
   showInstall();
@@ -400,8 +421,8 @@ async function send(text, provenance = "user_direct") {
     await post("/api/chat", { text, provenance });
     const replies = await waitReply(before);
     go("respuesta", { replies }, false);
-  } catch {
-    go("respuesta", { error: true }, false);
+  } catch (e) {
+    if (!(e instanceof NeedLogin)) go("respuesta", { error: true }, false);
   }
 }
 
@@ -414,7 +435,7 @@ async function act(a) {
       await post(a.kind === "confirm" ? "/api/confirm" : "/api/cancel", { proposal_id: a.proposal_id });
       const replies = await waitReply(before, 12000);
       go("respuesta", { replies, done: true, cancelled: a.kind === "cancel" }, false);
-    } catch { go("respuesta", { error: true }, false); }
+    } catch (e) { if (!(e instanceof NeedLogin)) go("respuesta", { error: true }, false); }
   } else if (a.url) {
     window.open(a.url, "_blank", "noopener");
   }
@@ -473,6 +494,211 @@ SCREENS.respuesta = ({ pending, replies, error, done, cancelled } = {}) => {
   $("#say").textContent = replies.map((m) => plain(m.body)).join(". ");
 };
 
+// ---------- cuenta: entrar y registrarse ----------
+// Celular + NIP de 4 números, como en el cajero. El celular se recuerda en este teléfono
+// para que la próxima vez solo pida el NIP.
+let me = null;
+let needsShopCode = false;
+const firstName = (n) => String(n || "").replace(/^(doña|don)\s+/i, "").split(" ")[0];
+const remembered = () => { try { return JSON.parse(store.get("cuadra.cuenta") || "null"); } catch { return null; } };
+const fmtPhone = (d) => String(d).replace(/^(\d{2})(\d{4})(\d{4})$/, "$1 $2 $3");
+
+function signedOut() {
+  me = null; history_.length = 0;
+  const r = remembered();
+  go(r ? "nip" : "bienvenida", r ? { phone: r.phone, name: r.name } : null, false);
+}
+function signedIn(account, phone) {
+  me = account;
+  store.set("cuadra.cuenta", JSON.stringify({ phone, name: account.name }));
+  const next = new URLSearchParams(location.search).get("next");
+  if (next && next.startsWith("/") && !next.startsWith("//") && next !== "/login" && next !== "/portal") { location.href = next; return; }
+  home();
+}
+async function logout() {
+  try { await fetch("/api/auth/logout", { method: "POST", headers: { "content-type": "application/json" }, body: "{}" }); } catch {}
+  signedOut(); // vuelve a pedir solo el NIP; “No soy yo” lleva a la bienvenida
+}
+async function authPost(url, body) {
+  const r = await fetch(url, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify(body) });
+  let data = {}; try { data = await r.json(); } catch {}
+  return { ok: r.ok, status: r.status, ...data };
+}
+
+/** Teclado de NIP: 4 puntos y números grandes. Llama a onDone(nip) al completar 4. */
+function pinPad(el, onDone) {
+  let v = "";
+  el.innerHTML = `<div class="dots" id="dots" role="img" aria-label="0 de 4 números"><span></span><span></span><span></span><span></span></div>
+    <div class="keys">${["1","2","3","4","5","6","7","8","9","","0","⌫"].map((k) => k
+      ? `<button type="button" data-k="${k}" aria-label="${k === "⌫" ? "Borrar" : k}">${k}</button>`
+      : `<span></span>`).join("")}</div>`;
+  const show = () => {
+    el.querySelectorAll("#dots span").forEach((d, i) => d.classList.toggle("on", i < v.length));
+    el.querySelector("#dots").setAttribute("aria-label", `${v.length} de 4 números`);
+  };
+  el.querySelector(".keys").onclick = (e) => {
+    const b = e.target.closest("[data-k]"); if (!b) return;
+    if (b.dataset.k === "⌫") v = v.slice(0, -1);
+    else if (v.length < 4) v += b.dataset.k;
+    show();
+    if (v.length === 4) { const done = v; setTimeout(() => { v = ""; show(); onDone(done); }, 150); }
+  };
+  show();
+}
+
+SCREENS.bienvenida = () => {
+  app.innerHTML = `<div class="hello">
+    <img src="/logo.svg" alt="">
+    <h1>¡Hola! Esto es Cuadra</h1>
+    <p class="lead">Tu libreta de fiado, en tu celular.</p></div>
+    <button class="go" type="button" id="in">Entrar</button>
+    <button class="go soft" type="button" id="new">Soy nuevo, quiero registrarme</button>`;
+  $("#in").onclick = () => go("celular", { mode: "entrar" });
+  $("#new").onclick = () => go("nombre", {});
+};
+
+SCREENS.celular = (arg) => {
+  const reg = arg.mode === "registro";
+  app.innerHTML = `
+    ${reg ? `<div class="steps">Paso 2 de ${needsShopCode ? 4 : 3}</div>` : ""}
+    <h1>¿Cuál es tu número de celular?</h1>
+    <p class="lead">Los 10 números, sin espacios.</p>
+    <form id="f"><input class="field" id="tel" type="tel" inputmode="numeric" autocomplete="tel-national" maxlength="14" placeholder="55 1234 5678" aria-label="Número de celular" value="${esc(arg.phone || "")}">
+    ${arg.error ? `<div class="err" role="alert">${esc(arg.error)}</div>` : ""}
+    <button class="go" type="submit">Siguiente →</button></form>${navHtml()}`;
+  const tel = $("#tel");
+  setTimeout(() => tel.focus(), 50);
+  $("#f").onsubmit = (e) => {
+    e.preventDefault();
+    let d = tel.value.replace(/\D/g, "");
+    if (d.length === 12 && d.startsWith("52")) d = d.slice(2);
+    if (d.length !== 10) { go("celular", { ...arg, phone: tel.value, error: "Revisa tu número: deben ser 10 números." }, false); return; }
+    if (reg) go(needsShopCode ? "codigo" : "nipNuevo", { ...arg, phone: d, error: null });
+    else go("nip", { phone: d });
+  };
+};
+
+SCREENS.nip = ({ phone, name, error }) => {
+  app.innerHTML = `
+    <h1>${name ? `Hola, ${esc(firstName(name))} 👋` : "Escribe tu NIP"}</h1>
+    <p class="lead">${name ? "Escribe tu NIP de 4 números." : `Celular ${esc(fmtPhone(phone))}`}</p>
+    ${error ? `<div class="err" role="alert">${esc(error)}</div>` : ""}
+    <div id="pad"></div>
+    <button class="link" type="button" id="forgot">Olvidé mi NIP</button>
+    <button class="link" type="button" id="other">${name ? "No soy yo / usar otro celular" : "Cambiar de celular"}</button>`;
+  pinPad($("#pad"), async (pin) => {
+    app.querySelector("#pad").innerHTML = `<div class="wait"><div class="spin"></div>Revisando…</div>`;
+    let r;
+    try { r = await authPost("/api/auth/login", { phone, pin }); } catch { r = { ok: false, error: "No hay conexión. Revisa tu internet." }; }
+    if (r.ok) return signedIn(r.account, phone);
+    if (r.status === 404) return go("noEncontrado", { phone }, false);
+    go("nip", { phone, name, error: r.error || "No se pudo entrar." }, false);
+  });
+  $("#forgot").onclick = () => go("olvide", null);
+  $("#other").onclick = () => { store.set("cuadra.cuenta", ""); history_.length = 0; go("bienvenida", null, false); };
+};
+
+SCREENS.noEncontrado = ({ phone }) => {
+  app.innerHTML = `<h1>No encontramos ese celular</h1>
+    <p class="lead">El número ${esc(fmtPhone(phone))} no tiene cuenta todavía.</p>
+    <button class="go" type="button" id="reg">Registrarme con este número</button>
+    <button class="go soft" type="button" id="fix">Corregir el número</button>`;
+  $("#reg").onclick = () => go("nombre", { phone });
+  $("#fix").onclick = () => go("celular", { mode: "entrar", phone }, false);
+};
+
+SCREENS.olvide = () => {
+  app.innerHTML = `<h1>¿Olvidaste tu NIP?</h1>
+    <div class="tip">Por tu seguridad, el NIP no se puede ver ni mandar por mensaje. Pídele al dueño de la tienda que borre tu cuenta y vuelve a registrarte con tu mismo celular.</div>
+    <button class="go" type="button" data-nav="back" style="margin-top:20px">← Regresar</button>`;
+};
+
+SCREENS.nombre = (arg) => {
+  app.innerHTML = `
+    <div class="steps">Paso 1 de ${needsShopCode ? 4 : 3}</div>
+    <h1>¿Cómo te llamas?</h1>
+    <p class="lead">Así te vamos a saludar.</p>
+    <form id="f"><input class="field name" id="nm" type="text" autocomplete="given-name" maxlength="60" placeholder="Ej. Lupita" aria-label="Tu nombre" value="${esc(arg.name || "")}">
+    ${arg.error ? `<div class="err" role="alert">${esc(arg.error)}</div>` : ""}
+    <button class="go" type="submit">Siguiente →</button></form>${navHtml()}`;
+  setTimeout(() => $("#nm").focus(), 50);
+  $("#f").onsubmit = (e) => {
+    e.preventDefault();
+    const name = $("#nm").value.trim();
+    if (name.length < 2) { go("nombre", { ...arg, name, error: "Escribe tu nombre, por favor." }, false); return; }
+    go("celular", { ...arg, mode: "registro", name, error: null });
+  };
+};
+
+SCREENS.codigo = (arg) => {
+  app.innerHTML = `
+    <div class="steps">Paso 3 de 4</div>
+    <h1>Código de la tienda</h1>
+    <p class="lead">Pídeselo al dueño de la tienda. Así solo entra tu gente.</p>
+    <form id="f"><input class="field" id="code" type="text" inputmode="numeric" autocomplete="off" maxlength="20" aria-label="Código de la tienda" value="${esc(arg.code || "")}">
+    ${arg.error ? `<div class="err" role="alert">${esc(arg.error)}</div>` : ""}
+    <button class="go" type="submit">Siguiente →</button></form>${navHtml()}`;
+  setTimeout(() => $("#code").focus(), 50);
+  $("#f").onsubmit = (e) => {
+    e.preventDefault();
+    const code = $("#code").value.trim();
+    if (!code) return;
+    go("nipNuevo", { ...arg, code, error: null });
+  };
+};
+
+SCREENS.nipNuevo = (arg) => {
+  const n = needsShopCode ? 4 : 3;
+  app.innerHTML = `
+    <div class="steps">Paso ${n} de ${n}</div>
+    <h1>${arg.first ? "Escríbelo otra vez" : "Inventa un NIP de 4 números"}</h1>
+    <p class="lead">${arg.first ? "Para estar seguros de que lo recuerdas." : "Lo vas a usar para entrar, como en el cajero. No uses 1234 ni 0000."}</p>
+    ${arg.error ? `<div class="err" role="alert">${esc(arg.error)}</div>` : ""}
+    <div id="pad"></div>${navHtml()}`;
+  pinPad($("#pad"), async (pin) => {
+    if (!arg.first) {
+      if (/^(\d)\1{3}$/.test(pin) || "0123456789".includes(pin) || "9876543210".includes(pin)) {
+        go("nipNuevo", { ...arg, error: "Ese NIP es muy fácil de adivinar. Elige otro." }, false); return;
+      }
+      go("nipNuevo", { ...arg, first: pin, error: null }); return;
+    }
+    if (pin !== arg.first) { go("nipNuevo", { ...arg, first: null, error: "No coinciden. Vamos de nuevo: inventa tu NIP." }, false); return; }
+    app.querySelector("#pad").innerHTML = `<div class="wait"><div class="spin"></div>Creando tu cuenta…</div>`;
+    let r;
+    try { r = await authPost("/api/auth/register", { name: arg.name, phone: arg.phone, pin, ...(arg.code ? { shop_code: arg.code } : {}) }); }
+    catch { r = { ok: false, error: "No hay conexión. Revisa tu internet." }; }
+    if (r.ok) { history_.length = 0; return go("listo", { account: r.account, phone: arg.phone }, false); }
+    const base = { ...arg, first: null };
+    if (r.field === "name") return go("nombre", { ...base, error: r.error }, false);
+    if (r.field === "phone" && r.status === 409) return go("nip", { phone: arg.phone, error: r.error }, false);
+    if (r.field === "phone") return go("celular", { ...base, mode: "registro", error: r.error }, false);
+    if (r.field === "shop_code") return go("codigo", { ...base, code: "", error: r.error }, false);
+    go("nipNuevo", { ...base, error: r.error || "No se pudo crear la cuenta." }, false);
+  });
+};
+
+SCREENS.listo = ({ account, phone }) => {
+  app.innerHTML = `<div class="hello"><img src="/logo.svg" alt="">
+    <h1>¡Listo, ${esc(firstName(account.name))}! 🎉</h1>
+    <p class="lead">Tu cuenta quedó creada. Para entrar después solo necesitas tu NIP.</p></div>
+    <button class="go ok" type="button" id="start">Empezar</button>`;
+  $("#start").onclick = () => signedIn(account, phone);
+};
+
+async function start() {
+  app.innerHTML = `<div class="wait"><div class="spin"></div>Cargando…</div>`;
+  try {
+    const r = await fetch("/api/auth/me", { cache: "no-store" });
+    const data = await r.json().catch(() => ({}));
+    needsShopCode = !!data.needs_shop_code;
+    if (r.ok) return signedIn(data.account, remembered()?.phone || "");
+    signedOut();
+  } catch {
+    app.innerHTML = `<h1>No hay conexión</h1><p class="lead">Revisa tu internet y vuelve a intentar.</p><button class="go" type="button" id="retry">Intentar otra vez</button>`;
+    $("#retry").onclick = start;
+  }
+}
+
 // ---------- app instalable (PWA) ----------
 let installEvt = null;
 window.addEventListener("beforeinstallprompt", (e) => { e.preventDefault(); installEvt = e; showInstall(); });
@@ -486,7 +712,7 @@ if ("serviceWorker" in navigator) {
   window.addEventListener("load", () => navigator.serviceWorker.register("/sw.js").catch(() => {}));
 }
 
-home();
+start();
 </script>
 </body>
 </html>
