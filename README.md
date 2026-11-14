@@ -29,6 +29,15 @@ WhatsApp y manda notas de voz:
 - **Cuadra nunca toca el dinero:** el cobro va directo a la cuenta del comercio por CoDi; las salidas requieren
   un mandato firmado con huella o rostro.
 
+### Tecnología que sirve a las personas, no que las usa
+
+- **Consentimiento:** solo se le escribe al cliente que aceptó recibir mensajes; nada de cobranza agresiva.
+- **Mínimos datos:** el cliente final no se registra ni comparte datos con Cuadra; las CLABEs se muestran
+  enmascaradas y nunca salen del chat ni del modelo de IA.
+- **La IA propone, la persona decide:** ninguna instrucción del modelo mueve dinero; cada rechazo se explica en
+  español claro y cita la regla.
+- **Sin custodia:** Cuadra no guarda el dinero de nadie.
+
 ## Por qué ahora
 
 - **Banxico homologó la experiencia CoDi:** el mismo flujo en cualquier banco, y todos los bancos deben
@@ -84,6 +93,9 @@ Con `PEY_API_KEY` y `PEY_WEBHOOK_SECRET` el cobro es real por CoDi (pruebas con 
 
 - **El LLM propone, el código decide.** El intérprete solo devuelve intención, nombre y monto; el código
   resuelve el cliente/proveedor contra la base y arma la `Proposal` (Zod). Nunca produce una CLABE.
+- **Red team por propiedades:** 6,000 ataques generados por corrida (montos raros, beneficiarios ajenos,
+  mandatos vencidos, aprobaciones de otra propuesta, contenido reenviado, freno activado…) contra un oráculo
+  escrito aparte: **0 salidas indebidas** y ninguna operación legítima bloqueada (`packages/core/test/redteam.test.ts`).
 - **Guard de 12 reglas** (`packages/core/src/guard`, funciones puras, 100 % de cobertura): lista blanca,
   24 h para beneficiarios nuevos, mandato vigente, topes, saldo, duplicados, velocidad/horario,
   procedencia (taint) y estado de riesgo. Cada rechazo trae `rule_id` y motivo en español.
