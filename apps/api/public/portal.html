@@ -3,22 +3,30 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<meta name="theme-color" content="#611A2D">
+<meta name="theme-color" content="#611A2D" media="(prefers-color-scheme: light)">
+<meta name="theme-color" content="#2B1C1F" media="(prefers-color-scheme: dark)">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-title" content="Cuadra">
+<meta name="apple-mobile-web-app-status-bar-style" content="default">
 <title>Mi Cuadra</title>
 <link rel="icon" href="/logo.svg" type="image/svg+xml">
+<link rel="apple-touch-icon" href="/icons/apple-touch-icon.png">
+<link rel="manifest" href="/manifest.webmanifest" crossorigin="use-credentials">
 <style>
 /* Portal para el comercio. Pensado para personas con poca práctica con el celular:
    letra grande, botones grandes, una sola pregunta por pantalla y siempre un camino de regreso. */
 :root{
-  --vino:#611A2D; --vino-2:#4A1322; --oro:#B48D4E; --oro-claro:#F3E7D1;
+  --vino:#611A2D; --vino-2:#4A1322; --vino-ink:#611A2D; --oro:#B48D4E; --oro-claro:#F3E7D1;
   --bg:#FBF7EF; --card:#FFFFFF; --ink:#1E1A17; --muted:#5A524A; --line:#E3D9C8;
   --ok:#1C6B3F; --ok-bg:#E3F3E8; --bad:#9C1F1F; --bad-bg:#FBE6E3; --warn-bg:#FFF4DC;
   --fs:20px;
 }
 @media (prefers-color-scheme: dark){:root:not([data-theme="light"]){
-  --vino:#C9566F; --vino-2:#E07A90; --oro:#D4AE6E; --oro-claro:#3A2E1C;
+  /* Modo oscuro: vino apagado en fondos y dorado suave en textos (antes era un rosa intenso). */
+  --vino:#5C2A35; --vino-2:#3E1C24; --vino-ink:#D9BC8C; --oro:#C9A46A; --oro-claro:#33291D;
   --bg:#161312; --card:#221D1B; --ink:#F5EFE6; --muted:#C4B9AC; --line:#3E3530;
-  --ok:#7FD6A1; --ok-bg:#16301F; --bad:#FF9C8F; --bad-bg:#3B1915; --warn-bg:#3A2E14;
+  --ok:#7FD6A1; --ok-bg:#16301F; --bad:#E8A497; --bad-bg:#3B1915; --warn-bg:#3A2E14;
 }}
 :root[data-size="xl"]{--fs:24px}
 *{box-sizing:border-box}
@@ -42,13 +50,13 @@ button:focus-visible,a:focus-visible{outline:4px solid var(--oro);outline-offset
 /* Inicio */
 .total{background:var(--card);border:2px solid var(--line);border-left:10px solid var(--oro);border-radius:18px;padding:16px 18px;margin-top:18px}
 .total .l{color:var(--muted);font-size:.95rem}
-.total .v{font-size:2.2rem;font-weight:800;font-variant-numeric:tabular-nums;color:var(--vino);line-height:1.15}
+.total .v{font-size:2.2rem;font-weight:800;font-variant-numeric:tabular-nums;color:var(--vino-ink);line-height:1.15}
 .total .s{font-size:.9rem;color:var(--muted)}
 .grid{display:grid;grid-template-columns:1fr 1fr;gap:12px;margin-top:16px}
 .big{display:flex;flex-direction:column;align-items:center;justify-content:center;gap:6px;text-align:center;min-height:132px;padding:14px 10px;border-radius:20px;border:0;background:var(--vino);color:#fff;font-weight:700;font-size:1.05rem;line-height:1.2;box-shadow:0 3px 0 var(--vino-2)}
 .big .ic{font-size:2.2rem;line-height:1}
 .big:active{transform:translateY(2px);box-shadow:0 1px 0 var(--vino-2)}
-.big.alt{background:var(--card);color:var(--ink);border:3px solid var(--vino);box-shadow:none}
+.big.alt{background:var(--card);color:var(--ink);border:3px solid var(--vino-ink);box-shadow:none}
 .wide{grid-column:1 / -1;flex-direction:row;min-height:84px;gap:14px}
 .sec-title{font-size:1.1rem;margin:26px 0 8px}
 .aviso{background:var(--card);border:2px solid var(--line);border-radius:14px;padding:12px 14px;margin-bottom:10px;white-space:pre-wrap;word-wrap:break-word}
@@ -58,16 +66,16 @@ button:focus-visible,a:focus-visible{outline:4px solid var(--oro);outline-offset
 /* Listas para elegir */
 .list{display:flex;flex-direction:column;gap:10px}
 .opt{display:flex;align-items:center;gap:14px;width:100%;min-height:76px;padding:12px 16px;border-radius:16px;border:3px solid var(--line);background:var(--card);color:var(--ink);text-align:left;font-weight:600;font-size:1.1rem}
-.opt:active{border-color:var(--vino)}
-.opt .av{flex:none;width:52px;height:52px;border-radius:50%;background:var(--oro-claro);color:var(--vino);display:flex;align-items:center;justify-content:center;font-weight:800;font-size:1.1rem}
+.opt:active{border-color:var(--vino-ink)}
+.opt .av{flex:none;width:52px;height:52px;border-radius:50%;background:var(--oro-claro);color:var(--vino-ink);display:flex;align-items:center;justify-content:center;font-weight:800;font-size:1.1rem}
 .opt .t{flex:1;min-width:0}
 .opt .t small{display:block;font-weight:500;font-size:.85rem;color:var(--muted)}
-.opt .amt{font-variant-numeric:tabular-nums;font-weight:800;color:var(--vino);white-space:nowrap}
+.opt .amt{font-variant-numeric:tabular-nums;font-weight:800;color:var(--vino-ink);white-space:nowrap}
 .opt .amt.zero{color:var(--ok);font-weight:600;font-size:.9rem}
 .opt:disabled{opacity:.55}
 
 /* Teclado de monto */
-.amount{font-size:2.6rem;font-weight:800;text-align:center;font-variant-numeric:tabular-nums;background:var(--card);border:3px solid var(--vino);border-radius:18px;padding:10px;margin:6px 0 12px;min-height:84px;word-break:break-all}
+.amount{font-size:2.6rem;font-weight:800;text-align:center;font-variant-numeric:tabular-nums;background:var(--card);border:3px solid var(--vino-ink);border-radius:18px;padding:10px;margin:6px 0 12px;min-height:84px;word-break:break-all}
 .amount.empty-v{color:var(--muted);font-weight:600}
 .keys{display:grid;grid-template-columns:repeat(3,1fr);gap:10px}
 .keys button{min-height:68px;border-radius:14px;border:2px solid var(--line);background:var(--card);color:var(--ink);font-size:1.6rem;font-weight:700}
@@ -87,14 +95,14 @@ button:focus-visible,a:focus-visible{outline:4px solid var(--oro);outline-offset
 .qr{display:block;width:100%;max-width:300px;aspect-ratio:1;margin:14px auto 0;background:#fff;border-radius:14px;padding:10px}
 .qr.sim{display:flex;align-items:center;justify-content:center;text-align:center;color:#1E1A17;border:3px dashed #999;font-weight:700}
 .wait{display:flex;flex-direction:column;align-items:center;gap:14px;padding:40px 0;color:var(--muted);font-size:1.1rem;text-align:center}
-.spin{width:56px;height:56px;border-radius:50%;border:6px solid var(--line);border-top-color:var(--vino);animation:sp 1s linear infinite}
+.spin{width:56px;height:56px;border-radius:50%;border:6px solid var(--line);border-top-color:var(--vino-ink);animation:sp 1s linear infinite}
 @keyframes sp{to{transform:rotate(360deg)}}
 @media (prefers-reduced-motion: reduce){.spin{animation-duration:3s}}
 
 /* Voz */
 .mic{display:flex;flex-direction:column;align-items:center;justify-content:center;gap:8px;width:190px;height:190px;margin:20px auto;border-radius:50%;border:0;background:var(--vino);color:#fff;font-weight:800;font-size:1.05rem;box-shadow:0 0 0 10px var(--oro-claro)}
 .mic .ic{font-size:3.4rem}
-.mic.on{background:var(--bad);animation:pulse 1.2s ease-in-out infinite}
+.mic.on{background:#9C1F1F;animation:pulse 1.2s ease-in-out infinite}
 @keyframes pulse{50%{box-shadow:0 0 0 22px var(--oro-claro)}}
 .heard{background:var(--card);border:3px dashed var(--oro);border-radius:16px;padding:14px;font-size:1.2rem;text-align:center;margin-top:8px}
 .tip{background:var(--warn-bg);border-radius:14px;padding:12px 14px;margin-top:14px;font-size:.95rem}
@@ -237,10 +245,12 @@ SCREENS.home = async () => {
       <button class="big alt" type="button" data-go="pagar"><span class="ic" aria-hidden="true">🚚</span>Pagar a proveedor</button>
       <button class="big wide alt" type="button" data-go="voz"><span class="ic" aria-hidden="true">🎙️</span>Decirlo con mi voz</button>
     </div>
+    <button class="big wide alt" type="button" id="install" hidden style="margin-top:12px;width:100%"><span class="ic" aria-hidden="true">📲</span>Poner Cuadra en mi pantalla</button>
     <h2 class="sec-title">Últimos avisos</h2>
     <div id="avisos"></div>`;
   app.querySelectorAll("[data-go]").forEach((b) => (b.onclick = () => go(b.dataset.go)));
   renderAvisos();
+  showInstall();
   pollTimer = setInterval(async () => { try { await load(); renderAvisos(); } catch {} }, 4000);
 };
 function renderAvisos() {
@@ -462,6 +472,19 @@ SCREENS.respuesta = ({ pending, replies, error, done, cancelled } = {}) => {
   const l = $("#listen"); if (l) l.onclick = () => speak(replies.map((m) => plain(m.body)).join(". "));
   $("#say").textContent = replies.map((m) => plain(m.body)).join(". ");
 };
+
+// ---------- app instalable (PWA) ----------
+let installEvt = null;
+window.addEventListener("beforeinstallprompt", (e) => { e.preventDefault(); installEvt = e; showInstall(); });
+window.addEventListener("appinstalled", () => { installEvt = null; showInstall(); });
+function showInstall() {
+  const b = $("#install"); if (!b) return;
+  b.hidden = !installEvt;
+  b.onclick = async () => { if (!installEvt) return; installEvt.prompt(); await installEvt.userChoice.catch(() => {}); installEvt = null; showInstall(); };
+}
+if ("serviceWorker" in navigator) {
+  window.addEventListener("load", () => navigator.serviceWorker.register("/sw.js").catch(() => {}));
+}
 
 home();
 </script>
