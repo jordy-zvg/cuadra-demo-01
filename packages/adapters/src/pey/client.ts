@@ -67,6 +67,8 @@ export interface PeyTransaction {
   payable_type: string | null;
   payable_id: string | null;
   date_paid: Date | null;
+  /** Cuándo se creó en pey (para saber qué ventana cubre una consulta). */
+  date_created?: Date | null;
   payer_clabe: string | null;
   tracking_key: string | null;
   external_metadata: Metadata;
@@ -86,6 +88,7 @@ export function normalizeTransaction(raw: z.infer<typeof PeyTransactionSchema>):
     payable_type: raw.payableType ?? null,
     payable_id: raw.payableId ?? null,
     date_paid: raw.datePaid ? new Date(raw.datePaid * 1000) : null,
+    date_created: raw.dateCreated ? new Date(raw.dateCreated * 1000) : null,
     payer_clabe: typeof md.clabe === "string" && /^\d{18}$/.test(md.clabe) ? md.clabe : null,
     tracking_key: typeof md.trackingKey === "string" ? md.trackingKey : null,
     external_metadata:

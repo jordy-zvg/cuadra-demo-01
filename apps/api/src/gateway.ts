@@ -28,6 +28,11 @@ export interface ChargeGateway {
     bank_account_id?: string;
   }): Promise<{ provider_charge_id: string; image_png_base64: string | null }>;
   getTransaction(id: string): Promise<PeyTransaction>;
+  /**
+   * Transacciones recientes del proveedor (más nuevas primero) hasta `since`. coveredSince es
+   * null si se leyó toda la ventana; si se cortó antes, la fecha más vieja que sí se leyó.
+   */
+  listRecentTransactions?(since: Date): Promise<{ items: PeyTransaction[]; coveredSince: Date | null }>;
   /** Alta de una CLABE como cuenta receptora (pey: POST /bank-account). */
   registerAccount(r: { clabe: string; name: string; alias: string }): Promise<{ id: string; status: string }>;
   accountStatus(id: string): Promise<string>;
@@ -48,6 +53,18 @@ export class PeyGateway implements ChargeGateway {
   }
   getTransaction(id: string) {
     return this.pey.getTransaction(id);
+  }
+  async listRecentTransactions(since: Date, maxPages = 25) {
+    const items: PeyTransaction[] = [];
+    let token: string | undefined;
+    for (let page = 0; page < maxPages; page++) {
+      const r = await this.pey.listTransactions(token);
+      items.push(...r.items);
+      const oldest = r.items.at(-1)?.date_created ?? null;
+      if (!r.nextToken || (oldest && oldest.getTime() < since.getTime())) return { items, coveredSince: null };
+      token = r.nextToken;
+    }
+    return { items, coveredSince: items.at(-1)?.date_created ?? since };
   }
   async registerAccount(r: { clabe: string; name: string; alias: string }) {
     const a = await this.pey.registerBankAccount({ alias: r.alias.slice(0, 255), name: r.name.slice(0, 255), clabe: r.clabe, entity: "PERSON" });

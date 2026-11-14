@@ -8,7 +8,7 @@ import { schema } from "@cuadra/db";
 import { and, eq } from "drizzle-orm";
 import type { CuadraService } from "./service.js";
 import { type PasskeyOpts, registerPasskeyRoutes } from "./passkey.js";
-import { panelState, tandaState } from "./state.js";
+import { panelState, providerReconState, tandaState } from "./state.js";
 
 export interface ServerOpts {
   db: Db;
@@ -79,6 +79,7 @@ export function buildServer(o: ServerOpts): FastifyInstance {
   app.get("/api/state", async () => ({
     ...(await panelState(o.db, o.merchantId, { gateway: o.gateway.name, simulated: o.gateway.simulated, bankSim: o.bankSim })),
     tanda: await tandaState(o.db, o.service),
+    provider_reconciliation: await providerReconState(o.db, o.merchantId, o.gateway.name),
     n2bis: await o.service.n2bis().then((s) => s && { pct: s.pct, level: s.level, limit: s.limit_cents.toString(), received: s.received_cents.toString(), remaining: s.remaining_cents.toString(), message: s.message }),
   }));
 
@@ -105,6 +106,12 @@ export function buildServer(o: ServerOpts): FastifyInstance {
     if (!c?.providerChargeId || c.status !== "open") return reply.code(409).send({ error: "cobro no disponible" });
     await o.service.simulatePaid(c.providerChargeId);
     return { ok: true };
+  });
+
+  // Conciliación manual contra pey (también corre sola cada pocos minutos).
+  app.post("/api/reconcile/pey", async () => {
+    const r = await o.service.reconcileProvider();
+    return { ...r };
   });
 
   // Solo en modo simulado: un integrante aprueba su aportación (o todos los que faltan).

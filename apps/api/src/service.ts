@@ -40,6 +40,7 @@ import {
 import { and, desc, eq, isNull, ne, or } from "drizzle-orm";
 import { type ChargeGateway, PN_TTL_S, QR_TTL_S } from "./gateway.js";
 import { type OutboundChannel, resolveThreadPhone } from "./channel.js";
+import { type ReconResult, reconcileWithProvider } from "./provider-reconciliation.js";
 import { TandaFlow } from "./tanda-flow.js";
 
 export const REMINDER_TEMPLATE = "cobro_amable";
@@ -591,6 +592,24 @@ export class CuadraService {
     } else {
       await this.say("comercio", `💰 Llegó un pago de ${amount} que no pude asignar. Quedó en “por identificar” (1300) para revisión.`);
     }
+  }
+
+  private reconciling: Promise<ReconResult> | null = null;
+
+  /** Conciliación contra el proveedor de cobro. Una sola corrida a la vez. */
+  async reconcileProvider(): Promise<ReconResult> {
+    this.reconciling ??= reconcileWithProvider({
+      db: this.d.db,
+      merchantId: this.d.merchantId,
+      gateway: this.d.gateway,
+      applyPayment: (tx) => this.applyPayment(tx),
+      now: this.d.now,
+      say: (body) => this.say("comercio", body),
+      log: this.d.log,
+    }).finally(() => {
+      this.reconciling = null;
+    });
+    return this.reconciling;
   }
 
   /** Tope mensual Nivel 2 Bis con los abonos digitales del mes (CDMX). */

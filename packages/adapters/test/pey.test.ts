@@ -88,7 +88,7 @@ describe("PeyClient", () => {
     expect(await client(f.fn).getTransaction("01HXYZTXN1234567890ABCDE00")).toEqual({
       id: "01HXYZTXN1234567890ABCDE00", status: "PAID", amount_cents: 10250n, base_cents: 10000n, tip_cents: 0n, fee_cents: 250n,
       payment_method: "CODI", payable_type: "API_CODI_PN", payable_id: "01HXYZ1234567890ABCDEFGH00",
-      date_paid: new Date(1704067260 * 1000), payer_clabe: "000000000000000000", tracking_key: "0192191042",
+      date_paid: new Date(1704067260 * 1000), date_created: new Date(1704067200 * 1000), payer_clabe: "000000000000000000", tracking_key: "0192191042",
       external_metadata: { orderId: "12345", cuadra_charge_id: "ch_1" },
     });
   });
