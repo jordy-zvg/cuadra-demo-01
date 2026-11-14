@@ -15,6 +15,15 @@ export interface ReminderInput {
   opt_in: boolean;
   template_id: string;
   approved_template_ids: readonly string[];
+  /** Espera mínima entre recordatorios al mismo cliente; por defecto 72 h. La demo la baja por variable de entorno. */
+  min_interval_ms?: number;
+}
+
+/** "72 horas", "1 minuto", "90 minutos"... para explicar la regla P03. */
+function describeInterval(ms: number): string {
+  const min = Math.round(ms / 60_000);
+  if (min % 60 === 0) return `${min / 60} hora${min === 60 ? "" : "s"}`;
+  return `${min} minuto${min === 1 ? "" : "s"}`;
 }
 
 export interface PolicyFailure {
@@ -38,11 +47,9 @@ export function evaluateReminder(i: ReminderInput): ReminderDecision {
       reason: `El monto del recordatorio debe ser igual al saldo (${formatMXN(i.ledger_balance)}).`,
     });
   }
-  if (
-    i.last_reminder_at !== null &&
-    i.now.getTime() - i.last_reminder_at.getTime() < REMINDER_MIN_INTERVAL_HOURS * HOUR_MS
-  ) {
-    f.push({ rule_id: "P03", reason: "Ya se envió un recordatorio a este cliente en las últimas 72 horas." });
+  const interval = i.min_interval_ms ?? REMINDER_MIN_INTERVAL_HOURS * HOUR_MS;
+  if (i.last_reminder_at !== null && i.now.getTime() - i.last_reminder_at.getTime() < interval) {
+    f.push({ rule_id: "P03", reason: `Ya se envió un recordatorio a este cliente en las últimas ${describeInterval(interval)}.` });
   }
   if (!isWithinMxHours(i.now, REMINDER_FROM_HOUR, REMINDER_TO_HOUR)) {
     f.push({ rule_id: "P04", reason: "Los recordatorios solo se envían entre 9:00 y 20:00." });

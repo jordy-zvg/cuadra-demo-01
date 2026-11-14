@@ -63,6 +63,8 @@ export interface ServiceDeps {
   bankSim: boolean;
   /** Valor de la UDI (millonésimas de peso) para el monitor Nivel 2 Bis; null si no se configuró. */
   udi: UdiMicro | null;
+  /** Espera mínima entre recordatorios (P03). Sin valor: 72 h. Solo para la demo se baja por variable de entorno. */
+  reminderMinIntervalMs?: number;
   /** Canales que además entregan los mensajes (WhatsApp, SMS). El chat web lee de la base. */
   channels?: OutboundChannel[];
   log: (r: Record<string, unknown>) => void;
@@ -439,6 +441,7 @@ export class CuadraService {
       opt_in: c.optIn,
       template_id: REMINDER_TEMPLATE,
       approved_template_ids: [REMINDER_TEMPLATE],
+      ...(this.d.reminderMinIntervalMs ? { min_interval_ms: this.d.reminderMinIntervalMs } : {}),
     });
     const open = await this.openCharge(customerId);
     if (policy.allow && open) {

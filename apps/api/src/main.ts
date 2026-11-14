@@ -79,6 +79,8 @@ async function main(): Promise<void> {
     peyWebhookSecret: env("PEY_WEBHOOK_SECRET") ?? null,
     bankSim,
     udi: env("UDI_VALOR") ? parseUdiValue(env("UDI_VALOR")!) : null,
+    // Solo demo: REMINDER_MIN_INTERVAL_MINUTES=1 permite repetir el recordatorio al minuto (normal: 72 h).
+    ...(Number(env("REMINDER_MIN_INTERVAL_MINUTES")) > 0 ? { reminderMinIntervalMs: Number(env("REMINDER_MIN_INTERVAL_MINUTES")) * 60_000 } : {}),
     log,
     ...(whatsapp ? { channels: [whatsapp.channel] } : {}),
   });

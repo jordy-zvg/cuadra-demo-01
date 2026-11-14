@@ -46,6 +46,16 @@ describe("recordatorios", () => {
   it("P03 máx. 1 cada 72 h", () => {
     expect(ids({ last_reminder_at: at("10:01", "2026-11-11") })).toEqual(["P03"]);
     expect(ids({ last_reminder_at: at("10:00", "2026-11-11") })).toEqual([]);
+    expect(evaluateReminder({ ...ok, last_reminder_at: at("10:01", "2026-11-11") }).rules_failed[0]!.reason).toMatch(/72 horas/);
+  });
+  it("P03 con espera configurable (modo demo)", () => {
+    const now = ok.now.getTime();
+    const minuto = { min_interval_ms: 60_000 };
+    expect(ids({ ...minuto, last_reminder_at: new Date(now - 30_000) })).toEqual(["P03"]);
+    expect(ids({ ...minuto, last_reminder_at: new Date(now - 60_000) })).toEqual([]);
+    expect(evaluateReminder({ ...ok, ...minuto, last_reminder_at: new Date(now - 30_000) }).rules_failed[0]!.reason).toMatch(/último 1 minuto|1 minuto/);
+    expect(evaluateReminder({ ...ok, min_interval_ms: 90 * 60_000, last_reminder_at: new Date(now - 1000) }).rules_failed[0]!.reason).toMatch(/90 minutos/);
+    expect(evaluateReminder({ ...ok, min_interval_ms: 3_600_000, last_reminder_at: new Date(now - 1000) }).rules_failed[0]!.reason).toMatch(/1 hora\./);
   });
   it("P04 horario 9–20", () => {
     expect(ids({ now: at("08:59") })).toEqual(["P04"]);
