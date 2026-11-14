@@ -272,7 +272,7 @@ describe("celulares ficticios de la demo", () => {
     await svc.confirm(await lastAct());
     expect(gw.pushes).toHaveLength(0);
     const msgs = await db.select().from(schema.messages).where(eq(schema.messages.thread, "comercio")).orderBy(schema.messages.id);
-    expect(msgs.at(-1)!.body).toMatch(/no tiene celular/);
+    expect(msgs.at(-1)!.body).toMatch(/no tiene un celular válido para CoDi/);
   });
 });
 

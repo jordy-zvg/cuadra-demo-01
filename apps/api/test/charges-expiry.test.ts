@@ -1,4 +1,4 @@
-import type { PeyTransaction } from "@cuadra/adapters";
+import { PeyApiError, type PeyTransaction } from "@cuadra/adapters";
 import { RuleInterpreter } from "@cuadra/agents";
 import { DEMO, ledgerBalance, schema, seedDemo } from "@cuadra/db";
 import { createTestDb } from "@cuadra/db/testing";
@@ -35,9 +35,10 @@ async function setup() {
   await seedDemo(db, T0, { lupePhone: "8331550510" });
   const gw = new FakePey();
   let clock = T0;
+  const logs: Array<Record<string, unknown>> = [];
   const svc = new CuadraService({
     db, merchantId: M, ownerId: DEMO.ownerId, interpreters: [new RuleInterpreter()], gateway: gw,
-    verify: async () => false, now: () => clock, publicUrl: null, peyWebhookSecret: null, bankSim: false, udi: null, log: () => {},
+    verify: async () => false, now: () => clock, publicUrl: null, peyWebhookSecret: null, bankSim: false, udi: null, log: (r) => logs.push(r),
   });
   const say = async (text: string) => svc.handleMerchantMessage(text);
   const lastBody = async () => (await db.select().from(schema.messages).where(eq(schema.messages.thread, "comercio")).orderBy(schema.messages.id)).at(-1)!.body;
@@ -46,7 +47,7 @@ async function setup() {
     await svc.confirm(msgs.filter((m) => m.actions?.some((a) => a.kind === "confirm")).at(-1)!.actions![0]!.proposal_id!);
   };
   const fiado = async (t: string) => { await say(t); await confirmLast(); };
-  return { db, svc, gw, say, lastBody, confirmLast, fiado, advance: (min: number) => { clock = new Date(clock.getTime() + min * 60_000); } };
+  return { db, svc, gw, logs, say, lastBody, confirmLast, fiado, advance: (min: number) => { clock = new Date(clock.getTime() + min * 60_000); } };
 }
 
 describe("cobros vencidos no bloquean al cliente", () => {
@@ -123,7 +124,47 @@ describe("solicitud al celular rechazada por pey", () => {
     await f.say("Cóbrale a Doña Lupe");
     await f.confirmLast();
     expect(f.gw.pushes).toHaveLength(1);
-    expect(await f.lastBody()).toMatch(/enviado a Doña Lupe por CoDi vía pey/);
+    expect(await f.lastBody()).toMatch(/pey aceptó la solicitud CoDi de \$0\.01 para Doña Lupe/);
+  });
+});
+
+describe("diagnóstico de la solicitud al celular", () => {
+  it("pey la rechaza (4xx): se registra status, tipo y requestId y se sugiere revisar CoDi", async () => {
+    const f = await setup();
+    f.gw.requestPayment = async () => {
+      throw new PeyApiError(400, "INVALID_REQUEST", "Phone not enrolled", "req_123");
+    };
+    await f.fiado("Doña Lupe se llevó $0.01");
+    await f.say("Cóbrale a Doña Lupe");
+    await f.confirmLast();
+    expect(await f.lastBody()).toMatch(/Revisa que su celular esté registrado en CoDi/);
+    expect(f.logs.find((l) => l.msg === "pey_pn_failed")).toMatchObject({ status: 400, type: "INVALID_REQUEST", request_id: "req_123" });
+  });
+
+  it("pey en mantenimiento (503): no culpa al registro en CoDi", async () => {
+    const f = await setup();
+    f.gw.requestPayment = async () => {
+      throw new PeyApiError(503, "SERVICE_UNAVAILABLE", "This endpoint is under maintenance", null);
+    };
+    await f.fiado("Doña Lupe se llevó $0.01");
+    await f.say("Cóbrale a Doña Lupe");
+    await f.confirmLast();
+    const body = await f.lastBody();
+    expect(body).toMatch(/pey no respondió bien en este momento/);
+    expect(body).not.toMatch(/registrado en CoDi/);
+  });
+
+  it("aceptada: guarda el folio de Banxico (codiId) para poder rastrearla con pey", async () => {
+    const f = await setup();
+    const real = f.gw.requestPayment.bind(f.gw);
+    f.gw.requestPayment = async (r) => ({ ...(await real(r)), codi_id: "12345678901234567890" });
+    await f.fiado("Doña Lupe se llevó $0.01");
+    await f.say("Cóbrale a Doña Lupe");
+    await f.confirmLast();
+    expect(f.logs.find((l) => l.msg === "pey_pn_sent")).toMatchObject({ transaction_id: "TX1", codi_id: "12345678901234567890" });
+    const done = (await f.db.select().from(schema.proposals)).find((p) => (p.decision as { codi_id?: string } | null)?.codi_id);
+    expect(done).toBeDefined();
+    expect(await f.lastBody()).toMatch(/vigente 60 min/);
   });
 });
 
@@ -141,7 +182,7 @@ describe("cobro directo al celular en la demo", () => {
     await f.confirmLast();
     expect(f.gw.pushes).toHaveLength(1);
     expect(f.gw.pushes[0]).toMatchObject({ phone10: "8331550510" });
-    expect(await f.lastBody()).toMatch(/enviado a Doña Lupe por CoDi vía pey/);
+    expect(await f.lastBody()).toMatch(/pey aceptó la solicitud CoDi de \$0\.01 para Doña Lupe/);
   });
 
   it("una solicitud real sí cuenta: no se manda otra en 72 h", async () => {
