@@ -1,13 +1,13 @@
 # Cuadra · Componentes a implementar
 
-Estado al 14-nov-2026. **Responsable:** por asignar (tú / Joi). Prioridad: **P0** activación y demo ·
+Estado al 14-nov-2026. **Responsables:** Jordy (pey), Joi (WhatsApp); el resto por asignar. Prioridad: **P0** activación y demo ·
 **P1** las 4 semanas del hackathon · **P2** después.
 
 ## Canales
 
 | # | Componente | Estado | Qué falta | Pri. | Esf. | Requiere | Responsable |
 |---|---|---|---|---|---|---|---|
-| 1 | **WhatsApp (Cloud API de Meta)** | Chat web simulado listo; mismo agente | Webhook de Meta (verificación + firma), recibir texto/audio/foto, enviar respuestas y botones interactivos (Confirmar/Cancelar), enlaces de passkey. Plantillas aprobadas para mensajes que inicia el negocio (recordatorios y recibos fuera de la ventana de 24 h). Mapear número del comercio y de clientes | P1 | M-L | Cuenta Meta Business, número de prueba, aprobación de plantillas | |
+| 1 | **WhatsApp (Cloud API de Meta)** | Chat web simulado listo; mismo agente | Webhook de Meta (verificación + firma), recibir texto/audio/foto, enviar respuestas y botones interactivos (Confirmar/Cancelar), enlaces de passkey. Plantillas aprobadas para mensajes que inicia el negocio (recordatorios y recibos fuera de la ventana de 24 h). Mapear número del comercio y de clientes | P1 | M-L | Cuenta Meta Business, número de prueba, aprobación de plantillas | **Joi** (guía: `docs/whatsapp.md`) |
 | 2 | **SMS** | — | Respaldo para clientes sin WhatsApp: recordatorio y recibo por SMS, OTP para verificar el teléfono del comercio. Elegir proveedor (Twilio, Infobip, etc.), remitente, opt-in/opt-out (“BAJA”) | P1 | S-M | Cuenta del proveedor y alta del remitente | |
 | 3 | Chat web simulado | ✅ Listo | — | — | — | — | |
 
@@ -15,7 +15,7 @@ Estado al 14-nov-2026. **Responsable:** por asignar (tú / Joi). Prioridad: **P0
 
 | # | Componente | Estado | Qué falta | Pri. | Esf. | Requiere | Responsable |
 |---|---|---|---|---|---|---|---|
-| 4 | **pey (cobros CoDi)** | ✅ Código y tests: push al celular, QR, cuenta receptora, webhooks, tanda | Llave real, secreto de webhook, URL del webhook en el portal, alta de CLABEs, prueba con $0.01. Agregar **link de pago** como alternativa (tarjeta o banco sin CoDi) | **P0** | S | Acceso a portal.pey.mx | |
+| 4 | **pey (cobros CoDi)** | ✅ Código y tests: push al celular, QR, cuenta receptora, webhooks, tanda | Llave real, secreto de webhook, URL del webhook en el portal, alta de CLABEs, prueba con $0.01. Agregar **link de pago** como alternativa (tarjeta o banco sin CoDi) | **P0** | S | Acceso a portal.pey.mx | **Jordy** (guía: `docs/pey.md`) |
 | 5 | **Conciliación contra pey** | — | Tarea periódica que compare las transacciones `PAID` de pey (`/transaction/api-key`) con los abonos registrados: recupera webhooks perdidos y marca diferencias | P1 | S | #4 | |
 | 6 | **Pagos salientes** (proveedores, devoluciones) | Executor, guard, mandatos y adapter de Fintoc listos; hoy sale de una cuenta simulada | Elegir proveedor (Fintoc, STP u Openpay), llaves de prueba y llave JWS, probar contra el sandbox | P1 | M | Alta con el proveedor | |
 | 7 | Devolución de saldo a favor (flujo D) | Asientos y guard listos | Intención en el chat + aprobación + salida a la CLABE de origen del cliente | P2 | S | #6 | |

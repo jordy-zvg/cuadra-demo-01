@@ -38,6 +38,7 @@ import {
 } from "@cuadra/db";
 import { and, desc, eq } from "drizzle-orm";
 import type { ChargeGateway } from "./gateway.js";
+import { type OutboundChannel, resolveThreadPhone } from "./channel.js";
 import { TandaFlow } from "./tanda-flow.js";
 
 export const REMINDER_TEMPLATE = "cobro_amable";
@@ -57,6 +58,8 @@ export interface ServiceDeps {
   bankSim: boolean;
   /** Valor de la UDI (millonésimas de peso) para el monitor Nivel 2 Bis; null si no se configuró. */
   udi: UdiMicro | null;
+  /** Canales que además entregan los mensajes (WhatsApp, SMS). El chat web lee de la base. */
+  channels?: OutboundChannel[];
   log: (r: Record<string, unknown>) => void;
 }
 
@@ -91,6 +94,22 @@ export class CuadraService {
       proposalId: proposalId ?? null,
       createdAt: this.d.now(),
     });
+    await this.deliver(thread, body, actions ?? []);
+  }
+
+  /** Entrega a los canales configurados; un canal caído no rompe el flujo del dinero. */
+  private async deliver(thread: string, body: string, actions: MessageAction[]): Promise<void> {
+    const channels = this.d.channels ?? [];
+    if (channels.length === 0) return;
+    const phone10 = await resolveThreadPhone(this.d.db, this.d.merchantId, this.d.ownerId, thread);
+    if (!phone10) return;
+    for (const ch of channels) {
+      try {
+        await ch.send({ merchantId: this.d.merchantId, thread, phone10, body, actions });
+      } catch (e) {
+        this.d.log({ msg: "channel_send_failed", channel: ch.name, merchant_id: this.d.merchantId, error: e instanceof Error ? e.message : String(e) });
+      }
+    }
   }
 
   private async heard(thread: string, body: string): Promise<void> {

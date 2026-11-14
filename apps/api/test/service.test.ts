@@ -255,3 +255,27 @@ describe("modo simulado", () => {
     expect(await ledgerBalance(f.db, M, "1100")).toBe(18500n);
   });
 });
+
+describe("canales de salida", () => {
+  it("cada mensaje se entrega al celular de su conversación; un canal caído no rompe el flujo", async () => {
+    const { db } = await createTestDb();
+    await seedDemo(db, NOW, { lupePhone: "+525512345678" });
+    const sent: Array<{ phone10: string; thread: string; body: string; actions: unknown[] }> = [];
+    const svc = new CuadraService({
+      db, merchantId: M, ownerId: DEMO.ownerId, interpreters: [new RuleInterpreter()], gateway: new FakePey(),
+      verify: async () => false, now: () => NOW, publicUrl: null, peyWebhookSecret: null, bankSim: false, udi: null,
+      channels: [
+        { name: "ok", send: async (m) => { sent.push(m); } },
+        { name: "caido", send: async () => { throw new Error("sin red"); } },
+      ],
+      log: () => {},
+    });
+    await svc.handleMerchantMessage("Doña Lupe se llevó $185");
+    expect(sent.at(-1)).toMatchObject({ phone10: "5500000001", thread: "comercio", actions: [{ kind: "confirm" }, { kind: "cancel" }] });
+    const pid = (sent.at(-1)!.actions[0] as { proposal_id: string }).proposal_id;
+    await svc.confirm(pid);
+    await svc.handleMerchantMessage("Cóbrale a Doña Lupe");
+    await svc.confirm((sent.at(-1)!.actions[0] as { proposal_id: string }).proposal_id);
+    expect(sent.some((m) => m.thread === "c_lupe" && m.phone10 === "5512345678" && /Te saludamos/.test(m.body))).toBe(true);
+  });
+});
