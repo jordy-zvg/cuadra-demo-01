@@ -58,8 +58,8 @@ describe("login mínimo de la demo", () => {
     const portal = await open.inject({ url: "/portal" });
     expect(portal.statusCode).toBe(200);
     expect(portal.headers["content-type"]).toMatch(/text\/html/);
-    expect(portal.body).toContain("Mi Cuadra");
-    expect((await open.inject({ url: "/login" })).body).toContain("Mi Cuadra");
+    expect(portal.body).toContain("<title>Cuadra</title>");
+    expect((await open.inject({ url: "/login" })).body).toContain("<title>Cuadra</title>");
     expect((await open.inject({ url: "/logo.svg" })).statusCode).toBe(200);
     // PWA: manifiesto, service worker e íconos.
     const man = await open.inject({ url: "/manifest.webmanifest" });

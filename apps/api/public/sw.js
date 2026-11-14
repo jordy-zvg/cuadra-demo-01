@@ -1,7 +1,7 @@
 // Service worker del portal (/login). Solo guarda la "cáscara" de la página para que abra rápido
 // y sin internet muestre el aviso de conexión. NUNCA guarda /api/*: saldos, cobros y pagos
 // siempre se piden en vivo al servidor.
-const CACHE = "cuadra-portal-v1";
+const CACHE = "cuadra-portal-v2";
 const SHELL = ["/login", "/logo.svg", "/manifest.webmanifest", "/icons/icon-192.png", "/icons/icon-512.png"];
 
 self.addEventListener("install", (e) => {
