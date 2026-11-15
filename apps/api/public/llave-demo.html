@@ -5,66 +5,86 @@
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <meta name="robots" content="noindex">
 <title>Llave CDMX (simulación)</title>
+<link rel="stylesheet" href="/assets/cuadra.css">
+<link rel="icon" href="/logo.svg" type="image/svg+xml">
 <style>
-/* SIMULACIÓN para la demo de Cuadra. No es el sitio oficial de Llave CDMX ni usa su marca. */
-:root{--bg:#F2F2F0;--card:#fff;--ink:#1E1E1E;--muted:#555;--line:#D6D6D2;--acc:#3D3D3D;--warn:#7A4B00;--warn-bg:#FFF1CC;--bad:#9C1F1F;--bad-bg:#FBE6E3;--fs:20px}
-@media (prefers-color-scheme: dark){:root{--bg:#151515;--card:#202020;--ink:#F0F0F0;--muted:#BBB;--line:#3A3A3A;--acc:#E6E6E6;--warn:#FFD27A;--warn-bg:#3A2E10;--bad:#FF9C8F;--bad-bg:#3B1915}}
-*{box-sizing:border-box}
+/* SIMULACIÓN para la demo de Cuadra. No es el sitio oficial de Llave CDMX ni usa su marca:
+   va con el diseño de Cuadra (tokens, letra y componentes de /assets/cuadra.css). */
+:root{--fs:20px}
 html{font-size:var(--fs)}
-body{margin:0;background:var(--bg);color:var(--ink);font:1rem/1.45 system-ui,-apple-system,"Segoe UI",Roboto,sans-serif}
+body{background:var(--bg-soft);font-size:1rem;line-height:1.45}
 .wrap{max-width:520px;margin:0 auto;padding:16px}
-.banner{background:var(--warn-bg);color:var(--warn);border:3px dashed var(--warn);border-radius:14px;padding:12px 14px;font-weight:700;font-size:.9rem}
-.card{background:var(--card);border:2px solid var(--line);border-radius:18px;padding:18px;margin-top:14px}
-h1{font-size:1.35rem;margin:0 0 4px}
-.who{display:flex;align-items:center;gap:10px;margin-bottom:8px;font-weight:800}
-.who .k{width:44px;height:44px;border-radius:12px;background:var(--acc);color:var(--card);display:flex;align-items:center;justify-content:center;font-size:1.4rem}
-p{margin:6px 0;color:var(--muted)}
+.banner{display:flex;gap:10px;align-items:flex-start;background:var(--warn-bg);color:var(--warn);border:2px dashed currentColor;border-radius:var(--r-md);padding:12px 14px;font-weight:700;font-size:.85rem}
+.banner .ico{width:1.4em;height:1.4em;margin-top:.05em}
+.card{padding:18px;margin-top:14px}
+h1{font-family:var(--font-head);font-weight:600;color:var(--heading);font-size:1.35rem;line-height:1.2;margin:.2rem 0 .3rem;letter-spacing:-.01em}
+.who{display:flex;align-items:center;gap:10px;margin-bottom:8px;font-family:var(--font-head);font-weight:700;color:var(--ink)}
+.who .ic-circle{width:2.2rem;height:2.2rem}
+p{margin:6px 0;color:var(--ink-2)}
 ul{margin:8px 0 0;padding-left:1.2em}
 label{display:block;font-weight:700;margin-top:14px}
-input{display:block;width:100%;font:inherit;font-size:1.15rem;padding:12px;border-radius:12px;border:2px solid var(--line);background:var(--bg);color:var(--ink);margin-top:4px}
-input:focus,button:focus-visible{outline:4px solid #B48D4E;outline-offset:2px}
-button{display:block;width:100%;font:inherit;font-weight:800;min-height:64px;border-radius:16px;border:0;margin-top:14px;cursor:pointer}
-.ok{background:var(--acc);color:var(--card)}
-.soft{background:transparent;color:var(--ink);border:2px solid var(--line);font-weight:700}
-.err{background:var(--bad-bg);color:var(--bad);border-radius:12px;padding:10px 12px;margin-top:12px;font-weight:700;display:none}
-.err.on{display:block}
-small{color:var(--muted)}
+input{display:block;width:100%;min-height:44px;font:inherit;font-size:1.1rem;padding:12px;border-radius:var(--r-md);border:2px solid var(--line-strong);background:var(--surface-plain);color:var(--ink);margin-top:4px}
+input:focus{border-color:var(--primary);outline:3px solid var(--glyph-bg);outline-offset:0}
+.btn{width:100%;min-height:3.2rem;margin-top:14px;font-size:1rem;touch-action:manipulation}
+.err{display:none;align-items:flex-start;gap:.6em;background:var(--bad-bg);color:var(--bad);border-radius:var(--r-md);padding:10px 12px;margin-top:12px;font-weight:700}
+.err.on{display:flex}
+small{color:var(--ink-2)}
+/* Mientras autoriza: círculo que gira dentro del botón. */
+.btn.busy::before{content:"";width:1em;height:1em;border-radius:50%;border:3px solid currentColor;border-right-color:transparent;animation:giro 1s linear infinite}
+@keyframes giro{to{transform:rotate(360deg)}}
+@media (prefers-reduced-motion: reduce){.btn.busy::before{animation-duration:3s}}
+/* Celular: una columna. Tableta: más aire. Laptop: datos que se comparten a la izquierda, formulario a la derecha. */
+@media (min-width:700px){.wrap{max-width:600px;padding:32px 24px}.card{padding:24px}}
+@media (min-width:960px){
+  .wrap{max-width:1000px;display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1.1fr);gap:0 24px;align-items:start}
+  .banner{grid-column:1 / -1}
+}
 </style>
+<script src="/assets/red.js" defer></script>
 </head>
 <body>
 <div class="wrap">
-  <div class="banner" role="note">⚠️ SIMULACIÓN para la demo de Cuadra. Esta página NO es Llave CDMX ni del Gobierno de la Ciudad de México. No escribas aquí tu contraseña real.</div>
-  <div class="card">
-    <div class="who"><span class="k" aria-hidden="true">🔑</span><span>Llave CDMX · demo</span></div>
+  <div class="banner" role="note"><svg class="ico" aria-hidden="true"><use href="/assets/icons.svg#i-warning"/></svg><span>SIMULACIÓN para la demo de Cuadra. Esta página NO es Llave CDMX ni del Gobierno de la Ciudad de México. No escribas aquí tu contraseña real.</span></div>
+  <div class="card card--pattern">
+    <div class="who"><span class="ic-circle" aria-hidden="true"><svg class="ico"><use href="/assets/icons.svg#i-key"/></svg></span><span>Llave CDMX · demo</span></div>
     <h1>Cuadra quiere usar tus datos</h1>
     <p>Si autorizas, Cuadra recibirá:</p>
     <ul><li>Tu nombre</li><li>Tu celular</li><li>Una huella de tu CURP (Cuadra no guarda la CURP)</li></ul>
   </div>
   <form class="card" id="f">
-    <button type="button" class="soft" id="sample" style="margin-top:0">Llenar con datos de prueba</button>
+    <button type="button" class="btn btn--outline" id="sample" style="margin-top:0">Llenar con datos de prueba</button>
     <label for="name">Nombre</label>
-    <input id="name" autocomplete="name" maxlength="60" required>
+    <input id="name" autocomplete="name" autocapitalize="words" maxlength="60" required>
     <label for="curp">CURP</label>
-    <input id="curp" autocomplete="off" maxlength="18" style="text-transform:uppercase" required>
+    <input id="curp" autocomplete="off" autocapitalize="characters" spellcheck="false" maxlength="18" style="text-transform:uppercase" required>
     <label for="phone">Celular (10 números)</label>
-    <input id="phone" type="tel" inputmode="numeric" maxlength="14" required>
+    <input id="phone" type="tel" inputmode="numeric" autocomplete="tel-national" maxlength="14" required>
     <div id="code-box" hidden>
       <label for="code">Código de la tienda</label>
       <input id="code" inputmode="numeric" maxlength="20">
       <small>Pídeselo al dueño de la tienda.</small>
     </div>
     <div class="err" id="err" role="alert"></div>
-    <button class="ok" type="submit" id="go">Autorizar y volver a Cuadra</button>
-    <button class="soft" type="button" id="cancel">No autorizar</button>
+    <button class="btn" type="submit" id="go">Autorizar y volver a Cuadra</button>
+    <button class="btn btn--outline" type="button" id="cancel">No autorizar</button>
   </form>
 </div>
 <script>
 "use strict";
 const $ = (s) => document.querySelector(s);
 const state = new URLSearchParams(location.search).get("state") || "";
-const showErr = (m) => { $("#err").textContent = m; $("#err").classList.add("on"); };
+// Error con ícono y texto (nunca solo color), traído a la vista.
+const showErr = (m) => {
+  const e = $("#err");
+  e.innerHTML = '<svg class="ico" aria-hidden="true"><use href="/assets/icons.svg#i-error"/></svg><span></span>';
+  e.lastChild.textContent = m; e.classList.add("on"); e.scrollIntoView({ block: "nearest" });
+};
+// Botón en espera: deshabilitado, con círculo y texto "Autorizando…"; vuelve a su texto al terminar.
+const busy = (on) => { const b = $("#go"); b.disabled = on; b.classList.toggle("busy", on); b.textContent = on ? "Autorizando…" : "Autorizar y volver a Cuadra"; };
 
-fetch("/api/auth/me").then((r) => r.json()).then((d) => { $("#code-box").hidden = !d.needs_shop_code; }).catch(() => {});
+// Si no se puede saber si la tienda pide código, se avisa con la barra de conexión (el servidor lo pedirá al autorizar).
+fetch("/api/auth/me").then((r) => r.json()).then((d) => { $("#code-box").hidden = !d.needs_shop_code; window.cuadraNet?.ok(); })
+  .catch(() => { window.cuadraNet?.fail(); window.cuadraNet?.fail(); });
 
 // Datos ficticios: una CURP al azar con formato válido (cada quien la suya; no corresponde a nadie).
 const pick = (s) => s[Math.floor(Math.random() * s.length)];
@@ -83,20 +103,21 @@ $("#cancel").onclick = () => { location.href = "/login"; };
 $("#f").onsubmit = async (e) => {
   e.preventDefault();
   $("#err").classList.remove("on");
-  $("#go").disabled = true;
+  busy(true);
   try {
     const body = { state, name: $("#name").value, curp: $("#curp").value, phone: $("#phone").value };
     if (!$("#code-box").hidden) body.shop_code = $("#code").value;
     const r = await fetch("/api/auth/llave/demo-callback", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify(body) });
     const d = await r.json().catch(() => ({}));
+    window.cuadraNet?.ok();
     if (r.ok) {
       try { localStorage.setItem("cuadra.cuenta", JSON.stringify({ phone: body.phone.replace(/\D/g, "").slice(-10), name: d.account.name, llave: true })); } catch {}
       location.href = "/login";
       return;
     }
-    showErr(d.error || "No se pudo autorizar.");
-  } catch { showErr("No hay conexión. Revisa tu internet."); }
-  $("#go").disabled = false;
+    showErr(d.error || (r.status >= 500 ? "Cuadra no respondió. Espera un momento y vuelve a intentar." : "No se pudo autorizar. Revisa tus datos."));
+  } catch { showErr("No hay conexión. Revisa tu internet y vuelve a intentar."); }
+  busy(false);
 };
 </script>
 </body>

@@ -169,6 +169,9 @@ button:focus-visible,a:focus-visible,input:focus-visible{outline:3px solid var(-
 .steps{display:inline-flex;margin:.1rem 0 .5rem;padding:.2rem .7rem;border-radius:var(--r-pill);background:var(--glyph-bg);color:var(--heading);font-weight:700;font-size:.85rem}
 .sr{position:absolute;width:1px;height:1px;overflow:hidden;clip:rect(0 0 0 0)}
 @media (max-width:480px){header .who span{display:none}}
+/* Aviso de "jalar para actualizar" (app instalada). */
+.ptr{position:fixed;top:max(8px, env(safe-area-inset-top));left:50%;transform:translate(-50%,0);z-index:20;padding:.45em 1em;border-radius:var(--r-pill);background:var(--surface-plain);color:var(--heading);border:1px solid var(--card-line);box-shadow:var(--shadow-2);font-size:.8rem;font-weight:700;pointer-events:none}
+.ptr[hidden]{display:none}
 /* Sin la espera de doble toque en celulares y tabletas. */
 button,.opt,.keys button{touch-action:manipulation}
 /* Tableta y pantallas anchas: columna más amplia, las cinco acciones en una fila y los teclados
@@ -297,6 +300,7 @@ let pollTimer = null;
 let verifyTimer = null;
 function go(screen, arg, push = true) {
   if (push && current) history_.push(current);
+  arm();
   current = { screen, arg };
   clearInterval(pollTimer); pollTimer = null;
   clearInterval(verifyTimer); verifyTimer = null;
@@ -313,6 +317,56 @@ app.addEventListener("click", (e) => {
   const n = e.target.closest("[data-nav]"); if (!n) return;
   n.dataset.nav === "back" ? back() : home();
 });
+
+// ---------- gestos de celular y tableta ----------
+// Atrás del sistema (gesto de Android, botón atrás, deslizar en Safari): mientras haya pantallas a
+// dónde regresar se deja una entrada en el historial del navegador; al usarla, Cuadra regresa una
+// pantalla en vez de cerrarse. En Inicio, el gesto se comporta como siempre (sale de la app).
+let armed = false;
+function arm() { if (!armed && history_.length) { history.pushState({ cuadra: 1 }, ""); armed = true; } }
+addEventListener("popstate", () => {
+  armed = false;
+  if (history_.length) back();
+  else if (current && !["home", "bienvenida", "verificar", "listo"].includes(current.screen) && me) home();
+});
+
+const standalone = matchMedia("(display-mode: standalone)").matches || navigator.standalone === true;
+const touchY = (e) => (e.touches[0] || e.changedTouches[0]).clientY;
+// iPhone/iPad con Cuadra en la pantalla de inicio: no hay gesto de atrás del sistema, así que
+// deslizar desde el borde izquierdo hacia la derecha regresa una pantalla.
+if (navigator.standalone === true) {
+  let sx = 0, sy = 0, edge = false;
+  addEventListener("touchstart", (e) => { const t = e.touches[0]; edge = t.clientX < 28 && history_.length > 0; sx = t.clientX; sy = t.clientY; }, { passive: true });
+  addEventListener("touchend", (e) => {
+    if (!edge) return; edge = false;
+    const t = e.changedTouches[0];
+    if (t.clientX - sx > 80 && Math.abs(t.clientY - sy) < 60) back();
+  }, { passive: true });
+}
+// App instalada: jalar hacia abajo en Inicio actualiza lo que te deben y los avisos (el navegador
+// ya lo hace solo; instalada no hay recarga del sistema).
+if (standalone) {
+  const ptr = document.createElement("div");
+  ptr.className = "ptr"; ptr.hidden = true; ptr.setAttribute("aria-hidden", "true");
+  document.body.append(ptr);
+  let y0 = null, dy = 0;
+  addEventListener("touchstart", (e) => { y0 = current?.screen === "home" && scrollY <= 0 ? touchY(e) : null; dy = 0; }, { passive: true });
+  addEventListener("touchmove", (e) => {
+    if (y0 === null) return;
+    dy = touchY(e) - y0;
+    if (dy < 10) { ptr.hidden = true; return; }
+    ptr.hidden = false;
+    ptr.textContent = dy > 90 ? "Suelta para actualizar" : "Jala para actualizar";
+    ptr.style.transform = `translate(-50%, ${Math.min(dy / 2, 60)}px)`;
+  }, { passive: true });
+  addEventListener("touchend", () => {
+    if (y0 === null) return;
+    y0 = null; ptr.hidden = true;
+    if (dy > 90) { navigator.vibrate?.(10); home(); }
+  }, { passive: true });
+}
+// Teclados de monto y NIP: una vibración corta al tocar cada tecla (Android; iPhone no la permite).
+app.addEventListener("click", (e) => { if (e.target.closest(".keys button")) navigator.vibrate?.(8); });
 // En laptop, el teclado físico aprieta las mismas teclas de pantalla (montos y NIP); Enter = Listo.
 document.addEventListener("keydown", (e) => {
   if (e.ctrlKey || e.metaKey || e.altKey || e.target.closest?.("input,textarea,select")) return;
