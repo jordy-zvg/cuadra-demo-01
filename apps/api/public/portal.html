@@ -196,6 +196,42 @@ button,.opt,.keys button{touch-action:manipulation}
   .home-side{position:sticky;top:1rem}
   .home-side #debo .sec-title:first-child,.home-side #debo:empty + .sec-title{margin-top:0}
 }
+/* ---------- Entrada: bienvenida, celular, NIP, registro y verificación ----------
+   Celular: la misma banda con el saludo y los botones abajo. Laptop: dos paneles, la marca a la
+   izquierda y el paso a la derecha (como los portales de los bancos), sin estirar la versión de celular. */
+.auth-aside,.wide-only{display:none}
+.secure{display:flex;align-items:flex-start;gap:.45rem;width:fit-content;max-width:100%;margin:1.4rem auto 0;color:var(--ink-2);font-size:.85rem;line-height:1.35;text-wrap:balance}
+.secure .ico{width:1.15rem;height:1.15rem;color:var(--glyph);flex:none;margin-top:.02rem}
+.legal{display:flex;align-items:center;justify-content:center;width:fit-content;min-height:2.75rem;margin:.3rem auto 0;color:var(--ink-2);font-size:.85rem;text-decoration:underline;text-underline-offset:3px}
+.btn--tertiary{background:transparent;border-color:transparent;color:var(--heading)}
+.btn--tertiary:hover{background:var(--surface);border-color:var(--card-line)}
+.btn--tertiary .ico{color:var(--glyph)}
+.auth-aside .brand{display:flex;align-items:center;gap:.8rem;font-family:var(--font-head);font-weight:700;font-size:1.5rem;letter-spacing:-.01em}
+.auth-aside .brand img{width:3.2rem;height:3.2rem;flex:none}
+.auth-aside .tagline{font-family:var(--font-head);font-weight:700;font-size:clamp(1.9rem,2.5vw,2.5rem);line-height:1.12;letter-spacing:-.02em;margin:2.2rem 0 0;max-width:13ch;text-wrap:balance}
+.auth-aside ul{list-style:none;padding:0;margin:2.2rem 0 0;display:grid;gap:1.1rem}
+.auth-aside li{display:flex;align-items:flex-start;gap:.8rem;color:var(--on-brand-accent);font-size:.95rem;line-height:1.4;max-width:25rem}
+.auth-aside li .ico{width:1.35rem;height:1.35rem;flex:none;color:#fff;margin-top:.05rem}
+@media (min-width:960px){
+  body.auth{display:grid;grid-template-columns:minmax(380px,42%) minmax(0,1fr);grid-template-rows:auto minmax(0,1fr)}
+  body.auth::before{inset:0 auto 0 0;width:max(380px,42%);height:auto;background-image:var(--pattern),linear-gradient(165deg,#0D3336 0%,#105658 48%,#1A7579 100%)}
+  body.auth .auth-aside{display:flex;flex-direction:column;justify-content:center;grid-column:1;grid-row:1 / span 2;min-height:100vh;min-height:100dvh;padding:56px clamp(40px,5vw,88px);color:#fff}
+  body.auth header.top{grid-column:2;grid-row:1;color:var(--heading)}
+  body.auth header .wrap{max-width:none;justify-content:flex-end;padding:18px 28px 0}
+  body.auth header .logo,body.auth header .who{display:none}
+  body.auth .size{color:var(--heading)}
+  body.auth .size:hover,body.auth .size[aria-pressed="true"]{background:var(--glyph-bg)}
+  body.auth header :focus-visible{outline-color:var(--focus)}
+  body.auth #app,body.auth #app:has(> .hero){grid-column:2;grid-row:2;align-self:center;display:block;width:100%;max-width:30rem;margin:0 auto;padding:1.5rem 2.5rem 4rem;background:transparent;border-radius:0}
+  body.auth #app > .hero{color:var(--ink);padding:0;text-align:left}
+  body.auth #app > .hero h1{color:var(--heading);font-size:1.9rem}
+  body.auth #app > .hero p{color:var(--ink-2)}
+  body.auth .hero--hello img,body.auth .hero--hello .slogan{display:none}
+  body.auth .wide-only{display:block}
+  body.auth #app > .hero + .sheet{padding:1.2rem 0 0;background:transparent;border-radius:0}
+  body.auth .secure,body.auth .legal{margin-left:0}
+  body.auth .keys,body.auth .amount,body.auth .dots,body.auth .keys + .go{max-width:none;margin-left:0;margin-right:0}
+}
 @media (prefers-reduced-motion: reduce){.spin{animation-duration:3s}.mic.on{animation:none;box-shadow:0 0 0 1.1rem var(--glyph-bg)}}
 </style>
 </head>
@@ -207,6 +243,15 @@ button,.opt,.keys button{touch-action:manipulation}
     <button class="size" id="size" type="button" aria-pressed="false" aria-label="Letra grande" title="Letra grande"></button>
   </div>
 </header>
+<aside class="auth-aside" aria-label="Cuadra">
+  <div class="brand"><img src="/logo.svg" alt="" width="64" height="64"><span>Cuadra</span></div>
+  <p class="tagline">Fía, cobra y paga sin perder la&nbsp;cuenta.</p>
+  <ul>
+    <li><svg class="ico" aria-hidden="true"><use href="/assets/icons.svg#i-edit_note"/></svg><span>Anota el fiado como lo dices: por chat, por voz o por WhatsApp.</span></li>
+    <li><svg class="ico" aria-hidden="true"><use href="/assets/icons.svg#i-account_balance"/></svg><span>Tus clientes te pagan por CoDi desde su banco.</span></li>
+    <li><svg class="ico" aria-hidden="true"><use href="/assets/icons.svg#i-fingerprint"/></svg><span>Ningún pago a proveedores sale sin tu huella o un permiso que firmaste con ella.</span></li>
+  </ul>
+</aside>
 <main class="sheet" id="app"></main>
 <div class="sr" id="say" aria-live="assertive"></div>
 
@@ -301,11 +346,14 @@ let pollTimer = null;
 let verifyTimer = null;
 // Pantallas con el logo grande al centro: ahí el encabezado no repite el logo.
 const LOGO_AL_CENTRO = new Set(["bienvenida", "listo"]);
+// Pantallas de entrada: en laptop se ven en dos paneles (marca a la izquierda, paso a la derecha).
+const ENTRADA = new Set(["bienvenida", "celular", "nip", "noEncontrado", "olvide", "nombre", "codigo", "nipNuevo", "listo", "verificar"]);
 function go(screen, arg, push = true) {
   if (push && current) history_.push(current);
   arm();
   current = { screen, arg };
   document.querySelector("header.top")?.classList.toggle("sin-logo", LOGO_AL_CENTRO.has(screen));
+  document.body.classList.toggle("auth", ENTRADA.has(screen));
   clearInterval(pollTimer); pollTimer = null;
   clearInterval(verifyTimer); verifyTimer = null;
   if (canSpeak) speechSynthesis.cancel();
@@ -788,11 +836,14 @@ SCREENS.bienvenida = () => {
   app.innerHTML = `<section class="hero hero--hello">
     <img src="/logo.svg" alt="">
     <h1>¡Hola! Esto es Cuadra</h1>
-    <p>Fía, cobra y paga sin perder la&nbsp;cuenta.</p></section>
+    <p class="slogan">Fía, cobra y paga sin perder la&nbsp;cuenta.</p>
+    <p class="wide-only">Entra con tu celular y tu NIP.</p></section>
     <div class="sheet">
     <button class="go btn btn--block" type="button" id="in">Entrar</button>
     <button class="go soft btn btn--outline btn--block" type="button" id="new">Soy nuevo, quiero registrarme</button>
-    ${llaveMode === "demo" ? `<button class="go soft btn btn--outline btn--block" type="button" id="llave">${ic("key")}<span>Entrar con Llave CDMX <small style="font-weight:600">(demo)</small></span></button>` : ""}
+    ${llaveMode === "demo" ? `<button class="go soft btn btn--tertiary btn--block" type="button" id="llave">${ic("key")}<span>Entrar con Llave CDMX</span></button>` : ""}
+    <p class="secure">${ic("lock")}<span>Tu cuenta se protege con tu NIP y tu celular.</span></p>
+    <a class="legal" href="/privacidad">Aviso de privacidad</a>
     </div>`;
   const lb = $("#llave");
   if (lb) lb.onclick = async () => {

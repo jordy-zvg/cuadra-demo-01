@@ -318,7 +318,8 @@ describe("Llave CDMX (demo)", () => {
 
   it("crea la cuenta, abre sesión y no guarda la CURP; la segunda vez entra a la misma cuenta", async () => {
     const { server, db } = await app({ llave: "demo" });
-    expect((await server.inject({ url: "/llave-cdmx/autorizar?state=x" })).body).toMatch(/SIMULACIÓN/);
+    // La pantalla dice con claridad que es de Cuadra y no del gobierno (y que nunca pide la contraseña de la Llave).
+    expect((await server.inject({ url: "/llave-cdmx/autorizar?state=x" })).body).toMatch(/es de Cuadra, no del Gobierno de la Ciudad de México/);
     const r = await cb(server, await start(server));
     expect(r.statusCode).toBe(200);
     expect((await server.inject({ url: "/api/state", headers: { cookie: cookieOf(r) } })).statusCode).toBe(200);

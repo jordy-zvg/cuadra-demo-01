@@ -4,7 +4,7 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <meta name="robots" content="noindex">
-<title>Llave CDMX (simulación)</title>
+<title>Entrar con Llave CDMX · Cuadra</title>
 <link rel="stylesheet" href="/assets/cuadra.css">
 <link rel="icon" href="/logo.svg" type="image/svg+xml">
 <style>
@@ -14,7 +14,8 @@
 html{font-size:var(--fs)}
 body{background:var(--bg-soft);font-size:1rem;line-height:1.45}
 .wrap{max-width:520px;margin:0 auto;padding:16px}
-.banner{display:flex;gap:10px;align-items:flex-start;background:var(--warn-bg);color:var(--warn);border:2px dashed currentColor;border-radius:var(--r-md);padding:12px 14px;font-weight:700;font-size:.85rem}
+.banner{display:flex;gap:10px;align-items:flex-start;background:var(--surface);color:var(--ink-2);border:1px solid var(--card-line);border-radius:var(--r-md);padding:12px 14px;font-weight:600;font-size:.85rem}
+.banner .ico{color:var(--glyph)}
 .banner .ico{width:1.4em;height:1.4em;margin-top:.05em}
 .card{padding:18px;margin-top:14px}
 h1{font-family:var(--font-head);font-weight:600;color:var(--heading);font-size:1.35rem;line-height:1.2;margin:.2rem 0 .3rem;letter-spacing:-.01em}
@@ -44,15 +45,15 @@ small{color:var(--ink-2)}
 </head>
 <body>
 <div class="wrap">
-  <div class="banner" role="note"><svg class="ico" aria-hidden="true"><use href="/assets/icons.svg#i-warning"/></svg><span>SIMULACIÓN para la demo de Cuadra. Esta página NO es Llave CDMX ni del Gobierno de la Ciudad de México. No escribas aquí tu contraseña real.</span></div>
+  <div class="banner" role="note"><svg class="ico" aria-hidden="true"><use href="/assets/icons.svg#i-info"/></svg><span>Esta pantalla es de Cuadra, no del Gobierno de la Ciudad de México. Nunca te pediremos la contraseña de tu Llave.</span></div>
   <div class="card card--pattern">
-    <div class="who"><span class="ic-circle" aria-hidden="true"><svg class="ico"><use href="/assets/icons.svg#i-key"/></svg></span><span>Llave CDMX · demo</span></div>
+    <div class="who"><span class="ic-circle" aria-hidden="true"><svg class="ico"><use href="/assets/icons.svg#i-key"/></svg></span><span>Llave CDMX</span></div>
     <h1>Cuadra quiere usar tus datos</h1>
     <p>Si autorizas, Cuadra recibirá:</p>
     <ul><li>Tu nombre</li><li>Tu celular</li><li>Una huella de tu CURP (Cuadra no guarda la CURP)</li></ul>
   </div>
   <form class="card" id="f">
-    <button type="button" class="btn btn--outline" id="sample" style="margin-top:0">Llenar con datos de prueba</button>
+    <button type="button" class="btn btn--outline" id="sample" style="margin-top:0">Llenar con un ejemplo</button>
     <label for="name">Nombre</label>
     <input id="name" autocomplete="name" autocapitalize="words" maxlength="60" required>
     <label for="curp">CURP</label>
