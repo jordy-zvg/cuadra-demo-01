@@ -98,6 +98,8 @@ async function main(): Promise<void> {
     udi: env("UDI_VALOR") ? parseUdiValue(env("UDI_VALOR")!) : null,
     // Al confirmar un fiado se avisa al cliente (WhatsApp + solicitud CoDi). AUTO_COBRO_FIADO=off lo apaga.
     chargeOnFiado: env("AUTO_COBRO_FIADO") !== "off",
+    // Solo demo: REMINDER_HOURS="0-24" quita el horario de cobros (normal: 9-20).
+    ...(parseHours(env("REMINDER_HOURS")) ? { reminderHours: parseHours(env("REMINDER_HOURS"))! } : {}),
     // Solo desarrollo/demo: REMINDER_MIN_INTERVAL_MINUTES=0 o 1 permite repetir el recordatorio (normal: 72 h).
     ...(reminderMinIntervalMs !== undefined ? { reminderMinIntervalMs } : {}),
     log,
@@ -139,3 +141,12 @@ main().catch((e: unknown) => {
   log({ msg: "fatal", error: e instanceof Error ? e.message : String(e) });
   process.exit(1);
 });
+
+/** "0-24" o "8-22" → [desde, hasta]; null si no es válido. */
+function parseHours(v?: string): [number, number] | null {
+  const m = /^\s*(\d{1,2})\s*-\s*(\d{1,2})\s*$/.exec(v ?? "");
+  if (!m) return null;
+  const from = Number(m[1]);
+  const to = Number(m[2]);
+  return from >= 0 && to <= 24 && from < to ? [from, to] : null;
+}

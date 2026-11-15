@@ -74,6 +74,14 @@ describe("recordatorios", () => {
     expect(ids({ now: at("08:59") })).toEqual(["P04"]);
     expect(ids({ now: at("20:00") })).toEqual(["P04"]);
   });
+  it("P04 con horario configurable; 0-24 = sin límite (demo)", () => {
+    const night = at("23:30");
+    expect(ids({ now: night })).toEqual(["P04"]);
+    const rules = (hours: readonly [number, number]) => evaluateReminder({ ...ok, now: night, hours }).rules_failed.map((f) => f.rule_id);
+    expect(rules([0, 24])).toEqual([]);
+    expect(rules([8, 22])).toEqual(["P04"]);
+    expect(evaluateReminder({ ...ok, now: night, hours: [8, 22] }).rules_failed[0]!.reason).toMatch(/entre 8:00 y 22:00/);
+  });
   it("P05 opt-in", () => expect(ids({ opt_in: false })).toEqual(["P05"]));
   it("P06 plantilla", () => expect(ids({ template_id: "amenaza" })).toEqual(["P06"]));
   it("P03 configurable solo para desarrollo: 0 no limita", () => {

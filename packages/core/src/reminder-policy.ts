@@ -20,6 +20,8 @@ export interface ReminderInput {
   approved_template_ids: readonly string[];
   /** Espera mínima entre recordatorios al mismo cliente; por defecto 72 h. La demo la baja por variable de entorno. */
   min_interval_ms?: number;
+  /** Horario permitido [desde, hasta) en hora de CDMX; por defecto 9 a 20. [0, 24] = sin límite (solo demo). */
+  hours?: readonly [number, number];
 }
 
 /** "72 horas", "1 minuto", "90 minutos"... para explicar la regla P03. */
@@ -54,8 +56,9 @@ export function evaluateReminder(i: ReminderInput): ReminderDecision {
   if (i.last_reminder_at !== null && i.now.getTime() - i.last_reminder_at.getTime() < interval) {
     f.push({ rule_id: "P03", reason: `Ya se envió un recordatorio a este cliente en las últimas ${describeInterval(interval)}.` });
   }
-  if (!isWithinMxHours(i.now, REMINDER_FROM_HOUR, REMINDER_TO_HOUR)) {
-    f.push({ rule_id: "P04", reason: "Los recordatorios solo se envían entre 9:00 y 20:00." });
+  const [from, to] = i.hours ?? [REMINDER_FROM_HOUR, REMINDER_TO_HOUR];
+  if (!(from <= 0 && to >= 24) && !isWithinMxHours(i.now, from, to)) {
+    f.push({ rule_id: "P04", reason: `Los recordatorios solo se envían entre ${from}:00 y ${to}:00.` });
   }
   if (!i.opt_in) {
     f.push({ rule_id: "P05", reason: "El cliente no ha aceptado recibir mensajes." });

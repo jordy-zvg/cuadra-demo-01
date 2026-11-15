@@ -110,6 +110,8 @@ export interface ServiceDeps {
   reminderMinIntervalMs?: number;
   /** Canales que además entregan los mensajes (WhatsApp, SMS). El chat web lee de la base. */
   channels?: OutboundChannel[];
+  /** Horario de cobros [desde, hasta) en CDMX; sin valor: 9 a 20. [0, 24] = sin límite (REMINDER_HOURS, solo demo). */
+  reminderHours?: readonly [number, number];
   /** Al confirmar un fiado, mandar enseguida el aviso por WhatsApp y la solicitud CoDi (AUTO_COBRO_FIADO). */
   chargeOnFiado?: boolean;
   log: (r: Record<string, unknown>) => void;
@@ -686,6 +688,7 @@ export class CuadraService {
       amount: balance,
       last_reminder_at: lastReminder?.createdAt ?? null,
       min_interval_ms: intervalMs,
+      ...(this.d.reminderHours ? { hours: this.d.reminderHours } : {}),
       opt_in: c.optIn,
       template_id: REMINDER_TEMPLATE,
       approved_template_ids: [REMINDER_TEMPLATE],
