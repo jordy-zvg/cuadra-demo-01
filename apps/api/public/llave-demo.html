@@ -29,13 +29,36 @@ button{display:block;width:100%;font:inherit;font-weight:800;min-height:64px;bor
 .err{background:var(--bad-bg);color:var(--bad);border-radius:12px;padding:10px 12px;margin-top:12px;font-weight:700;display:none}
 .err.on{display:block}
 small{color:var(--muted)}
+/* Íconos (sprite de Cuadra) en lugar de emojis. */
+.ico{width:1.2em;height:1.2em;fill:currentColor;flex:none;vertical-align:-.2em}
+.banner{display:flex;gap:10px;align-items:flex-start}
+.banner .ico{width:1.4em;height:1.4em}
+.who .k .ico{width:26px;height:26px}
+button,input{touch-action:manipulation}
+button:disabled{opacity:.6;cursor:default}
+/* Mientras autoriza: círculo que gira dentro del botón. */
+button.busy::before{content:"";display:inline-block;width:1em;height:1em;margin-right:.5em;vertical-align:-.15em;border-radius:50%;border:3px solid currentColor;border-right-color:transparent;animation:giro 1s linear infinite}
+@keyframes giro{to{transform:rotate(360deg)}}
+@media (prefers-reduced-motion: reduce){button.busy::before{animation-duration:3s}}
+/* Barra de conexión y mensajes breves (los pone /assets/red.js), con la paleta neutra de esta página. */
+.netbar,.toast{position:fixed;left:50%;bottom:max(16px, env(safe-area-inset-bottom));transform:translateX(-50%);z-index:10;display:flex;align-items:center;gap:.5em;width:max-content;max-width:calc(100% - 32px);padding:.6em 1em;border-radius:12px;font-size:.8rem;font-weight:700;border:2px solid currentColor}
+.netbar{background:var(--warn-bg);color:var(--warn)}
+.toast{background:var(--bad-bg);color:var(--bad)}
+.netbar[hidden],.toast[hidden]{display:none}
+/* Celular: una columna. Tableta: más aire. Laptop: datos que se comparten a la izquierda, formulario a la derecha. */
+@media (min-width:700px){.wrap{max-width:600px;padding:32px 24px}.card{padding:24px}}
+@media (min-width:960px){
+  .wrap{max-width:1000px;display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1.1fr);gap:0 24px;align-items:start}
+  .banner{grid-column:1 / -1}
+}
 </style>
+<script src="/assets/red.js" defer></script>
 </head>
 <body>
 <div class="wrap">
-  <div class="banner" role="note">⚠️ SIMULACIÓN para la demo de Cuadra. Esta página NO es Llave CDMX ni del Gobierno de la Ciudad de México. No escribas aquí tu contraseña real.</div>
+  <div class="banner" role="note"><svg class="ico" aria-hidden="true"><use href="/assets/icons.svg#i-warning"/></svg><span>SIMULACIÓN para la demo de Cuadra. Esta página NO es Llave CDMX ni del Gobierno de la Ciudad de México. No escribas aquí tu contraseña real.</span></div>
   <div class="card">
-    <div class="who"><span class="k" aria-hidden="true">🔑</span><span>Llave CDMX · demo</span></div>
+    <div class="who"><span class="k" aria-hidden="true"><svg class="ico"><use href="/assets/icons.svg#i-key"/></svg></span><span>Llave CDMX · demo</span></div>
     <h1>Cuadra quiere usar tus datos</h1>
     <p>Si autorizas, Cuadra recibirá:</p>
     <ul><li>Tu nombre</li><li>Tu celular</li><li>Una huella de tu CURP (Cuadra no guarda la CURP)</li></ul>
@@ -43,11 +66,11 @@ small{color:var(--muted)}
   <form class="card" id="f">
     <button type="button" class="soft" id="sample" style="margin-top:0">Llenar con datos de prueba</button>
     <label for="name">Nombre</label>
-    <input id="name" autocomplete="name" maxlength="60" required>
+    <input id="name" autocomplete="name" autocapitalize="words" maxlength="60" required>
     <label for="curp">CURP</label>
-    <input id="curp" autocomplete="off" maxlength="18" style="text-transform:uppercase" required>
+    <input id="curp" autocomplete="off" autocapitalize="characters" spellcheck="false" maxlength="18" style="text-transform:uppercase" required>
     <label for="phone">Celular (10 números)</label>
-    <input id="phone" type="tel" inputmode="numeric" maxlength="14" required>
+    <input id="phone" type="tel" inputmode="numeric" autocomplete="tel-national" maxlength="14" required>
     <div id="code-box" hidden>
       <label for="code">Código de la tienda</label>
       <input id="code" inputmode="numeric" maxlength="20">
@@ -62,9 +85,13 @@ small{color:var(--muted)}
 "use strict";
 const $ = (s) => document.querySelector(s);
 const state = new URLSearchParams(location.search).get("state") || "";
-const showErr = (m) => { $("#err").textContent = m; $("#err").classList.add("on"); };
+const showErr = (m) => { $("#err").textContent = m; $("#err").classList.add("on"); $("#err").scrollIntoView({ block: "nearest" }); };
+// Botón en espera: deshabilitado, con círculo y texto "Autorizando…"; vuelve a su texto al terminar.
+const busy = (on) => { const b = $("#go"); b.disabled = on; b.classList.toggle("busy", on); b.textContent = on ? "Autorizando…" : "Autorizar y volver a Cuadra"; };
 
-fetch("/api/auth/me").then((r) => r.json()).then((d) => { $("#code-box").hidden = !d.needs_shop_code; }).catch(() => {});
+// Si no se puede saber si la tienda pide código, se avisa con la barra de conexión (el servidor lo pedirá al autorizar).
+fetch("/api/auth/me").then((r) => r.json()).then((d) => { $("#code-box").hidden = !d.needs_shop_code; window.cuadraNet?.ok(); })
+  .catch(() => { window.cuadraNet?.fail(); window.cuadraNet?.fail(); });
 
 // Datos ficticios (CURP con formato válido, no corresponde a nadie).
 $("#sample").onclick = () => {
@@ -76,20 +103,21 @@ $("#cancel").onclick = () => { location.href = "/login"; };
 $("#f").onsubmit = async (e) => {
   e.preventDefault();
   $("#err").classList.remove("on");
-  $("#go").disabled = true;
+  busy(true);
   try {
     const body = { state, name: $("#name").value, curp: $("#curp").value, phone: $("#phone").value };
     if (!$("#code-box").hidden) body.shop_code = $("#code").value;
     const r = await fetch("/api/auth/llave/demo-callback", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify(body) });
     const d = await r.json().catch(() => ({}));
+    window.cuadraNet?.ok();
     if (r.ok) {
       try { localStorage.setItem("cuadra.cuenta", JSON.stringify({ phone: body.phone.replace(/\D/g, "").slice(-10), name: d.account.name, llave: true })); } catch {}
       location.href = "/login";
       return;
     }
-    showErr(d.error || "No se pudo autorizar.");
-  } catch { showErr("No hay conexión. Revisa tu internet."); }
-  $("#go").disabled = false;
+    showErr(d.error || (r.status >= 500 ? "Cuadra no respondió. Espera un momento y vuelve a intentar." : "No se pudo autorizar. Revisa tus datos."));
+  } catch { showErr("No hay conexión. Revisa tu internet y vuelve a intentar."); }
+  busy(false);
 };
 </script>
 </body>
