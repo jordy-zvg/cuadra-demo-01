@@ -4,7 +4,7 @@ import type { FastifyInstance, FastifyReply, FastifyRequest } from "fastify";
 import { z } from "zod";
 import type { Db } from "@cuadra/db";
 import { realPhone10, schema, storeForPerson } from "@cuadra/db";
-import { and, eq, isNull, lt } from "drizzle-orm";
+import { and, eq, isNull, lt, lte, or, sql } from "drizzle-orm";
 
 /**
  * Login del portal: celular (10 dígitos) + NIP de 4 dígitos, pensado para personas con poca
@@ -280,30 +280,43 @@ export class PortalAuth {
       if (!b.success || !phone) return reply.code(400).send({ field: "phone", error: "El celular debe tener 10 números." });
       const [acc] = await o.db.select().from(schema.portalAccounts).where(eq(schema.portalAccounts.phone, phone));
       if (!acc) return reply.code(404).send({ field: "phone", error: "No encontramos ese celular. ¿Quieres registrarte?" });
-      const now = o.now();
-      if (acc.lockedUntil && acc.lockedUntil > now) {
-        const mins = Math.ceil((acc.lockedUntil.getTime() - now.getTime()) / 60_000);
-        return reply.code(429).send({ field: "pin", error: `Por seguridad, espera ${mins} minuto${mins === 1 ? "" : "s"} y vuelve a intentar.` });
-      }
       if (!acc.pinHash) {
         return reply.code(409).send({ field: "phone", error: "Esa cuenta entra con Llave CDMX. Usa el botón “Entrar con Llave CDMX”." });
       }
+      const now = o.now();
+      const lockMsg = (until: Date) => {
+        const mins = Math.max(1, Math.ceil((until.getTime() - now.getTime()) / 60_000));
+        return `Por seguridad, espera ${mins} minuto${mins === 1 ? "" : "s"} y vuelve a intentar.`;
+      };
+      // El intento se cuenta ANTES de revisar el NIP y en una sola sentencia: aunque lleguen muchos
+      // intentos a la vez, nunca se revisan más de MAX_FAILED antes del bloqueo. El intento que llega
+      // al tope bloquea de una vez; si ese NIP resulta correcto, se desbloquea abajo.
+      const t = schema.portalAccounts;
+      const lockAt = new Date(now.getTime() + LOCK_MINUTES * 60_000);
+      const reaches = sql`${t.failedAttempts} + 1 >= ${MAX_FAILED}`;
+      const [slot] = await o.db
+        .update(t)
+        .set({
+          failedAttempts: sql`CASE WHEN ${reaches} THEN 0 ELSE ${t.failedAttempts} + 1 END`,
+          lockedUntil: sql`CASE WHEN ${reaches} THEN ${lockAt.toISOString()}::timestamptz ELSE ${t.lockedUntil} END`,
+        })
+        .where(and(eq(t.id, acc.id), or(isNull(t.lockedUntil), lte(t.lockedUntil, now))))
+        .returning({ failed: t.failedAttempts, lockedUntil: t.lockedUntil });
+      if (!slot) {
+        const [cur] = await o.db.select({ lockedUntil: t.lockedUntil }).from(t).where(eq(t.id, acc.id));
+        return reply.code(429).send({ field: "pin", error: lockMsg(cur?.lockedUntil ?? lockAt) });
+      }
+      const locked = !!slot.lockedUntil && slot.lockedUntil > now;
       if (!(await verifyPin(b.data.pin, acc.pinHash))) {
-        const failed = acc.failedAttempts + 1;
-        const lock = failed >= MAX_FAILED;
-        await o.db
-          .update(schema.portalAccounts)
-          .set({ failedAttempts: lock ? 0 : failed, lockedUntil: lock ? new Date(now.getTime() + LOCK_MINUTES * 60_000) : null })
-          .where(eq(schema.portalAccounts.id, acc.id));
-        const left = MAX_FAILED - failed;
+        const left = MAX_FAILED - slot.failed;
         return reply.code(401).send({
           field: "pin",
-          error: lock
+          error: locked
             ? `NIP equivocado. Por seguridad, espera ${LOCK_MINUTES} minutos y vuelve a intentar.`
             : `NIP equivocado. Te quedan ${left} intento${left === 1 ? "" : "s"}.`,
         });
       }
-      await o.db.update(schema.portalAccounts).set({ failedAttempts: 0, lockedUntil: null }).where(eq(schema.portalAccounts.id, acc.id));
+      await o.db.update(t).set({ failedAttempts: 0, lockedUntil: null }).where(eq(t.id, acc.id));
       await this.startSession(reply, acc.id);
       return { ok: true, account: { name: acc.name, phone_last4: acc.phone.slice(-4), verified: this.isVerified(acc.phoneVerifiedAt) } };
     });
@@ -353,9 +366,20 @@ export class PortalAuth {
 
       const [linked] = await o.db.select().from(schema.portalAccounts).where(eq(schema.portalAccounts.llaveSub, sub));
       if (linked) {
+        // La Llave de demo no comprueba la identidad (una CURP no es secreta): el celular debe ser el
+        // de la cuenta y, con verificación por WhatsApp, la persona vuelve a mandar el código desde
+        // ese celular antes de ver su libreta.
+        if (linked.phone !== phone) {
+          return reply.code(403).send({ field: "phone", error: "Ese celular no es el de tu cuenta. Escribe el celular con el que te registraste." });
+        }
         states.delete(b.data.state);
+        let verifiedAt = linked.phoneVerifiedAt;
+        if (this.mode === "whatsapp" && verifiedAt) {
+          await o.db.update(schema.portalAccounts).set({ phoneVerifiedAt: null }).where(eq(schema.portalAccounts.id, linked.id));
+          verifiedAt = null;
+        }
         await this.startSession(reply, linked.id);
-        return { ok: true, account: { name: linked.name, phone_last4: linked.phone.slice(-4), verified: this.isVerified(linked.phoneVerifiedAt) } };
+        return { ok: true, account: { name: linked.name, phone_last4: linked.phone.slice(-4), verified: this.isVerified(verifiedAt) } };
       }
       // Cuenta nueva: mismas reglas que el registro con NIP.
       if (o.shopCode !== null && !sameSecret((b.data.shop_code ?? "").trim(), o.shopCode)) {

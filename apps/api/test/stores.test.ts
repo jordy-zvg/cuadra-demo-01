@@ -8,7 +8,7 @@ import { createStoreRegistry } from "../src/app.js";
 import { SimulatedGateway } from "../src/gateway.js";
 import { buildServer } from "../src/server.js";
 import { handlePeyWebhookForStores, merchantOfTransaction } from "../src/stores.js";
-import { WhatsAppChannel } from "../src/whatsapp.js";
+import { WhatsAppChannel, senderPhone10 } from "../src/whatsapp.js";
 
 const NOW = new Date("2026-11-14T17:00:00Z"); // 11:00 en CDMX
 // Dueña de la tienda demo: 5511110000. Doña Lupe, clienta de la demo: 5512345678.
@@ -150,6 +150,27 @@ describe("una libreta por persona", () => {
     expect((await ana.debts()).debts).toEqual([]);
   });
 
+  it("tandas: solo las de tu tienda (aunque no tengas ninguna)", async () => {
+    const f = await setup();
+    await f.db.insert(schema.proposals).values({
+      id: "p_x", merchantId: DEMO.merchantId, actorId: DEMO.ownerId, type: "CreateTanda", provenance: "user_direct", payload: {}, proposalHash: "a".repeat(64), status: "done",
+    });
+    await f.db.insert(schema.passkeyCredentials).values({ id: "c", merchantUserId: DEMO.ownerId, publicKey: new Uint8Array([1]), counter: 0, transports: [] });
+    await f.db.insert(schema.approvals).values({
+      id: "a_x", merchantId: DEMO.merchantId, proposalId: "p_x", proposalHash: "a".repeat(64), credentialId: "c", assertion: {}, expiresAt: NOW,
+    });
+    await f.db.insert(schema.tandas).values({
+      id: "t_demo", merchantId: DEMO.merchantId, name: "Tanda de la cuadra", contributionCents: 50_000n, period: "week",
+      membersCount: 3, proposalId: "p_x", approvalId: "a_x", status: "done",
+    });
+    const owner = await f.user("Mari López", OWNER);
+    const ana = await f.user("Ana Ruiz", "5521111111");
+    expect(((await owner.get("/api/state")).json() as { tanda: { name: string } | null }).tanda?.name).toBe("Tanda de la cuadra");
+    const s = (await ana.get("/api/state")).json() as { tanda: unknown };
+    expect(s.tanda).toBeNull();
+    expect(JSON.stringify(s)).not.toMatch(/Tanda de la cuadra/);
+  });
+
   it("proveedores y mandatos: solo los de tu tienda", async () => {
     const f = await setup();
     const owner = await f.user("Mari López", OWNER);
@@ -166,11 +187,15 @@ describe("una libreta por persona", () => {
     await f.db.insert(schema.portalAccounts).values([
       { id: "a_owner", merchantId: DEMO.merchantId, name: "Mari", phone: OWNER, pinHash: "x" },
       { id: "a_lupe", merchantId: DEMO.merchantId, name: "Lupe", phone: LUPE, pinHash: "x" },
+      // Número ficticio (empieza con 0): tampoco se queda en la tienda de otro.
+      { id: "a_ficticio", merchantId: DEMO.merchantId, name: "Prueba", phone: "0123456789", pinHash: "x" },
     ]);
-    expect(await assignAccountStores(f.db, NOW)).toBe(1);
+    expect(await assignAccountStores(f.db, NOW)).toBe(2);
     const accts = await f.db.select().from(schema.portalAccounts);
     expect(accts.find((a) => a.id === "a_owner")!.merchantId).toBe(DEMO.merchantId);
     expect(accts.find((a) => a.id === "a_lupe")!.merchantId).not.toBe(DEMO.merchantId);
+    const ficticio = accts.find((a) => a.id === "a_ficticio")!.merchantId;
+    expect([DEMO.merchantId, accts.find((a) => a.id === "a_lupe")!.merchantId]).not.toContain(ficticio);
     expect(await assignAccountStores(f.db, NOW)).toBe(0); // idempotente
   });
 });
@@ -185,8 +210,9 @@ describe("WhatsApp por celular", () => {
     await f.channel.handleInbound([{ kind: "text", id: "w0", from: "5215521111111", text: "Pepe se llevó $30", forwarded: false }], route);
     expect(f.wa.sent).toEqual([]);
     const code = ((await f.server.inject({ method: "POST", url: "/api/auth/verify/start", headers: { cookie }, payload: {} })).json() as { message: string }).message;
-    // Otro celular manda el código: no verifica.
+    // Otro celular manda el código: no verifica. Tampoco uno de otro país que termina igual.
     await f.channel.handleInbound([{ kind: "text", id: "w1", from: "5215599990000", text: code, forwarded: false }], route);
+    await f.channel.handleInbound([{ kind: "text", id: "w1b", from: "15521111111", text: code, forwarded: false }], route);
     expect((await f.server.inject({ url: "/api/state", headers: { cookie } })).statusCode).toBe(403);
     // Ella lo manda desde su celular: verificada, se le contesta y ya entra a su libreta.
     await f.channel.handleInbound([{ kind: "text", id: "w2", from: "5215521111111", text: code, forwarded: false }], route);
@@ -201,10 +227,18 @@ describe("WhatsApp por celular", () => {
     expect(f.wa.sent.at(-1)!.body).toMatch(/Pepe/);
     const state = (await f.server.inject({ url: "/api/state", headers: { cookie } })).json() as StateJson;
     expect(state.messages.some((m) => /Pepe/.test(m.body))).toBe(true);
-    // Un celular sin cuenta no llega a ninguna tienda.
+    // Un celular sin cuenta no llega a ninguna tienda, ni uno de otro país que termina igual que el de ella.
     const before = f.wa.sent.length;
     await f.channel.handleInbound([{ kind: "text", id: "w4", from: "5215599990000", text: "Pepe se llevó $30", forwarded: false }], route);
+    await f.channel.handleInbound([{ kind: "text", id: "w5", from: "15521111111", text: "Paco se llevó $40", forwarded: false }], route);
     expect(f.wa.sent.length).toBe(before);
+    expect(JSON.stringify((await f.server.inject({ url: "/api/state", headers: { cookie } })).json())).not.toMatch(/Paco/);
+  });
+
+  it("solo acepta remitentes de México (52 o 521 y 10 dígitos)", () => {
+    expect(senderPhone10("5215521111111")).toBe("5521111111");
+    expect(senderPhone10("525521111111")).toBe("5521111111");
+    for (const x of ["15521111111", "5521111111", "6591234567", "4415521111111", "52055211111", "520123456789", ""]) expect(senderPhone10(x)).toBeNull();
   });
 });
 

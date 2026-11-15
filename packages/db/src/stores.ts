@@ -67,18 +67,24 @@ export async function storeForPerson(db: Db, s: { ownerName: string; phone10: st
   return (await storeOfPhone(db, s.phone10)) ?? createStore(db, s);
 }
 
+/** Los 10 dígitos guardados (con o sin +52), sin exigir que sea un celular real: solo para comparar registros propios. */
+function stored10(phone: string): string | null {
+  return /^(?:52)?(\d{10})$/.exec(phone.replace(/\D/g, ""))?.[1] ?? null;
+}
+
 /**
  * Cuentas de antes (todas colgaban de la tienda de demo): cada una pasa a su propia tienda, salvo
- * la del dueño. Idempotente; se corre al arrancar. Devuelve cuántas cuentas cambiaron de tienda.
+ * la del dueño. Incluye las de números ficticios (empiezan con 0): nunca se quedan en una tienda
+ * ajena. Idempotente; se corre al arrancar. Devuelve cuántas cuentas cambiaron de tienda.
  */
 export async function assignAccountStores(db: Db, now: Date): Promise<number> {
   const accounts = await db.select().from(portalAccounts);
   let moved = 0;
   for (const a of accounts) {
-    const phone10 = realPhone10(a.phone);
+    const phone10 = stored10(a.phone);
     if (!phone10) continue;
     const owner = await storeOwner(db, a.merchantId);
-    if (owner && realPhone10(owner.phone) === phone10) continue;
+    if (owner && stored10(owner.phone) === phone10) continue;
     const store = await storeForPerson(db, { ownerName: a.name, phone10, now });
     if (store.merchantId === a.merchantId) continue;
     await db.update(portalAccounts).set({ merchantId: store.merchantId }).where(eq(portalAccounts.id, a.id));

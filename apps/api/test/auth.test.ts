@@ -218,6 +218,16 @@ describe("login del portal (servidor)", () => {
     expect((await server.inject({ url: "/api/state", headers: { cookie: cookieOf(ok) } })).statusCode).toBe(200);
   });
 
+  it("muchos NIP a la vez: nunca se revisan más de 5 antes del bloqueo", async () => {
+    const { server } = await app();
+    await reg(server);
+    const rs = await Promise.all(Array.from({ length: 12 }, () => login(server, "9999")));
+    expect(rs.filter((r) => r.statusCode === 401)).toHaveLength(5);
+    expect(rs.filter((r) => r.statusCode === 429)).toHaveLength(7);
+    // Ya bloqueada: ni el NIP correcto entra.
+    expect((await login(server, "2580")).statusCode).toBe(429);
+  });
+
   it("un NIP correcto reinicia el contador de fallos", async () => {
     const { server } = await app();
     await reg(server);
@@ -311,7 +321,7 @@ describe("Llave CDMX (demo)", () => {
     expect(rows).toHaveLength(1);
     expect(rows[0]!.pinHash).toBeNull();
     expect(JSON.stringify(rows[0])).not.toContain(CURP);
-    const again = await cb(server, await start(server), { phone: "5500000000" });
+    const again = await cb(server, await start(server));
     expect(again.statusCode).toBe(200);
     expect(await db.select().from(schema.portalAccounts)).toHaveLength(1);
     // Esa cuenta no tiene NIP: entrar con NIP no funciona.
@@ -332,6 +342,21 @@ describe("Llave CDMX (demo)", () => {
     const r = await cb(server, await start(server));
     expect(r.statusCode).toBe(409);
     expect(r.headers["set-cookie"]).toBeUndefined();
+  });
+
+  it("una CURP ligada solo entra con el celular de la cuenta; con WhatsApp, vuelve a verificarlo", async () => {
+    const { server, db } = await app({ llave: "demo", verification: "whatsapp" });
+    expect((await cb(server, await start(server))).statusCode).toBe(200);
+    await db.update(schema.portalAccounts).set({ phoneVerifiedAt: new Date("2026-11-14T15:00:00Z") });
+    // Alguien que conoce la CURP pero no tiene el celular: no entra.
+    const otro = await cb(server, await start(server), { phone: "5599990000" });
+    expect(otro.statusCode).toBe(403);
+    expect(otro.headers["set-cookie"]).toBeUndefined();
+    // Con el celular correcto entra, pero debe mandar el código desde ese celular antes de ver su libreta.
+    const again = await cb(server, await start(server));
+    expect(again.statusCode).toBe(200);
+    expect(again.json().account.verified).toBe(false);
+    expect((await server.inject({ url: "/api/state", headers: { cookie: cookieOf(again) } })).statusCode).toBe(403);
   });
 
   it("respeta el código de la tienda para cuentas nuevas", async () => {

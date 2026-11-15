@@ -572,7 +572,10 @@ export class CuadraService {
       await this.say("comercio", "Cancelado. No anoté nada.");
       return;
     }
-    const [p] = await this.d.db.select({ status: schema.proposals.status }).from(schema.proposals).where(eq(schema.proposals.id, proposalId));
+    const [p] = await this.d.db
+      .select({ status: schema.proposals.status })
+      .from(schema.proposals)
+      .where(and(eq(schema.proposals.id, proposalId), eq(schema.proposals.merchantId, this.d.merchantId)));
     if (p?.status === "executing") await this.say("comercio", "Ya no se puede cancelar: ese cobro se está enviando.");
   }
 

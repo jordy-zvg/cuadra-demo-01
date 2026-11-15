@@ -118,12 +118,12 @@ export async function panelState(db: Db, merchantId: string, opts: { gateway: st
   };
 }
 
-/** Estado de la tanda activa (o la última) para el panel y los teléfonos de los integrantes. */
-export async function tandaState(db: Db, service: { tanda: { activeTanda(): Promise<{ id: string } | null> } }) {
+/** Estado de la tanda activa (o la última) DE ESTA TIENDA para el panel y los teléfonos de los integrantes. */
+export async function tandaState(db: Db, merchantId: string, service: { tanda: { activeTanda(): Promise<{ id: string } | null> } }) {
   const active = await service.tanda.activeTanda();
   const [t] = active
-    ? await db.select().from(schema.tandas).where(eq(schema.tandas.id, active.id))
-    : await db.select().from(schema.tandas).orderBy(desc(schema.tandas.createdAt)).limit(1);
+    ? await db.select().from(schema.tandas).where(and(eq(schema.tandas.id, active.id), eq(schema.tandas.merchantId, merchantId)))
+    : await db.select().from(schema.tandas).where(eq(schema.tandas.merchantId, merchantId)).orderBy(desc(schema.tandas.createdAt)).limit(1);
   if (!t) return null;
   const members = await tandaMembersOf(db, t.id);
   const st = await tandaRoundStatus(db, t);

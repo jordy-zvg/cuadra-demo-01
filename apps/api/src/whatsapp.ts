@@ -8,13 +8,22 @@ import {
   type WhatsAppInbound,
   WHATSAPP_WINDOW_CLOSED,
   WhatsAppApiError,
-  phone10,
 } from "@cuadra/adapters";
 import { type Db, schema, storeOfPhone, storeOwner } from "@cuadra/db";
 import { verifyPhoneByWhatsApp } from "./auth.js";
 import type { OutboundChannel, OutboundMessage } from "./channel.js";
 import type { CuadraService } from "./service.js";
 import { TEMPLATE_LANGUAGE } from "./whatsapp-templates.js";
+
+/**
+ * Celular (10 dígitos) de quien escribe por WhatsApp. Meta siempre manda el número con código de
+ * país: solo se aceptan celulares de México (52 o 521 y 10 dígitos). Nunca "los últimos 10 dígitos":
+ * un número de otro país que termine igual que uno de aquí no puede hacerse pasar por él.
+ */
+export function senderPhone10(from: string): string | null {
+  const m = /^52(?:1)?([2-9]\d{9})$/.exec(from.replace(/\D/g, ""));
+  return m ? m[1]! : null;
+}
 
 export interface WhatsAppChannelDeps {
   db: Db;
@@ -88,7 +97,7 @@ export class WhatsAppChannel implements OutboundChannel {
         .returning({ id: schema.webhookEvents.eventId });
       if (fresh.length === 0) continue;
 
-      const from = phone10(m.from);
+      const from = senderPhone10(m.from);
       // Código de verificación del portal: el mensaje llega desde el celular que se quiere verificar.
       if (from && m.kind === "text") {
         const v = await verifyPhoneByWhatsApp(this.d.db, from, m.text, this.d.now?.() ?? new Date());

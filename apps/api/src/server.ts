@@ -138,7 +138,7 @@ export function buildServer(o: ServerOpts): FastifyInstance {
     if (!st) return noStore(reply);
     return {
       ...(await panelState(o.db, st.merchantId, { gateway: st.gateway.name, simulated: st.gateway.simulated, bankSim: o.bankSim })),
-      tanda: await tandaState(o.db, st.service),
+      tanda: await tandaState(o.db, st.merchantId, st.service),
       provider_reconciliation: await providerReconState(o.db, st.merchantId, st.gateway.name),
       n2bis: await st.service.n2bis().then((s) => s && { pct: s.pct, level: s.level, limit: s.limit_cents.toString(), received: s.received_cents.toString(), remaining: s.remaining_cents.toString(), message: s.message }),
     };
