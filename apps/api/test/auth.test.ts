@@ -178,7 +178,10 @@ describe("login del portal (servidor)", () => {
     expect(landing.body).toContain('href="/login?entrar"');
     expect(landing.body).toContain('href="/login?registro"');
     expect(landing.body).not.toMatch(/demo|demostración|datos de prueba/i);
-    expect((await server.inject({ url: "/login" })).statusCode).toBe(200);
+    const login = await server.inject({ url: "/login" });
+    expect(login.statusCode).toBe(200);
+    // En la entrada, arriba a la izquierda va una casita que regresa a la página principal.
+    expect(login.body).toContain('<a class="home-link" href="/" aria-label="Página principal de Cuadra"');
     expect((await server.inject({ url: "/login?registro" })).statusCode).toBe(200);
   });
 
