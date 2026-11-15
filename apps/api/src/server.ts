@@ -33,7 +33,14 @@ export interface ServerOpts {
   /** Carpeta de las páginas. Por defecto, apps/api/public; la vista previa local puede servir otra. */
   publicDir?: string;
   /** Login del portal (celular + NIP). Sin sesión solo quedan abiertas /login, webhooks y la aprobación con passkey. */
-  portalAuth: { shopCode: string | null; secureCookies: boolean; llave?: "demo" | "off"; now?: () => Date };
+  portalAuth: {
+    shopCode: string | null;
+    secureCookies: boolean;
+    llave?: "demo" | "off";
+    now?: () => Date;
+    /** Verificación del celular por WhatsApp (ver auth.ts). Sin esto, apagada. */
+    verification?: { mode: "whatsapp" | "off"; waNumber: string | null };
+  };
 }
 
 const ChatBody = z.object({
@@ -70,6 +77,7 @@ export function buildServer(o: ServerOpts): FastifyInstance {
     shopCode: o.portalAuth.shopCode,
     secureCookies: o.portalAuth.secureCookies,
     llave: o.portalAuth.llave ?? "off",
+    ...(o.portalAuth.verification ? { verification: o.portalAuth.verification } : {}),
     now: o.portalAuth.now ?? (() => new Date()),
   });
   app.addHook("onRequest", (req, reply) => auth.guard(req, reply));
@@ -90,7 +98,8 @@ export function buildServer(o: ServerOpts): FastifyInstance {
    */
   const storeOf = async (req: FastifyRequest): Promise<Store | null> => {
     const account = await auth.accountFromRequest(req);
-    return account ? o.registry.get(account.merchantId) : null;
+    // Sin verificar el celular no hay tienda (ni siquiera en rutas públicas que la consultan).
+    return account?.verified ? o.registry.get(account.merchantId) : null;
   };
   const noStore = (reply: FastifyReply) => reply.code(401).send({ error: "Entra a tu cuenta para continuar." });
 
@@ -139,7 +148,7 @@ export function buildServer(o: ServerOpts): FastifyInstance {
   // propia deuda con cada una; nunca otros clientes ni datos internos de la tienda.
   app.get("/api/me/debts", async (req, reply) => {
     const account = await auth.accountFromRequest(req);
-    if (!account) return noStore(reply);
+    if (!account?.verified) return noStore(reply);
     const debts = await debtsOfPhone(o.db, account.phone, account.merchantId);
     return {
       debts: debts.map((d) => ({

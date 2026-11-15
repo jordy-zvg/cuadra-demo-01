@@ -2,7 +2,7 @@ import { RuleInterpreter } from "@cuadra/agents";
 import { DEMO, schema, seedDemo } from "@cuadra/db";
 import { createTestDb } from "@cuadra/db/testing";
 import { describe, expect, it } from "vitest";
-import { cleanName, hashPin, isPublicPath, normalizeCurp, normalizePhone, pinProblem, readCookie, verifyPin } from "../src/auth.js";
+import { cleanName, hashPin, isPublicPath, normalizeCurp, normalizePhone, pinProblem, readCookie, verifyPhoneByWhatsApp, verifyPin } from "../src/auth.js";
 import { SimulatedGateway } from "../src/gateway.js";
 import { buildServer } from "../src/server.js";
 import { createStoreRegistry } from "../src/app.js";
@@ -115,7 +115,7 @@ describe("isPublicPath", () => {
 
 // ---------- flujo con servidor ----------
 
-async function app(opts: { shopCode?: string | null; secureCookies?: boolean; demoPassword?: string | null; llave?: "demo" | "off" } = {}) {
+async function app(opts: { shopCode?: string | null; secureCookies?: boolean; demoPassword?: string | null; llave?: "demo" | "off"; verification?: "whatsapp" | "off" } = {}) {
   const clock = { t: new Date("2026-11-14T15:00:00Z") };
   const now = () => new Date(clock.t);
   const { db } = await createTestDb();
@@ -128,10 +128,13 @@ async function app(opts: { shopCode?: string | null; secureCookies?: boolean; de
   const server = buildServer({
     db, registry, liveMerchantId: DEMO.merchantId, liveGateway: gateway, peyWebhookSecret: null, bankSim: false,
     demoPassword: opts.demoPassword ?? null, log: () => {},
-    portalAuth: { shopCode: opts.shopCode ?? null, secureCookies: opts.secureCookies ?? false, llave: opts.llave ?? "off", now },
+    portalAuth: {
+      shopCode: opts.shopCode ?? null, secureCookies: opts.secureCookies ?? false, llave: opts.llave ?? "off", now,
+      ...(opts.verification ? { verification: { mode: opts.verification, waNumber: "15550001111" } } : {}),
+    },
     passkey: { rpID: "localhost", origins: ["http://localhost"], now },
   });
-  return { server, db, advance: (ms: number) => { clock.t = new Date(clock.t.getTime() + ms); } };
+  return { server, db, now, advance: (ms: number) => { clock.t = new Date(clock.t.getTime() + ms); } };
 }
 
 type Server = Awaited<ReturnType<typeof app>>["server"];
@@ -157,7 +160,7 @@ describe("login del portal (servidor)", () => {
     expect((await server.inject({ url: "/api/state", headers: { cookie } })).statusCode).toBe(200);
     const me = await server.inject({ url: "/api/auth/me", headers: { cookie } });
     expect(me.statusCode).toBe(200);
-    expect(me.json().account).toEqual({ name: "Lupe", phone_last4: "5678" });
+    expect(me.json().account).toEqual({ name: "Lupe", phone_last4: "5678", verified: true });
   });
 
   it("sin cookie: la API da 401 y las páginas redirigen a /login", async () => {
@@ -335,5 +338,69 @@ describe("Llave CDMX (demo)", () => {
     const { server } = await app({ llave: "demo", shopCode: "4321" });
     expect((await cb(server, await start(server))).statusCode).toBe(403);
     expect((await cb(server, await start(server), { shop_code: "4321" })).statusCode).toBe(200);
+  });
+});
+
+describe("verificación del celular por WhatsApp", () => {
+  const reg = async (a: Awaited<ReturnType<typeof app>>, phone: string, name = "Ana Ruiz") => {
+    const r = await a.server.inject({ method: "POST", url: "/api/auth/register", payload: { name, phone, pin: "2580" } });
+    return { r, cookie: String(r.headers["set-cookie"] ?? "").split(";")[0]! };
+  };
+  const startCode = async (a: Awaited<ReturnType<typeof app>>, cookie: string) =>
+    (await a.server.inject({ method: "POST", url: "/api/auth/verify/start", headers: { cookie }, payload: {} })).json() as {
+      code: string; link: string; message: string; verified: boolean;
+    };
+
+  it("sin verificar no entra a su libreta ni a “Lo que debo”; con el código por WhatsApp, sí", async () => {
+    const a = await app({ verification: "whatsapp" });
+    const { r, cookie } = await reg(a, "5521111111");
+    expect(r.json()).toMatchObject({ ok: true, account: { verified: false } });
+    for (const url of ["/api/state", "/api/me/debts", "/api/payees"]) {
+      const x = await a.server.inject({ url, headers: { cookie } });
+      expect(x.statusCode, url).toBe(403);
+      expect(x.json()).toMatchObject({ needs_verification: true });
+    }
+    expect((await a.server.inject({ url: "/", headers: { cookie } })).statusCode).toBe(302);
+    const v = await startCode(a, cookie);
+    expect(v.code).toMatch(/^\d{6}$/);
+    expect(v.link).toBe(`https://wa.me/15550001111?text=${encodeURIComponent(`Mi código de Cuadra es ${v.code}`)}`);
+    // Desde otro celular, con un código equivocado o ya vencido, no verifica.
+    expect(await verifyPhoneByWhatsApp(a.db, "5599999999", v.message, a.now())).toBeNull();
+    expect(await verifyPhoneByWhatsApp(a.db, "5521111111", "Mi código de Cuadra es 000000", a.now())).toBeNull();
+    expect(await verifyPhoneByWhatsApp(a.db, "5521111111", v.message, new Date(a.now().getTime() + 16 * 60_000))).toBeNull();
+    expect(await verifyPhoneByWhatsApp(a.db, "5521111111", v.message, a.now())).toEqual({ name: "Ana Ruiz" });
+    expect((await a.server.inject({ url: "/api/state", headers: { cookie } })).statusCode).toBe(200);
+    expect(((await a.server.inject({ url: "/api/auth/me", headers: { cookie } })).json() as { account: { verified: boolean } }).account.verified).toBe(true);
+    // El código ya no sirve una segunda vez.
+    expect(await verifyPhoneByWhatsApp(a.db, "5521111111", v.message, a.now())).toBeNull();
+  });
+
+  it("no se puede pedir un código tras otro; después de unos segundos, sí", async () => {
+    const a = await app({ verification: "whatsapp" });
+    const { cookie } = await reg(a, "5521111111");
+    await startCode(a, cookie);
+    expect((await a.server.inject({ method: "POST", url: "/api/auth/verify/start", headers: { cookie }, payload: {} })).statusCode).toBe(429);
+    a.advance(21_000);
+    expect((await startCode(a, cookie)).code).toMatch(/^\d{6}$/);
+  });
+
+  it("quien se registró con un celular ajeno y no lo verificó no lo bloquea: el dueño real se registra encima", async () => {
+    const a = await app({ verification: "whatsapp" });
+    const intruso = await reg(a, "5521111111", "Intruso");
+    const real = await reg(a, "5521111111", "Ana Ruiz");
+    expect(real.r.statusCode).toBe(200);
+    // La sesión del intruso ya no sirve.
+    expect((await a.server.inject({ url: "/api/auth/me", headers: { cookie: intruso.cookie } })).statusCode).toBe(401);
+    const v = await startCode(a, real.cookie);
+    expect(await verifyPhoneByWhatsApp(a.db, "5521111111", v.message, a.now())).toEqual({ name: "Ana Ruiz" });
+    // Ya verificado, nadie más se registra con ese celular.
+    expect((await reg(a, "5521111111", "Otro")).r.statusCode).toBe(409);
+  });
+
+  it("con la verificación apagada (desarrollo), la cuenta nace verificada", async () => {
+    const a = await app();
+    const { r, cookie } = await reg(a, "5521111111");
+    expect(r.json()).toMatchObject({ account: { verified: true } });
+    expect((await a.server.inject({ url: "/api/state", headers: { cookie } })).statusCode).toBe(200);
   });
 });

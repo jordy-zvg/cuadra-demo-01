@@ -60,18 +60,22 @@ async function main(): Promise<void> {
   const waPhoneId = env("WHATSAPP_PHONE_NUMBER_ID");
   const waSecret = env("WHATSAPP_APP_SECRET");
   const waVerify = env("WHATSAPP_VERIFY_TOKEN");
-  const whatsapp =
+  const waClient =
     waToken && waPhoneId && waSecret && waVerify
-      ? {
-          channel: new WhatsAppChannel({
-            db,
-            client: new WhatsAppClient({ token: waToken, phoneNumberId: waPhoneId, ...(env("WHATSAPP_GRAPH_VERSION") ? { version: env("WHATSAPP_GRAPH_VERSION")! } : {}) }),
-            log,
-          }),
-          appSecret: waSecret,
-          verifyToken: waVerify,
-        }
+      ? new WhatsAppClient({ token: waToken, phoneNumberId: waPhoneId, ...(env("WHATSAPP_GRAPH_VERSION") ? { version: env("WHATSAPP_GRAPH_VERSION")! } : {}) })
+      : null;
+  const whatsapp =
+    waClient && waSecret && waVerify
+      ? { channel: new WhatsAppChannel({ db, client: waClient, log }), appSecret: waSecret, verifyToken: waVerify }
       : undefined;
+  // Verificación del celular: con WhatsApp, cada persona manda desde su celular el código del portal.
+  // PHONE_VERIFICATION=off la apaga (solo para una emergencia en la demo: abre "Lo que debo" y las
+  // tiendas existentes a quien se registre con cualquier número).
+  const verificationMode: "whatsapp" | "off" = whatsapp && env("PHONE_VERIFICATION") !== "off" ? "whatsapp" : "off";
+  const waNumber =
+    env("WHATSAPP_NUMBER")?.replace(/\D/g, "") || (waClient ? await waClient.displayNumber().catch(() => null) : null) || null;
+  if (verificationMode === "off") log({ msg: "phone_verification_off", warning: "sin verificación del celular: cualquiera puede registrarse con cualquier número" });
+  else if (!waNumber) log({ msg: "whatsapp_number_unknown", hint: "define WHATSAPP_NUMBER para el enlace wa.me" });
 
   // Política de recordatorios: 72 h entre cobros al mismo cliente. Solo en desarrollo se baja
   // (REMINDER_MIN_INTERVAL_MINUTES=0) para probar seguido; un valor inválido deja la política normal.
@@ -116,7 +120,8 @@ async function main(): Promise<void> {
     // Registro en el portal: si PORTAL_SHOP_CODE existe, pedirlo (lo da el dueño); si no, registro abierto.
     portalAuth: { shopCode: env("PORTAL_SHOP_CODE") ?? null, secureCookies: publicUrl?.startsWith("https://") ?? false,
       // Llave CDMX: solo modo demo (simulado) mientras no haya alta con la ADIP. LLAVE_CDMX=off lo quita.
-      llave: env("LLAVE_CDMX") === "off" ? "off" : "demo" },
+      llave: env("LLAVE_CDMX") === "off" ? "off" : "demo",
+      verification: { mode: verificationMode, waNumber } },
     passkey: { rpID, origins, now: () => new Date() },
     log,
     ...(whatsapp ? { whatsapp } : {}),
@@ -135,7 +140,7 @@ async function main(): Promise<void> {
   }
   const port = Number(env("PORT") ?? 3000);
   await app.listen({ port, host: "0.0.0.0" });
-  log({ msg: "api_started", port, migrations: applied, gateway: gateway.name, simulated: gateway.simulated, interpreter: interpreters[0]!.name, whatsapp: Boolean(whatsapp), reminders: schedule, reminder_interval_minutes: reminderMinIntervalMs === undefined ? 72 * 60 : reminderMinIntervalMs / 60_000 });
+  log({ msg: "api_started", port, migrations: applied, gateway: gateway.name, simulated: gateway.simulated, interpreter: interpreters[0]!.name, whatsapp: Boolean(whatsapp), phone_verification: verificationMode, reminders: schedule, reminder_interval_minutes: reminderMinIntervalMs === undefined ? 72 * 60 : reminderMinIntervalMs / 60_000 });
 }
 
 main().catch((e: unknown) => {

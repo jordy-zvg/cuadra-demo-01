@@ -10,8 +10,8 @@ import {
   WhatsAppApiError,
   phone10,
 } from "@cuadra/adapters";
-import { type Db, schema, storeOfPhone } from "@cuadra/db";
-import { and, eq } from "drizzle-orm";
+import { type Db, schema, storeOfPhone, storeOwner } from "@cuadra/db";
+import { verifyPhoneByWhatsApp } from "./auth.js";
 import type { OutboundChannel, OutboundMessage } from "./channel.js";
 import type { CuadraService } from "./service.js";
 import { TEMPLATE_LANGUAGE } from "./whatsapp-templates.js";
@@ -20,6 +20,8 @@ export interface WhatsAppChannelDeps {
   db: Db;
   client: Pick<WhatsAppClient, "sendText" | "sendButtons" | "sendTemplate" | "uploadMedia" | "sendImage">;
   log: (r: Record<string, unknown>) => void;
+  /** Reloj (por defecto, la hora real). */
+  now?: () => Date;
 }
 
 const QR_DATA_URL = /^data:image\/png;base64,([A-Za-z0-9+/=]+)$/;
@@ -87,18 +89,31 @@ export class WhatsAppChannel implements OutboundChannel {
       if (fresh.length === 0) continue;
 
       const from = phone10(m.from);
+      // Código de verificación del portal: el mensaje llega desde el celular que se quiere verificar.
+      if (from && m.kind === "text") {
+        const v = await verifyPhoneByWhatsApp(this.d.db, from, m.text, this.d.now?.() ?? new Date());
+        if (v) {
+          this.d.log({ msg: "phone_verified_by_whatsapp", phone_last4: from.slice(-4) });
+          await this.send({
+            merchantId: "",
+            thread: "comercio",
+            phone10: from,
+            body: `✅ Listo, ${v.name.split(/\s+/)[0]}: tu celular quedó verificado. Regresa a Cuadra para seguir.`,
+            actions: [],
+          }).catch((e: unknown) => this.d.log({ msg: "whatsapp_send_failed", error: e instanceof Error ? e.message : String(e) }));
+          continue;
+        }
+      }
       const store = from ? await storeOfPhone(this.d.db, from) : null;
-      const service = !store ? null : typeof route === "function" ? await route(store.merchantId) : route.merchantId === store.merchantId ? route : null;
+      // Solo da instrucciones por WhatsApp el dueño que ya verificó su celular (con el código del portal).
+      const owner = store ? await storeOwner(this.d.db, store.merchantId) : null;
+      const service =
+        !store || !owner?.phoneVerified ? null : typeof route === "function" ? await route(store.merchantId) : route.merchantId === store.merchantId ? route : null;
       if (!from || !store || !service) {
         // ponytail: clientes que responden (opt-in "SÍ") van en el componente #14; hoy solo se registra.
         this.d.log({ msg: "whatsapp_ignored_sender", message_id: m.id });
         continue;
       }
-      // Escribir desde ese celular prueba que es suyo: desde ahora Cuadra también le contesta por WhatsApp.
-      await this.d.db
-        .update(schema.merchantUsers)
-        .set({ phoneVerified: true })
-        .where(and(eq(schema.merchantUsers.id, store.ownerId), eq(schema.merchantUsers.phoneVerified, false)));
 
       if (m.kind === "text") {
         await service.handleMerchantMessage(m.text, m.forwarded ? "third_party_content" : "user_direct");

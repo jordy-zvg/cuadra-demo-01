@@ -172,6 +172,15 @@ export class WhatsAppClient {
   }
 
   /** POST /{phone-number-id}/media (multipart): sube una imagen y devuelve su id (vigente 30 días). */
+  /** Número de Cuadra en WhatsApp (solo dígitos, con lada de país), para enlaces wa.me. */
+  async displayNumber(): Promise<string | null> {
+    const url = `${this.cfg.baseUrl ?? WHATSAPP_GRAPH_URL}/${this.cfg.version ?? WHATSAPP_GRAPH_VERSION}/${encodeURIComponent(this.cfg.phoneNumberId)}?fields=display_phone_number`;
+    const res = await this.http(url, { headers: { Authorization: `Bearer ${this.cfg.token}` }, signal: AbortSignal.timeout(this.cfg.timeoutMs ?? WHATSAPP_TIMEOUT_MS) });
+    const json = (await res.json().catch(() => null)) as { display_phone_number?: string } | null;
+    const digits = json?.display_phone_number?.replace(/\D/g, "") ?? "";
+    return res.ok && digits.length >= 10 ? digits : null;
+  }
+
   async uploadMedia(bytes: Uint8Array, mime: "image/png" | "image/jpeg"): Promise<string> {
     const form = new FormData();
     form.append("messaging_product", "whatsapp");

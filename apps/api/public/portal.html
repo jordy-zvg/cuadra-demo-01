@@ -81,6 +81,12 @@ button:focus-visible,a:focus-visible,input:focus-visible{outline:3px solid var(-
 .svc{min-height:2.8rem}
 .svc .ic-circle{width:3.7rem;height:3.7rem}
 .aviso{display:flex;align-items:flex-start;gap:.75rem;padding:.85rem 1rem;margin-bottom:.7rem}
+/* Verificación por WhatsApp */
+.code{font-family:var(--font-head);font-weight:800;font-size:2.6rem;letter-spacing:.32em;text-align:center;padding:1rem .5rem 1rem .9rem;margin:.6rem 0 1rem;font-variant-numeric:tabular-nums;color:var(--heading)}
+.btn--wa{text-decoration:none}
+.tip-small{color:var(--ink-2);font-size:.9rem;text-align:center;margin:.5rem 0 1rem}
+.wait-inline{display:flex;align-items:center;justify-content:center;gap:.6rem;color:var(--ink-2);margin:.4rem 0 .9rem}
+.spin--sm{width:1.4rem;height:1.4rem;border-width:3px}
 /* Lo que debo: misma forma que la lista de clientes, pero no se toca (solo lectura). */
 .opt.debo{cursor:default;margin-bottom:.7rem}
 .debo-lead{margin-top:-.4rem}
@@ -220,7 +226,10 @@ function speak(text) {
 // ---------- datos ----------
 let state = null;
 class NeedLogin extends Error {}
-function checkAuth(r) { if (r.status === 401) { signedOut(); throw new NeedLogin(); } }
+function checkAuth(r) {
+  if (r.status === 401) { signedOut(); throw new NeedLogin(); }
+  if (r.status === 403 && me) { me.verified = false; go("verificar", null, false); throw new NeedLogin(); }
+}
 async function load() {
   const r = await fetch("/api/state", { cache: "no-store" });
   checkAuth(r);
@@ -259,10 +268,12 @@ async function waitReply(afterId, ms = 25000) {
 // ---------- navegación ----------
 const history_ = [];
 let pollTimer = null;
+let verifyTimer = null;
 function go(screen, arg, push = true) {
   if (push && current) history_.push(current);
   current = { screen, arg };
   clearInterval(pollTimer); pollTimer = null;
+  clearInterval(verifyTimer); verifyTimer = null;
   if (canSpeak) speechSynthesis.cancel();
   SCREENS[screen](arg);
   window.scrollTo(0, 0);
@@ -578,6 +589,8 @@ function signedIn(account, phone) {
   me = account;
   const prev = remembered();
   store.set("cuadra.cuenta", JSON.stringify({ phone: phone || prev?.phone || "", name: account.name, llave: !!(prev?.llave && !phone) }));
+  // Primero hay que probar que el celular es tuyo (código por WhatsApp).
+  if (account.verified === false) { history_.length = 0; go("verificar", null, false); return; }
   const next = new URLSearchParams(location.search).get("next");
   if (next && next.startsWith("/") && !next.startsWith("//") && next !== "/login" && next !== "/portal") { location.href = next; return; }
   home();
@@ -612,6 +625,45 @@ function pinPad(el, onDone) {
   };
   show();
 }
+
+// Verificar el celular: la persona manda por WhatsApp el código que le mostramos. El webhook lo
+// recibe desde su número y así sabemos que el celular es suyo. Mientras, revisamos cada 3 s.
+SCREENS.verificar = async () => {
+  clearInterval(verifyTimer);
+  app.innerHTML = `<div class="wait"><div class="spin"></div>Preparando tu código…</div>`;
+  const r = await authPost("/api/auth/verify/start", {});
+  if (r.status === 401) { signedOut(); return; }
+  if (r.verified) { me = { ...me, verified: true }; home(); return; }
+  if (!r.ok && !r.code) {
+    app.innerHTML = `<h1>Un momento</h1><p class="lead">${esc(r.error || "No pudimos preparar tu código.")}</p>
+      <button class="go btn btn--block" type="button" id="again">${ic("refresh")}Intentar otra vez</button>`;
+    $("#again").onclick = () => go("verificar", null, false);
+    return;
+  }
+  app.innerHTML = `<h1>Verifica tu celular</h1>
+    <p class="lead">Para cuidar tu libreta, mándanos este código por WhatsApp <b>desde tu celular</b>. Así sabemos que el número es tuyo.</p>
+    <div class="code card" aria-label="Tu código es ${esc(r.code.split("").join(" "))}">${esc(r.code)}</div>
+    ${r.link
+      ? `<a class="go btn btn--block btn--wa" id="wa" href="${esc(r.link)}" target="_blank" rel="noopener">${ic("chat")}Abrir WhatsApp y mandar el código</a>
+         <p class="tip-small">Se abre WhatsApp con el mensaje ya escrito. Solo toca <b>Enviar</b>.</p>`
+      : `<div class="tip">${ic("info")}<span>Manda por WhatsApp al número de Cuadra este mensaje: <b>${esc(r.message)}</b></span></div>`}
+    <div class="wait-inline" role="status"><div class="spin spin--sm"></div><span>Esperando tu mensaje…</span></div>
+    <button class="go soft btn btn--outline btn--block" type="button" id="check">${ic("check_circle")}Ya lo mandé</button>
+    <button class="link" type="button" id="new">Pedir otro código</button>
+    <button class="link" type="button" id="out">Salir</button>`;
+  const check = async () => {
+    try {
+      const m = await fetch("/api/auth/me", { cache: "no-store" });
+      if (m.status === 401) { clearInterval(verifyTimer); signedOut(); return; }
+      const d = await m.json();
+      if (d.account?.verified) { clearInterval(verifyTimer); me = d.account; app.innerHTML = `<h1 class="t-ok">${ic("check_circle")}¡Listo! Tu celular quedó verificado</h1>`; setTimeout(home, 900); }
+    } catch {}
+  };
+  $("#check").onclick = check;
+  $("#new").onclick = () => go("verificar", null, false);
+  $("#out").onclick = () => { clearInterval(verifyTimer); logout(); };
+  verifyTimer = setInterval(() => { if (!document.hidden) check(); }, 3000);
+};
 
 SCREENS.bienvenida = () => {
   app.innerHTML = `<section class="hero hero--hello">

@@ -31,19 +31,19 @@ type StateJson = {
   charges: Array<{ id: string; customer_id: string; status: string }>;
 };
 
-async function setup() {
+async function setup(opts: { verification?: "whatsapp" | "off" } = {}) {
   const { db } = await createTestDb();
   await seedDemo(db, NOW, { ownerPhone: OWNER, lupePhone: LUPE });
   const gateway = new SimulatedGateway(db);
   const wa = new FakeWhatsApp();
-  const channel = new WhatsAppChannel({ db, client: wa, log: () => {} });
+  const channel = new WhatsAppChannel({ db, client: wa, log: () => {}, now: () => NOW });
   const registry = createStoreRegistry({
     db, liveGateway: gateway, interpreters: [new RuleInterpreter()], verify: async () => false, now: () => NOW, publicUrl: null,
     peyWebhookSecret: null, bankSim: false, udi: null, log: () => {}, channels: [channel],
   });
   const server = buildServer({
     db, registry, liveMerchantId: DEMO.merchantId, liveGateway: gateway, peyWebhookSecret: null, bankSim: false, log: () => {},
-    portalAuth: { shopCode: null, secureCookies: false, now: () => NOW },
+    portalAuth: { shopCode: null, secureCookies: false, now: () => NOW, verification: { mode: opts.verification ?? "off", waNumber: "15550001111" } },
     passkey: { rpID: "localhost", origins: ["http://localhost"], now: () => NOW },
   });
   const user = async (name: string, phone: string) => {
@@ -176,22 +176,34 @@ describe("una libreta por persona", () => {
 });
 
 describe("WhatsApp por celular", () => {
-  it("cada mensaje va a la tienda de quien lo manda; escribir verifica el celular y desde ahí se le contesta", async () => {
-    const f = await setup();
-    const ana = await f.user("Ana Ruiz", "5521111111");
-    // Antes de escribirnos, su celular no está verificado: no se le manda nada por WhatsApp.
-    await ana.say("Rosa se llevó $100");
-    expect(f.wa.sent).toEqual([]);
+  it("el código del portal verifica el celular; antes, WhatsApp no le hace caso ni le escribe", async () => {
+    const f = await setup({ verification: "whatsapp" });
+    const r = await f.server.inject({ method: "POST", url: "/api/auth/register", payload: { name: "Ana Ruiz", phone: "5521111111", pin: "2580" } });
+    const cookie = String(r.headers["set-cookie"]).split(";")[0]!;
     const route = async (merchantId: string) => (await f.registry.get(merchantId))?.service ?? null;
-    await f.channel.handleInbound([{ kind: "text", id: "w1", from: "5215521111111", text: "Pepe se llevó $30", forwarded: false }], route);
+    // Sin verificar: sus mensajes no llegan a ninguna tienda y no se le contesta.
+    await f.channel.handleInbound([{ kind: "text", id: "w0", from: "5215521111111", text: "Pepe se llevó $30", forwarded: false }], route);
+    expect(f.wa.sent).toEqual([]);
+    const code = ((await f.server.inject({ method: "POST", url: "/api/auth/verify/start", headers: { cookie }, payload: {} })).json() as { message: string }).message;
+    // Otro celular manda el código: no verifica.
+    await f.channel.handleInbound([{ kind: "text", id: "w1", from: "5215599990000", text: code, forwarded: false }], route);
+    expect((await f.server.inject({ url: "/api/state", headers: { cookie } })).statusCode).toBe(403);
+    // Ella lo manda desde su celular: verificada, se le contesta y ya entra a su libreta.
+    await f.channel.handleInbound([{ kind: "text", id: "w2", from: "5215521111111", text: code, forwarded: false }], route);
+    expect(f.wa.sent.at(-1)).toEqual({ to: "525521111111", body: "✅ Listo, Ana: tu celular quedó verificado. Regresa a Cuadra para seguir." });
+    expect((await f.server.inject({ url: "/api/state", headers: { cookie } })).statusCode).toBe(200);
     const store = (await storeOfPhone(f.db, "5521111111"))!;
     const [owner] = await f.db.select().from(schema.merchantUsers).where(eq(schema.merchantUsers.id, store.ownerId));
     expect(owner!.phoneVerified).toBe(true);
+    // Ahora sus mensajes van a su tienda y se le contesta por WhatsApp.
+    await f.channel.handleInbound([{ kind: "text", id: "w3", from: "5215521111111", text: "Pepe se llevó $30", forwarded: false }], route);
     expect(f.wa.sent.at(-1)!.to).toBe("525521111111");
-    expect((await ana.state()).messages.some((m) => /Pepe/.test(m.body))).toBe(true);
+    expect(f.wa.sent.at(-1)!.body).toMatch(/Pepe/);
+    const state = (await f.server.inject({ url: "/api/state", headers: { cookie } })).json() as StateJson;
+    expect(state.messages.some((m) => /Pepe/.test(m.body))).toBe(true);
     // Un celular sin cuenta no llega a ninguna tienda.
     const before = f.wa.sent.length;
-    await f.channel.handleInbound([{ kind: "text", id: "w2", from: "5215599990000", text: "Pepe se llevó $30", forwarded: false }], route);
+    await f.channel.handleInbound([{ kind: "text", id: "w4", from: "5215599990000", text: "Pepe se llevó $30", forwarded: false }], route);
     expect(f.wa.sent.length).toBe(before);
   });
 });

@@ -36,7 +36,11 @@ async function main(): Promise<void> {
   const build = (publicDir?: string) =>
     buildServer({
       db, registry, liveMerchantId: DEMO.merchantId, liveGateway: gateway, peyWebhookSecret: null, bankSim: true, log: () => {},
-      portalAuth: { shopCode: null, secureCookies: false, llave: "demo" },
+      portalAuth: {
+        shopCode: null, secureCookies: false, llave: "demo",
+        // PREVIEW_VERIFICATION=whatsapp muestra la pantalla de verificación por WhatsApp.
+        verification: { mode: process.env.PREVIEW_VERIFICATION === "whatsapp" ? "whatsapp" : "off", waNumber: "15550001111" },
+      },
       passkey: { rpID: "localhost", origins: ["http://localhost"], now },
       ...(publicDir ? { publicDir } : {}),
     });
