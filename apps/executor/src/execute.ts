@@ -29,6 +29,8 @@ export interface ExecutorDeps {
   verify: AssertionVerifier;
   now: () => Date;
   log: (record: Record<string, unknown>) => void;
+  /** Horario de salidas sin passkey (R10, OUTFLOW_HOURS); debe ser el mismo que usa la API. */
+  outflowHours?: readonly [number, number];
 }
 
 export type ExecResult =
@@ -67,7 +69,7 @@ export async function decideAndReserve(job: OutflowJob, deps: ExecutorDeps): Pro
     const now = deps.now();
     let ctx;
     try {
-      ctx = await loadOutflowContext(tx, job.proposal_id, now, deps.verify);
+      ctx = await loadOutflowContext(tx, job.proposal_id, now, deps.verify, deps.outflowHours ? { outflowHours: deps.outflowHours } : {});
     } catch (e) {
       if (!(e instanceof IntegrityError)) throw e;
       const decision = { integrity_error: e.message };

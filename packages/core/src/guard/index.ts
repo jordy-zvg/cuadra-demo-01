@@ -7,7 +7,7 @@ import {
   proposalHash,
   type Provenance,
 } from "../proposals.js";
-import { HOUR_MS, MINUTE_MS, isWithinMxHours } from "../time.js";
+import { HOUR_MS, MINUTE_MS, isAllDay, isValidHourRange, isWithinMxHours } from "../time.js";
 
 export type RuleId =
   | "R01" | "R02" | "R03" | "R04" | "R05" | "R06"
@@ -88,6 +88,12 @@ export interface GuardInput {
     auditor_veto: boolean;
   };
   approval: PasskeyApproval | null;
+  /**
+   * Horario de salidas sin passkey [desde, hasta) en CDMX (R10). Sin valor o inválido: 7 a 22.
+   * [0, 24] = sin límite de hora (OUTFLOW_HOURS, decisión 14-nov-2026 para la demo). El tope de
+   * salidas por hora de R10 aplica siempre.
+   */
+  outflow_hours?: readonly [number, number];
 }
 
 const deny = (rule_id: RuleId, reason: string): RuleFailure => ({ rule_id, effect: "deny", reason });
@@ -229,8 +235,10 @@ export function evaluateOutflow(input: GuardInput): GuardResult {
   if (lastHour >= input.merchant.max_outflows_per_hour) {
     f.push(deny("R10", "Se alcanzó el máximo de salidas por hora."));
   }
-  if (!isWithinMxHours(input.now, OUTFLOW_FROM_HOUR, OUTFLOW_TO_HOUR)) {
-    f.push(passkey("R10", "Fuera del horario de 7:00 a 22:00."));
+  const [fromH, toH] =
+    input.outflow_hours && isValidHourRange(input.outflow_hours) ? input.outflow_hours : [OUTFLOW_FROM_HOUR, OUTFLOW_TO_HOUR];
+  if (!isAllDay([fromH, toH]) && !isWithinMxHours(input.now, fromH, toH)) {
+    f.push(passkey("R10", `Fuera del horario de ${fromH}:00 a ${toH}:00.`));
   }
 
   // R11 — Procedencia.

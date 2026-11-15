@@ -28,6 +28,8 @@ export interface StoresConfig {
   chargeOnFiado?: boolean;
   /** Horario de cobros [desde, hasta) en CDMX (REMINDER_HOURS, solo demo); sin valor: 9 a 20. */
   reminderHours?: readonly [number, number];
+  /** Horario de pagos sin passkey (R10, OUTFLOW_HOURS, solo demo); sin valor: 7 a 22. */
+  outflowHours?: readonly [number, number];
 }
 
 export function createStoreRegistry(c: StoresConfig): StoreRegistry {
@@ -54,6 +56,7 @@ export function createStoreRegistry(c: StoresConfig): StoreRegistry {
         ...(c.reminderMinIntervalMs !== undefined ? { reminderMinIntervalMs: c.reminderMinIntervalMs } : {}),
         ...(c.chargeOnFiado !== undefined ? { chargeOnFiado: c.chargeOnFiado } : {}),
         ...(c.reminderHours ? { reminderHours: c.reminderHours } : {}),
+        ...(c.outflowHours ? { outflowHours: c.outflowHours } : {}),
       }),
   });
 }

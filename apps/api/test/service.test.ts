@@ -287,6 +287,24 @@ describe("guard desde el chat", () => {
     expect(p!.status).not.toBe("queued");
   });
 
+  it("pago a proveedor de noche: R10 pide passkey; con OUTFLOW_HOURS=0-24 la hora ya no cuenta", async () => {
+    const night = new Date("2026-11-14T23:30:00-06:00");
+    const ruleIds = async (outflowHours?: readonly [number, number]) => {
+      const { db } = await createTestDb();
+      await seedDemo(db, NOW);
+      const svc = new CuadraService({
+        db, merchantId: M, ownerId: DEMO.ownerId, interpreters: [new RuleInterpreter()], gateway: new FakePey(), verify: async () => false,
+        now: () => night, publicUrl: null, peyWebhookSecret: SECRET, bankSim: false, udi: null, log: () => {},
+        ...(outflowHours ? { outflowHours } : {}),
+      });
+      await svc.handleMerchantMessage("Paga al de los refrescos $1,200");
+      const [p] = await db.select().from(schema.proposals).where(eq(schema.proposals.type, "PayoutRequest"));
+      return ((p!.decision as { rules_failed?: Array<{ rule_id: string }> } | null)?.rules_failed ?? []).map((r) => r.rule_id);
+    };
+    expect(await ruleIds()).toContain("R10");
+    expect(await ruleIds([0, 24])).not.toContain("R10");
+  });
+
   it("fuera de alcance y mensajes ambiguos", async () => {
     const f = await setup();
     await f.svc.handleMerchantMessage("cuéntame un chiste");

@@ -112,6 +112,8 @@ export interface ServiceDeps {
   channels?: OutboundChannel[];
   /** Horario de cobros [desde, hasta) en CDMX; sin valor: 9 a 20. [0, 24] = sin límite (REMINDER_HOURS, solo demo). */
   reminderHours?: readonly [number, number];
+  /** Horario de pagos sin passkey (R10) en CDMX; sin valor: 7 a 22. [0, 24] = sin límite (OUTFLOW_HOURS, solo demo). */
+  outflowHours?: readonly [number, number];
   /** Al confirmar un fiado, mandar enseguida el aviso por WhatsApp y la solicitud CoDi (AUTO_COBRO_FIADO). */
   chargeOnFiado?: boolean;
   log: (r: Record<string, unknown>) => void;
@@ -465,7 +467,7 @@ export class CuadraService {
       { type: "PayoutRequest", payee_id: r.row.id, amount_cents: intent.amount_cents, concept: intent.concept ?? `Pago a ${r.row.alias}` },
       provenance,
     );
-    const ctx = await loadOutflowContext(this.d.db, p.id, this.d.now(), this.d.verify);
+    const ctx = await loadOutflowContext(this.d.db, p.id, this.d.now(), this.d.verify, this.d.outflowHours ? { outflowHours: this.d.outflowHours } : {});
     const decision = evaluateOutflow(ctx.input);
     const amount = formatMXN(BigInt(intent.amount_cents));
     if (decision.decision === "allow") {

@@ -8,6 +8,7 @@ import {
   type PaymentProvider,
   verifyProposalAssertion,
 } from "@cuadra/adapters";
+import { parseHourRange } from "@cuadra/core";
 import { connectPostgres } from "@cuadra/db/node";
 import { Worker } from "bullmq";
 import { Redis } from "ioredis";
@@ -42,6 +43,9 @@ async function main(): Promise<void> {
   const { db } = await connectPostgres(env("DATABASE_URL"));
   const provider = buildProvider();
   const config = { rpID: env("WEBAUTHN_RP_ID"), origins: env("WEBAUTHN_ORIGINS").split(",") };
+  // Solo demo: OUTFLOW_HOURS="0-24" quita el horario de R10; debe ser la misma que en la API.
+  const outflowHours = parseHourRange(process.env.OUTFLOW_HOURS || undefined);
+  if (process.env.OUTFLOW_HOURS && !outflowHours) log({ msg: "config_invalid", variable: "OUTFLOW_HOURS" });
   const connection = new Redis(env("REDIS_URL"), { maxRetriesPerRequest: null });
 
   const worker = new Worker(
@@ -53,11 +57,12 @@ async function main(): Promise<void> {
         verify: (a) => verifyProposalAssertion({ ...a, config }),
         now: () => new Date(),
         log,
+        ...(outflowHours ? { outflowHours } : {}),
       }),
     { connection, concurrency: 1 },
   );
   worker.on("failed", (job, err) => log({ msg: "job_failed", job_id: job?.id, error: err.message }));
-  log({ msg: "executor_started", provider: provider.name });
+  log({ msg: "executor_started", provider: provider.name, outflow_hours: outflowHours ?? [7, 22] });
 }
 
 main().catch((e: unknown) => {
