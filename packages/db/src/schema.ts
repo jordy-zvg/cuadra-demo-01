@@ -54,10 +54,24 @@ export const portalAccounts = pgTable("portal_accounts", {
   lockedUntil: ts("locked_until"),
   /** Cuándo la persona probó por WhatsApp que el celular es suyo (null: sin verificar). */
   phoneVerifiedAt: ts("phone_verified_at"),
-  /** Hash del código de verificación vigente (nunca el código). */
+  /** Hash del código que la persona manda desde su celular (camino de respaldo; nunca el código). */
   verifyCodeHash: text("verify_code_hash"),
   verifyExpiresAt: ts("verify_expires_at"),
+  /** Hash del código que Cuadra manda por WhatsApp y la persona escribe en el portal (nunca el código). */
+  otpHash: text("otp_hash"),
+  otpExpiresAt: ts("otp_expires_at"),
+  otpAttempts: integer("otp_attempts").notNull().default(0),
+  otpSentAt: ts("otp_sent_at"),
+  /** Último envío que WhatsApp rechazó (por un rato se usa directo el respaldo). */
+  otpFailedAt: ts("otp_failed_at"),
   createdAt: ts("created_at").notNull().defaultNow(),
+});
+
+/** Envíos del código por celular: tope por hora aunque la persona se registre de nuevo. */
+export const phoneCodeSends = pgTable("phone_code_sends", {
+  id: bigserial("id", { mode: "number" }).primaryKey(),
+  phone: text("phone").notNull(),
+  sentAt: ts("sent_at").notNull().defaultNow(),
 });
 
 export const portalSessions = pgTable("portal_sessions", {

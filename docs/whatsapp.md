@@ -52,6 +52,22 @@ Fuera de la ventana de 24 h, Meta exige plantillas aprobadas. Necesitamos al men
 Usa el tono del chat web (“Si hoy no se puede, no pasa nada…”). La política de recordatorios (opt-in,
 72 h, 9:00–20:00) ya la aplica el servicio.
 
+## Código para verificar el celular (plantilla de autenticación)
+Al crear su cuenta, Cuadra le manda a la persona un código de 6 números por WhatsApp y ella lo escribe en
+el portal (`POST /api/auth/verify/start` y `POST /api/auth/verify/check`, en `apps/api/src/auth.ts`).
+- Plantilla `cuadra_codigo`, categoría **AUTHENTICATION**, botón «Copiar código». Meta fija el texto
+  («*123456* es tu código de verificación.», no compartirlo y «caduca en 10 minutos»). Se da de alta con el
+  mismo `pnpm --filter @cuadra/api templates:create` (va al final de la lista). Meta solo permite mandar
+  códigos con plantillas de autenticación.
+- El código vence en 10 minutos (igual que la plantilla), admite 5 intentos, se puede reenviar cada minuto
+  y a lo más 5 veces por hora al mismo celular. Solo se guarda el hash; nunca va a la pantalla ni al log.
+- **Respaldo:** si WhatsApp no lo entrega (plantilla aún sin aprobar, error 132001; celular fuera de la
+  lista del número de prueba, error 131030), el portal pasa solo al camino anterior: muestra un código y la
+  persona lo manda desde su celular. Ese código es otro y solo sirve por WhatsApp; el que manda Cuadra solo
+  sirve escrito en el portal. Tras un rechazo, la cuenta usa el respaldo 10 minutos sin volver a llamar a Meta.
+- Con el número de prueba, el código solo llega a los celulares de la lista de destinatarios de la app de
+  Meta; con un número de producción, a cualquiera.
+
 ## Variables (Railway, servicio `api`)
 Tokens y secretos de Meta van como variables de entorno; nunca en el repo ni en logs.
 
@@ -72,6 +88,8 @@ variables la ruta no existe y la app sigue con el chat web.
   reenviados como `third_party_content`, botones Confirmar/Cancelar, **QR de cobro como imagen** (se sube
   con `POST /{phone-number-id}/media` y se manda con pie de foto), plantillas (7, ver
   `apps/api/src/whatsapp-templates.ts`) y aviso genérico al comercio si su ventana de 24 h cerró.
+- 15-nov: el código de verificación del celular sale por WhatsApp (`cuadra_codigo`, autenticación); falta darla
+  de alta y que Meta la apruebe. Mientras tanto se usa el respaldo.
 - Falta: probar contra Meta con llaves reales, aprobación de plantillas, notas de voz (#9) y fotos (#10).
 
 ## Listo cuando…

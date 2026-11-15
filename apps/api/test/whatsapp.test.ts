@@ -7,7 +7,8 @@ import { describe, expect, it } from "vitest";
 import { SimulatedGateway } from "../src/gateway.js";
 import { CuadraService } from "../src/service.js";
 import { WhatsAppChannel } from "../src/whatsapp.js";
-import { TEMPLATES, type TemplateName, templateArity, templateCreateBody } from "../src/whatsapp-templates.js";
+import { AUTH_TEMPLATE, TEMPLATES, type TemplateName, authTemplateCreateBody, templateArity, templateCreateBody } from "../src/whatsapp-templates.js";
+import { PHONE_CODE_TTL_MS } from "../src/auth.js";
 
 const NOW = new Date("2026-11-14T11:00:00-06:00");
 const M = DEMO.merchantId;
@@ -235,6 +236,21 @@ describe("canal WhatsApp", () => {
 });
 
 describe("plantillas", () => {
+  it("cuadra_codigo: autenticación con botón «Copiar código»; vence cuando vence el código en el servidor", () => {
+    expect(authTemplateCreateBody()).toEqual({
+      name: "cuadra_codigo",
+      language: "es_MX",
+      category: "AUTHENTICATION",
+      components: [
+        { type: "body", add_security_recommendation: true },
+        { type: "footer", code_expiration_minutes: 10 },
+        { type: "buttons", buttons: [{ type: "otp", otp_type: "copy_code", text: "Copiar código" }] },
+      ],
+    });
+    expect(AUTH_TEMPLATE.buttonText.length).toBeLessThanOrEqual(25);
+    expect(PHONE_CODE_TTL_MS).toBe(AUTH_TEMPLATE.codeExpirationMinutes * 60_000);
+  });
+
   for (const name of Object.keys(TEMPLATES) as TemplateName[]) {
     it(`${name} cumple las reglas de Meta`, () => {
       const t = TEMPLATES[name];

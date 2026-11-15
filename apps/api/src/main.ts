@@ -9,6 +9,7 @@ import { seedHistory } from "./seed-history.js";
 import { buildServer } from "./server.js";
 import { createStoreRegistry } from "./app.js";
 import { WhatsAppChannel } from "./whatsapp.js";
+import { AUTH_TEMPLATE, TEMPLATE_LANGUAGE } from "./whatsapp-templates.js";
 import { parsePortalReset, resetPortalAccounts } from "./portal-reset.js";
 import { parseMinIntervalMinutes } from "./reminder-config.js";
 import { parseReminderSchedule, startReminderScheduler } from "./scheduler.js";
@@ -76,6 +77,14 @@ async function main(): Promise<void> {
     env("WHATSAPP_NUMBER")?.replace(/\D/g, "") || (waClient ? await waClient.displayNumber().catch(() => null) : null) || null;
   if (verificationMode === "off") log({ msg: "phone_verification_off", warning: "sin verificación del celular: cualquiera puede registrarse con cualquier número" });
   else if (!waNumber) log({ msg: "whatsapp_number_unknown", hint: "define WHATSAPP_NUMBER para el enlace wa.me" });
+  // El código de verificación sale con la plantilla de autenticación (cuadra_codigo). Mientras Meta
+  // no la apruebe, o si el celular no puede recibir del número de prueba, el portal usa el respaldo.
+  // Siempre 52 + 10 dígitos (ver WhatsAppChannel.send).
+  const sendCode = waClient
+    ? async (phone10: string, code: string) => {
+        await waClient.sendAuthCode(`52${phone10}`, AUTH_TEMPLATE.name, TEMPLATE_LANGUAGE, code);
+      }
+    : undefined;
 
   // Política de recordatorios: 72 h entre cobros al mismo cliente. Solo en desarrollo se baja
   // (REMINDER_MIN_INTERVAL_MINUTES=0) para probar seguido; un valor inválido deja la política normal.
@@ -134,7 +143,7 @@ async function main(): Promise<void> {
     portalAuth: { shopCode: env("PORTAL_SHOP_CODE") ?? null, secureCookies: publicUrl?.startsWith("https://") ?? false,
       // Llave CDMX: solo modo demo (simulado) mientras no haya alta con la ADIP. LLAVE_CDMX=off lo quita.
       llave: env("LLAVE_CDMX") === "off" ? "off" : "demo",
-      verification: { mode: verificationMode, waNumber } },
+      verification: { mode: verificationMode, waNumber, ...(sendCode ? { sendCode } : {}) } },
     passkey: { rpID, origins, now: () => new Date() },
     log,
     ...(whatsapp ? { whatsapp } : {}),

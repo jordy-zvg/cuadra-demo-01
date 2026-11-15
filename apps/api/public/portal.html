@@ -95,7 +95,10 @@ button:focus-visible,a:focus-visible,input:focus-visible{outline:3px solid var(-
 .svc .ic-circle{width:3.7rem;height:3.7rem}
 .aviso{display:flex;align-items:flex-start;gap:.75rem;padding:.85rem 1rem;margin-bottom:.7rem}
 /* Verificación por WhatsApp */
-.code{font-family:var(--font-head);font-weight:800;font-size:2.6rem;letter-spacing:.32em;text-align:center;padding:1rem .5rem 1rem .9rem;margin:.6rem 0 1rem;font-variant-numeric:tabular-nums;color:var(--heading)}
+.code{font-family:var(--font-head);font-weight:800;font-size:min(2.6rem,11vw);letter-spacing:.28em;white-space:nowrap;text-align:center;padding:1rem .5rem 1rem .9rem;margin:.6rem 0 1rem;font-variant-numeric:tabular-nums;color:var(--heading)}
+/* Código que llega por WhatsApp: 6 números, del mismo estilo que el NIP pero más ancho. */
+.otp-field{width:min(100%,17rem);font-size:min(1.9rem,9vw);letter-spacing:.3em;font-variant-numeric:tabular-nums}
+.otp .err{margin:-.4rem 0 .9rem}
 .btn--wa{text-decoration:none}
 .tip-small{color:var(--ink-2);font-size:.9rem;text-align:center;margin:.5rem 0 1rem}
 .wait-inline{display:flex;align-items:center;justify-content:center;gap:.6rem;color:var(--ink-2);margin:.4rem 0 .9rem}
@@ -249,6 +252,7 @@ button,.opt,.keys button{touch-action:manipulation}
   body.auth .wide-only{display:block}
   body.auth #app > .hero + .sheet{padding:1.2rem 0 0;background:transparent;border-radius:0}
   body.auth .secure,body.auth .legal{margin-left:0}
+  body.auth .tip-small{text-align:left}
   body.auth .keys,body.auth .dots{max-width:20rem;margin-left:0;margin-right:0}
   body.auth .pin-field{margin-left:0;width:min(100%,20rem)}
   body.auth .link{width:auto;text-align:left;color:var(--heading);padding-left:0;padding-right:0;min-height:2.4rem}
@@ -913,20 +917,101 @@ function pinPad(el, onDone, { phone = "", nuevo = false, invalid = false } = {})
 
 // Verificar el celular: la persona manda por WhatsApp el código que le mostramos. El webhook lo
 // recibe desde su número y así sabemos que el celular es suyo. Mientras, revisamos cada 3 s.
-SCREENS.verificar = async () => {
+// Verificación del celular. Normal: Cuadra manda un código por WhatsApp y aquí se escribe.
+// Respaldo (si no se pudo mandar o si la persona lo pide): ella nos manda por WhatsApp, desde su
+// celular, el código que ve en pantalla, y la página espera a que llegue.
+SCREENS.verificar = async (arg) => {
+  const { method = null, resend = false } = arg || {}; // go() puede pasar null
   clearInterval(verifyTimer);
-  app.innerHTML = `<div class="wait"><div class="spin"></div>Preparando tu código…</div>`;
-  const r = await authPost("/api/auth/verify/start", {});
+  app.innerHTML = `<div class="wait"><div class="spin"></div>${method === "code_from_phone" ? "Preparando tu código…" : "Mandándote un código por WhatsApp…"}</div>`;
+  let r;
+  try { r = await authPost("/api/auth/verify/start", { ...(method ? { method } : {}), ...(resend ? { resend: true } : {}) }); }
+  catch { r = { ok: false, error: "No hay conexión. Revisa tu internet y vuelve a intentar." }; }
   if (r.status === 401) { signedOut(); return; }
   if (r.verified) { me = { ...me, verified: true }; home(); return; }
-  if (!r.ok && !r.code) {
-    app.innerHTML = `<h1>Un momento</h1><p class="lead">${esc(r.error || "No pudimos preparar tu código.")}</p>
-      <button class="go btn btn--block" type="button" id="again">${ic("refresh")}Intentar otra vez</button>`;
-    $("#again").onclick = () => go("verificar", null, false);
-    return;
-  }
+  if (r.method === "code_to_phone") return verifyByCode(r, resend && r.ok);
+  if (r.method === "code_from_phone" && r.code) return verifyFromPhone(r);
+  app.innerHTML = `<h1>Un momento</h1><p class="lead">${esc(r.error || "No pudimos preparar tu código.")}</p>
+    <button class="go btn btn--block" type="button" id="again">${ic("refresh")}Intentar otra vez</button>
+    <button class="link" type="button" id="out">Salir</button>`;
+  $("#again").onclick = () => go("verificar", method ? { method } : null, false);
+  $("#out").onclick = () => logout();
+};
+
+/** Escribir el código que llegó por WhatsApp. Se manda solo al completar 6 números. */
+function verifyByCode(r, resent) {
+  const notice = resent ? `<div class="tip" role="status">${ic("check_circle")}<span>Te mandamos un código nuevo. El anterior ya no sirve.</span></div>` : "";
+  app.innerHTML = `<h1>Escribe el código que te mandamos</h1>
+    <p class="lead">Te lo mandamos por WhatsApp al celular que termina en <b>${esc(r.phone_last4 || "")}</b>.</p>
+    ${notice}
+    <form class="otp" id="otp-form" autocomplete="on" onsubmit="return false">
+      <label class="sr" for="otp">Código de 6 números</label>
+      <input class="pin-field otp-field" id="otp" type="text" inputmode="numeric" pattern="[0-9]*" autocomplete="one-time-code" placeholder="6 números" aria-describedby="otp-help">
+      <div id="otp-err"></div>
+      <button class="go btn btn--block" type="submit" id="otp-ok">${ic("check_circle")}Verificar</button>
+    </form>
+    <p class="tip-small" id="otp-help">Vence en 10 minutos. No se lo des a nadie: Cuadra nunca te lo va a pedir.</p>
+    <button class="link" type="button" id="resend" disabled></button>
+    <button class="link" type="button" id="other">¿No te llega? Mándanos tú un código por WhatsApp</button>
+    <button class="link" type="button" id="out">Salir</button>`;
+  const input = $("#otp"), ok = $("#otp-ok"), resendBtn = $("#resend");
+  let busy = false, tried = "";
+  const showError = (msg) => {
+    $("#otp-err").innerHTML = msg ? `<div class="err" id="otp-err-msg" role="alert">${ic("error")}<span>${esc(msg)}</span></div>` : "";
+    if (msg) { input.setAttribute("aria-invalid", "true"); input.setAttribute("aria-describedby", "otp-err-msg otp-help"); }
+    else { input.removeAttribute("aria-invalid"); input.setAttribute("aria-describedby", "otp-help"); }
+  };
+  // Reenviar: cuenta regresiva y luego el botón se activa.
+  let left = Math.max(0, Number(r.resend_in_s ?? r.retry_after_s ?? 60) || 0);
+  const tick = () => {
+    if (left > 0) { resendBtn.disabled = true; resendBtn.textContent = `Pedir otro código en ${Math.floor(left / 60)}:${String(left % 60).padStart(2, "0")}`; left--; }
+    else { resendBtn.disabled = false; resendBtn.textContent = "Pedir otro código"; clearInterval(verifyTimer); }
+  };
+  tick();
+  verifyTimer = setInterval(tick, 1000);
+  if (r.status === 429) showError(r.error || "Espera un momento para pedir otro código.");
+
+  const submit = async () => {
+    const code = input.value.replace(/\D/g, "").slice(0, 6);
+    if (busy) return;
+    if (code.length !== 6) { showError("Escribe los 6 números del código."); input.focus(); return; }
+    busy = true; tried = code; ok.disabled = true; input.readOnly = true; ok.setAttribute("aria-busy", "true");
+    let res;
+    try { res = await authPost("/api/auth/verify/check", { code }); }
+    catch { res = { ok: false, error: "No hay conexión. Revisa tu internet y vuelve a intentar." }; }
+    busy = false; ok.disabled = false; input.readOnly = false; ok.removeAttribute("aria-busy");
+    if (res.status === 401) { clearInterval(verifyTimer); signedOut(); return; }
+    if (res.verified) {
+      clearInterval(verifyTimer); me = { ...me, verified: true };
+      app.innerHTML = `<h1 class="t-ok" tabindex="-1">${ic("check_circle")}¡Listo! Tu celular quedó verificado</h1>`;
+      app.querySelector("h1").focus(); setTimeout(home, 900); return;
+    }
+    showError(res.error || "No pudimos revisar el código. Intenta otra vez.");
+    if (res.reason === "wrong" || res.reason === "format") { input.value = ""; tried = ""; }
+    // Venció o ya no le quedan intentos: lo que sigue es pedir otro.
+    if (res.reason === "expired" || res.reason === "locked" || res.reason === "none" || res.attempts_left === 0) { input.value = ""; if (left <= 0) resendBtn.focus(); else input.focus(); return; }
+    input.focus();
+  };
+  input.addEventListener("input", () => {
+    const d = input.value.replace(/\D/g, "").slice(0, 6);
+    if (input.value !== d) input.value = d;
+    if (d.length < 6) tried = "";
+    else if (d !== tried) submit();
+  });
+  $("#otp-form").addEventListener("submit", submit);
+  resendBtn.onclick = () => go("verificar", { resend: true }, false);
+  $("#other").onclick = () => go("verificar", { method: "code_from_phone" }, false);
+  $("#out").onclick = () => { clearInterval(verifyTimer); logout(); };
+  input.focus();
+}
+
+/** Respaldo: la persona nos manda por WhatsApp, desde su celular, el código que ve aquí. */
+function verifyFromPhone(r) {
+  const why = r.reason === "limit" ? "Ya te mandamos varios códigos. Para seguir, mándanos"
+    : r.reason === "not_sent" ? "No pudimos mandarte el código por WhatsApp. Para seguir, mándanos"
+    : "Mándanos";
   app.innerHTML = `<h1>Verifica tu celular</h1>
-    <p class="lead">Para cuidar tu libreta, mándanos este código por WhatsApp <b>desde tu celular</b>. Así sabemos que el número es tuyo.</p>
+    <p class="lead">${why} este código por WhatsApp <b>desde tu celular</b>. Así sabemos que el número es tuyo.</p>
     <div class="code card" aria-label="Tu código es ${esc(r.code.split("").join(" "))}">${esc(r.code)}</div>
     ${r.link
       ? `<a class="go btn btn--block btn--wa" id="wa" href="${esc(r.link)}" target="_blank" rel="noopener">${ic("chat")}Abrir WhatsApp y mandar el código</a>
@@ -935,6 +1020,7 @@ SCREENS.verificar = async () => {
     <div class="wait-inline" role="status"><div class="spin spin--sm"></div><span>Esperando tu mensaje…</span></div>
     <button class="go soft btn btn--outline btn--block" type="button" id="check">${ic("check_circle")}Ya lo mandé</button>
     <button class="link" type="button" id="new">Pedir otro código</button>
+    ${r.reason ? "" : `<button class="link" type="button" id="to-phone">Mejor mándenme el código a mí</button>`}
     <button class="link" type="button" id="out">Salir</button>`;
   const check = async () => {
     try {
@@ -945,10 +1031,11 @@ SCREENS.verificar = async () => {
     } catch {}
   };
   $("#check").onclick = check;
-  $("#new").onclick = () => go("verificar", null, false);
+  $("#new").onclick = () => go("verificar", { method: "code_from_phone" }, false);
+  const tp = $("#to-phone"); if (tp) tp.onclick = () => go("verificar", null, false);
   $("#out").onclick = () => { clearInterval(verifyTimer); logout(); };
   verifyTimer = setInterval(() => { if (!document.hidden) check(); }, 3000);
-};
+}
 
 SCREENS.bienvenida = () => {
   app.innerHTML = `<section class="hero hero--hello">

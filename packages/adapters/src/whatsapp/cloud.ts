@@ -171,6 +171,25 @@ export class WhatsAppClient {
     });
   }
 
+  /**
+   * Código de verificación con la plantilla de autenticación (botón «Copiar código»). Como dice la
+   * doc de Meta, el código va dos veces: en el cuerpo y en el botón (sub_type "url", index "0").
+   * https://developers.facebook.com/documentation/business-messaging/whatsapp/templates/authentication-templates/copy-code-button-authentication-templates
+   */
+  sendAuthCode(to: string, name: string, language: string, code: string): Promise<string | null> {
+    return this.send(to, {
+      type: "template",
+      template: {
+        name,
+        language: { code: language },
+        components: [
+          { type: "body", parameters: [{ type: "text", text: code }] },
+          { type: "button", sub_type: "url", index: "0", parameters: [{ type: "text", text: code }] },
+        ],
+      },
+    });
+  }
+
   /** POST /{phone-number-id}/media (multipart): sube una imagen y devuelve su id (vigente 30 días). */
   /** Número de Cuadra en WhatsApp (solo dígitos, con lada de país), para enlaces wa.me. */
   async displayNumber(): Promise<string | null> {

@@ -6,7 +6,7 @@
  */
 import { fileURLToPath } from "node:url";
 import { WHATSAPP_GRAPH_URL, WHATSAPP_GRAPH_VERSION } from "@cuadra/adapters";
-import { TEMPLATES, type TemplateName, templateCreateBody } from "./whatsapp-templates.js";
+import { AUTH_TEMPLATE, TEMPLATES, type TemplateName, authTemplateCreateBody, templateCreateBody } from "./whatsapp-templates.js";
 
 // Lee el .env de la raíz del repo si existe (en local); en Railway las variables ya vienen del entorno.
 try {
@@ -23,11 +23,16 @@ if (!token || !waba) {
 }
 const version = process.env.WHATSAPP_GRAPH_VERSION || WHATSAPP_GRAPH_VERSION;
 
-for (const name of Object.keys(TEMPLATES) as TemplateName[]) {
+// Las de utilidad y, al final, la de autenticación (código para verificar el celular).
+const bodies: Array<[string, unknown]> = [
+  ...(Object.keys(TEMPLATES) as TemplateName[]).map((n): [string, unknown] => [n, templateCreateBody(n)]),
+  [AUTH_TEMPLATE.name, authTemplateCreateBody()],
+];
+for (const [name, body] of bodies) {
   const res = await fetch(`${WHATSAPP_GRAPH_URL}/${version}/${encodeURIComponent(waba)}/message_templates`, {
     method: "POST",
     headers: { Authorization: `Bearer ${token}`, "content-type": "application/json" },
-    body: JSON.stringify(templateCreateBody(name)),
+    body: JSON.stringify(body),
   });
   const json = (await res.json().catch(() => null)) as { id?: string; status?: string; error?: { message?: string } } | null;
   process.stdout.write(

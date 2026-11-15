@@ -57,6 +57,29 @@ export function templateArity(name: TemplateName): number {
   return new Set(TEMPLATES[name].body.match(/\{\{\d+\}\}/g) ?? []).size;
 }
 
+/**
+ * Plantilla de autenticación (categoría AUTHENTICATION) para el código que verifica el celular.
+ * Meta fija el texto («*{{1}}* es tu código de verificación.», la recomendación de no compartirlo y
+ * el aviso de vencimiento); aquí solo van el nombre, el idioma, los minutos y el botón. Los minutos
+ * deben coincidir con la vigencia del código en el servidor (PHONE_CODE_TTL_MS en auth.ts).
+ * https://developers.facebook.com/documentation/business-messaging/whatsapp/templates/authentication-templates/copy-code-button-authentication-templates
+ */
+export const AUTH_TEMPLATE = { name: "cuadra_codigo", codeExpirationMinutes: 10, buttonText: "Copiar código" } as const;
+
+/** Cuerpo para POST /{WABA_ID}/message_templates de la plantilla de autenticación. */
+export function authTemplateCreateBody() {
+  return {
+    name: AUTH_TEMPLATE.name,
+    language: TEMPLATE_LANGUAGE,
+    category: "AUTHENTICATION",
+    components: [
+      { type: "body", add_security_recommendation: true },
+      { type: "footer", code_expiration_minutes: AUTH_TEMPLATE.codeExpirationMinutes },
+      { type: "buttons", buttons: [{ type: "otp", otp_type: "copy_code", text: AUTH_TEMPLATE.buttonText }] },
+    ],
+  };
+}
+
 /** Cuerpo para POST /{WABA_ID}/message_templates. */
 export function templateCreateBody(name: TemplateName) {
   const t = TEMPLATES[name];

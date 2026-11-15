@@ -8,7 +8,7 @@
  * Imprime la cookie de una cuenta de prueba (celular 5512345678, NIP 2580) para entrar sin teclear.
  * Nunca toca dinero real ni manda mensajes: todo es simulado.
  */
-import { writeFileSync } from "node:fs";
+import { appendFileSync, writeFileSync } from "node:fs";
 import { resolve } from "node:path";
 import { RuleInterpreter } from "@cuadra/agents";
 import { parseUdiValue } from "@cuadra/core";
@@ -38,8 +38,16 @@ async function main(): Promise<void> {
       db, registry, liveMerchantId: DEMO.merchantId, liveGateway: gateway, peyWebhookSecret: null, bankSim: true, log: () => {},
       portalAuth: {
         shopCode: null, secureCookies: false, llave: "demo",
-        // PREVIEW_VERIFICATION=whatsapp muestra la pantalla de verificación por WhatsApp.
-        verification: { mode: process.env.PREVIEW_VERIFICATION === "whatsapp" ? "whatsapp" : "off", waNumber: "15550001111" },
+        // PREVIEW_VERIFICATION=whatsapp muestra la pantalla de verificación. Con PREVIEW_CODES=<archivo>,
+        // el código que "manda" Cuadra se escribe en ese archivo (en lugar de WhatsApp) para probar la
+        // pantalla de escribir el código; sin él, la vista previa usa el respaldo (mandarlo desde el celular).
+        verification: {
+          mode: process.env.PREVIEW_VERIFICATION === "whatsapp" ? "whatsapp" : "off",
+          waNumber: "15550001111",
+          ...(process.env.PREVIEW_CODES
+            ? { sendCode: async (phone10: string, code: string) => appendFileSync(process.env.PREVIEW_CODES!, `${JSON.stringify({ phone10, code })}\n`) }
+            : {}),
+        },
       },
       passkey: { rpID: "localhost", origins: ["http://localhost"], now },
       ...(publicDir ? { publicDir } : {}),

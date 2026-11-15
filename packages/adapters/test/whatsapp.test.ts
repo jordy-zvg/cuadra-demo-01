@@ -111,6 +111,21 @@ describe("WhatsAppClient", () => {
     expect(body.interactive.action.buttons[0]).toEqual({ type: "reply", reply: { id: "confirm:pr_1", title: "Confirmar este asien" } });
   });
 
+  it("código de verificación: plantilla de autenticación con el código en el cuerpo y en el botón", async () => {
+    const f = fake(ok());
+    await new WhatsAppClient({ token: "t", phoneNumberId: "PN1", fetch: f.fn }).sendAuthCode("525521111111", "cuadra_codigo", "es_MX", "482913");
+    const body = JSON.parse(String(f.calls[0]!.init.body));
+    expect(body).toMatchObject({ messaging_product: "whatsapp", to: "525521111111", type: "template" });
+    expect(body.template).toEqual({
+      name: "cuadra_codigo",
+      language: { code: "es_MX" },
+      components: [
+        { type: "body", parameters: [{ type: "text", text: "482913" }] },
+        { type: "button", sub_type: "url", index: "0", parameters: [{ type: "text", text: "482913" }] },
+      ],
+    });
+  });
+
   it("plantilla con idioma y parámetros aplanados", async () => {
     const f = fake(ok());
     await new WhatsAppClient({ token: "t", phoneNumberId: "PN1", fetch: f.fn }).sendTemplate("52", "cuadra_recibo_fiado", "es_MX", ["La Esquina", "$185.00", "Te falta\n\t$10.00.", ""]);

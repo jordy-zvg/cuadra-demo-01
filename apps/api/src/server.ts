@@ -39,7 +39,7 @@ export interface ServerOpts {
     llave?: "demo" | "off";
     now?: () => Date;
     /** Verificación del celular por WhatsApp (ver auth.ts). Sin esto, apagada. */
-    verification?: { mode: "whatsapp" | "off"; waNumber: string | null };
+    verification?: { mode: "whatsapp" | "off"; waNumber: string | null; sendCode?: (phone10: string, code: string) => Promise<void> };
   };
 }
 
@@ -79,6 +79,7 @@ export function buildServer(o: ServerOpts): FastifyInstance {
     llave: o.portalAuth.llave ?? "off",
     ...(o.portalAuth.verification ? { verification: o.portalAuth.verification } : {}),
     now: o.portalAuth.now ?? (() => new Date()),
+    log: o.log,
   });
   app.addHook("onRequest", (req, reply) => auth.guard(req, reply));
   auth.register(app, json);

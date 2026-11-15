@@ -2,6 +2,7 @@ import { readFileSync } from "node:fs";
 import { RuleInterpreter } from "@cuadra/agents";
 import { DEMO, schema, seedDemo } from "@cuadra/db";
 import { createTestDb } from "@cuadra/db/testing";
+import { eq } from "drizzle-orm";
 import { describe, expect, it } from "vitest";
 import { cleanName, hashPin, isPublicPath, normalizeCurp, normalizePhone, pinProblem, readCookie, verifyPhoneByWhatsApp, verifyPin } from "../src/auth.js";
 import { SimulatedGateway } from "../src/gateway.js";
@@ -116,7 +117,10 @@ describe("isPublicPath", () => {
 
 // ---------- flujo con servidor ----------
 
-async function app(opts: { shopCode?: string | null; secureCookies?: boolean; demoPassword?: string | null; llave?: "demo" | "off"; verification?: "whatsapp" | "off" } = {}) {
+async function app(opts: {
+  shopCode?: string | null; secureCookies?: boolean; demoPassword?: string | null; llave?: "demo" | "off"; verification?: "whatsapp" | "off";
+  sendCode?: (phone10: string, code: string) => Promise<void>;
+} = {}) {
   const clock = { t: new Date("2026-11-14T15:00:00Z") };
   const now = () => new Date(clock.t);
   const { db } = await createTestDb();
@@ -126,16 +130,19 @@ async function app(opts: { shopCode?: string | null; secureCookies?: boolean; de
     db, liveGateway: gateway, interpreters: [new RuleInterpreter()], verify: async () => false, now, publicUrl: null,
     peyWebhookSecret: null, bankSim: false, udi: null, log: () => {},
   });
+  const logs: Array<Record<string, unknown>> = [];
   const server = buildServer({
     db, registry, liveMerchantId: DEMO.merchantId, liveGateway: gateway, peyWebhookSecret: null, bankSim: false,
-    demoPassword: opts.demoPassword ?? null, log: () => {},
+    demoPassword: opts.demoPassword ?? null, log: (r) => logs.push(r),
     portalAuth: {
       shopCode: opts.shopCode ?? null, secureCookies: opts.secureCookies ?? false, llave: opts.llave ?? "off", now,
-      ...(opts.verification ? { verification: { mode: opts.verification, waNumber: "15550001111" } } : {}),
+      ...(opts.verification
+        ? { verification: { mode: opts.verification, waNumber: "15550001111", ...(opts.sendCode ? { sendCode: opts.sendCode } : {}) } }
+        : {}),
     },
     passkey: { rpID: "localhost", origins: ["http://localhost"], now },
   });
-  return { server, db, now, advance: (ms: number) => { clock.t = new Date(clock.t.getTime() + ms); } };
+  return { server, db, now, logs, advance: (ms: number) => { clock.t = new Date(clock.t.getTime() + ms); } };
 }
 
 type Server = Awaited<ReturnType<typeof app>>["server"];
@@ -457,5 +464,168 @@ describe("verificación del celular por WhatsApp", () => {
     const { r, cookie } = await reg(a, "5521111111");
     expect(r.json()).toMatchObject({ account: { verified: true } });
     expect((await a.server.inject({ url: "/api/state", headers: { cookie } })).statusCode).toBe(200);
+  });
+});
+
+describe("código por WhatsApp: Cuadra lo manda y se escribe en el portal", () => {
+  const MIN_1 = 61_000;
+  async function setup(fail?: { code: number }) {
+    const sent: Array<{ phone10: string; code: string }> = [];
+    let calls = 0;
+    const a = await app({
+      verification: "whatsapp",
+      sendCode: async (phone10, code) => {
+        calls++;
+        if (fail) throw Object.assign(new Error("Meta"), { code: fail.code });
+        sent.push({ phone10, code });
+      },
+    });
+    const register = async () => {
+      const r = await a.server.inject({ method: "POST", url: "/api/auth/register", payload: { name: "Ana Ruiz", phone: "5521111111", pin: "2580" } });
+      return String(r.headers["set-cookie"] ?? "").split(";")[0]!;
+    };
+    let cookie = await register();
+    const start = (body: Record<string, unknown> = {}) =>
+      a.server.inject({ method: "POST", url: "/api/auth/verify/start", headers: { cookie }, payload: body });
+    const check = (code: string) => a.server.inject({ method: "POST", url: "/api/auth/verify/check", headers: { cookie }, payload: { code } });
+    const state = async () => (await a.server.inject({ url: "/api/state", headers: { cookie } })).statusCode;
+    const other = (code: string) => (code === "123456" ? "654321" : "123456");
+    return { ...a, sent, calls: () => calls, start, check, state, other, reRegister: async () => { cookie = await register(); } };
+  }
+
+  it("manda el código al celular (nunca a la pantalla); con el código correcto queda verificada", async () => {
+    const f = await setup();
+    const s = await f.start();
+    expect(s.statusCode).toBe(200);
+    expect(s.json()).toMatchObject({ verified: false, method: "code_to_phone", phone_last4: "1111", resend_in_s: 60 });
+    expect(s.json().code).toBeUndefined();
+    expect(s.json().link).toBeUndefined();
+    expect(f.sent).toEqual([{ phone10: "5521111111", code: expect.stringMatching(/^\d{6}$/) }]);
+    expect(await f.state()).toBe(403);
+    const code = f.sent[0]!.code;
+    const wrong = await f.check(f.other(code));
+    expect(wrong.statusCode).toBe(400);
+    expect(wrong.json()).toEqual({ error: "Ese código no es. Te quedan 4 intentos.", reason: "wrong", attempts_left: 4 });
+    expect((await f.check("12345")).json()).toMatchObject({ reason: "format" }); // incompleto: no gasta intento
+    // Con espacios o pegado de un mensaje: cuentan solo los números.
+    expect((await f.check(` ${code.slice(0, 3)} ${code.slice(3)} `)).json()).toEqual({ verified: true });
+    expect(await f.state()).toBe(200);
+    expect(f.logs).toContainEqual(expect.objectContaining({ msg: "phone_code_sent" }));
+    expect(f.logs).toContainEqual(expect.objectContaining({ msg: "phone_verified", method: "code_to_phone" }));
+    expect(JSON.stringify(f.logs)).not.toContain(code); // el código nunca va al log
+    // El dueño de su tienda (mismo celular) también queda verificado, para que Cuadra le conteste por WhatsApp.
+    const [acc] = await f.db.select().from(schema.portalAccounts);
+    const owners = await f.db.select().from(schema.merchantUsers).where(eq(schema.merchantUsers.merchantId, acc!.merchantId));
+    expect(owners.some((o) => o.phoneVerified)).toBe(true);
+    expect(acc).toMatchObject({ otpHash: null, otpExpiresAt: null, verifyCodeHash: null });
+  });
+
+  it("cada camino tiene su propio código: el que manda Cuadra no sirve de regreso y el del respaldo no sirve escrito", async () => {
+    const f = await setup();
+    await f.start();
+    const sentCode = f.sent[0]!.code;
+    expect(await verifyPhoneByWhatsApp(f.db, "5521111111", `Mi código de Cuadra es ${sentCode}`, f.now())).toBeNull();
+    const back = (await f.start({ method: "code_from_phone" })).json() as { method: string; code: string; reason?: string };
+    expect(back).toMatchObject({ method: "code_from_phone", code: expect.stringMatching(/^\d{6}$/) });
+    expect(back.reason).toBeUndefined();
+    if (back.code !== sentCode) expect((await f.check(back.code)).json()).toMatchObject({ reason: "wrong" });
+    expect(await verifyPhoneByWhatsApp(f.db, "5521111111", `Mi código de Cuadra es ${back.code}`, f.now())).toEqual({ name: "Ana Ruiz" });
+    expect(await f.state()).toBe(200);
+  });
+
+  it("5 intentos: después ni el código correcto sirve y hay que pedir otro", async () => {
+    const f = await setup();
+    await f.start();
+    const code = f.sent[0]!.code;
+    for (let i = 4; i >= 1; i--) expect((await f.check(f.other(code))).json()).toMatchObject({ attempts_left: i });
+    expect((await f.check(f.other(code))).json()).toEqual({
+      error: "Ese código no es y ya usaste los 5 intentos. Pide un código nuevo.", reason: "wrong", attempts_left: 0,
+    });
+    const locked = await f.check(code);
+    expect(locked.statusCode).toBe(410);
+    expect(locked.json()).toEqual({ error: "Ya usaste los 5 intentos. Pide un código nuevo.", reason: "locked" });
+    // Pedir otro antes del minuto: espera. Después, llega uno nuevo y ese sí sirve.
+    const early = await f.start();
+    expect(early.statusCode).toBe(429);
+    expect(early.json()).toMatchObject({ method: "code_to_phone", retry_after_s: expect.any(Number) });
+    f.advance(MIN_1);
+    expect((await f.start()).json()).toMatchObject({ method: "code_to_phone" });
+    expect(f.sent).toHaveLength(2);
+    expect((await f.check(f.sent[1]!.code)).json()).toEqual({ verified: true });
+  });
+
+  it("varios intentos al mismo tiempo no pasan de 5", async () => {
+    const f = await setup();
+    await f.start();
+    const code = f.sent[0]!.code;
+    const res = await Promise.all(Array.from({ length: 12 }, () => f.check(f.other(code))));
+    expect(res.filter((r) => r.statusCode === 400)).toHaveLength(5);
+    expect(res.filter((r) => r.statusCode === 410)).toHaveLength(7);
+    expect((await f.check(code)).statusCode).toBe(410);
+  });
+
+  it("vence a los 10 minutos", async () => {
+    const f = await setup();
+    await f.start();
+    f.advance(10 * 60_000 + 1_000);
+    expect((await f.check(f.sent[0]!.code)).json()).toEqual({ error: "Ese código ya venció. Pide uno nuevo.", reason: "expired" });
+    expect(await f.state()).toBe(403);
+  });
+
+  it("volver a la pantalla no manda otro; reenviar espera un minuto y deja sin valor al anterior", async () => {
+    const f = await setup();
+    await f.start();
+    const again = await f.start();
+    expect(again.json()).toMatchObject({ method: "code_to_phone", resend_in_s: 60 });
+    expect(f.sent).toHaveLength(1);
+    const early = await f.start({ resend: true });
+    expect(early.statusCode).toBe(429);
+    expect(early.json()).toMatchObject({ error: "Espera un momento para pedir otro código.", retry_after_s: 60 });
+    f.advance(MIN_1);
+    expect((await f.start({ resend: true })).json()).toMatchObject({ method: "code_to_phone", resend_in_s: 60 });
+    expect(f.sent).toHaveLength(2);
+    const [first, second] = [f.sent[0]!.code, f.sent[1]!.code];
+    if (first !== second) expect((await f.check(first)).json()).toMatchObject({ reason: "wrong" });
+    expect((await f.check(second)).json()).toEqual({ verified: true });
+  });
+
+  it("a lo más 5 envíos por hora al mismo celular, aunque se registre de nuevo; después, el respaldo", async () => {
+    const f = await setup();
+    await f.start();
+    for (let i = 0; i < 4; i++) { f.advance(MIN_1); await f.start({ resend: true }); }
+    expect(f.sent).toHaveLength(5);
+    f.advance(MIN_1);
+    const limited = await f.start({ resend: true });
+    expect(limited.statusCode).toBe(200);
+    expect(limited.json()).toMatchObject({ method: "code_from_phone", reason: "limit", code: expect.stringMatching(/^\d{6}$/) });
+    expect(f.sent).toHaveLength(5);
+    // Registrarse de nuevo con el mismo celular (cuenta sin verificar) no reinicia el tope.
+    await f.reRegister();
+    expect((await f.start()).json()).toMatchObject({ method: "code_from_phone", reason: "limit" });
+    expect(f.sent).toHaveLength(5);
+    f.advance(60 * 60_000);
+    expect((await f.start()).json()).toMatchObject({ method: "code_to_phone" });
+    expect(f.sent).toHaveLength(6);
+  });
+
+  it("si WhatsApp no lo entrega (número de prueba o plantilla sin aprobar), pasa al respaldo y queda en el log", async () => {
+    const f = await setup({ code: 131030 });
+    const s = await f.start();
+    expect(s.statusCode).toBe(200);
+    expect(s.json()).toMatchObject({
+      method: "code_from_phone", reason: "not_sent", code: expect.stringMatching(/^\d{6}$/), link: expect.stringContaining("https://wa.me/15550001111"),
+    });
+    expect(f.logs).toContainEqual(expect.objectContaining({ msg: "phone_code_not_sent", code: 131030 }));
+    const [acc] = await f.db.select().from(schema.portalAccounts);
+    expect(acc!.otpHash).toBeNull();
+    expect((await f.check("123456")).json()).toMatchObject({ reason: "none" });
+    // Recargar la pantalla no vuelve a llamar a Meta durante 10 minutos, ni cuenta como «ya te mandamos varios».
+    f.advance(MIN_1);
+    expect((await f.start()).json()).toMatchObject({ method: "code_from_phone", reason: "not_sent" });
+    expect(f.calls()).toBe(1);
+    expect(await f.db.select().from(schema.phoneCodeSends)).toHaveLength(0);
+    f.advance(10 * 60_000);
+    await f.start();
+    expect(f.calls()).toBe(2);
   });
 });
