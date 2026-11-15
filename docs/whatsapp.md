@@ -59,12 +59,19 @@ el portal (`POST /api/auth/verify/start` y `POST /api/auth/verify/check`, en `ap
   («*123456* es tu código de verificación.», no compartirlo y «caduca en 10 minutos»). Se da de alta con el
   mismo `pnpm --filter @cuadra/api templates:create` (va al final de la lista). Meta solo permite mandar
   códigos con plantillas de autenticación.
-- El código vence en 10 minutos (igual que la plantilla), admite 5 intentos, se puede reenviar cada minuto
-  y a lo más 5 veces por hora al mismo celular. Solo se guarda el hash; nunca va a la pantalla ni al log.
+- El código vence en 10 minutos (igual que la plantilla) y admite 5 intentos. Solo se guarda el hash, y
+  **solo después de que WhatsApp aceptó el mensaje**: un código que Meta rechaza (o que sigue en camino)
+  nunca sirve. Nunca va a la pantalla ni al log.
+- Topes **por celular** (registrarse de nuevo no los reinicia), contando todos los intentos de envío, también
+  los rechazados: uno a la vez y el siguiente después de un minuto; a lo más 5 por hora y 10 al día; tras un
+  rechazo, 10 minutos directo al respaldo sin llamar a Meta; con 10 códigos equivocados en 24 horas, ese
+  celular ya no recibe códigos (solo el respaldo). En todo Cuadra, a lo más 200 intentos al día (costo y
+  reputación del número). Cada intento se aparta en `phone_code_sends` antes de llamar a Meta, con un
+  candado de Postgres por celular, así que dos pestañas o dos procesos a la vez no mandan dos mensajes.
 - **Respaldo:** si WhatsApp no lo entrega (plantilla aún sin aprobar, error 132001; celular fuera de la
-  lista del número de prueba, error 131030), el portal pasa solo al camino anterior: muestra un código y la
-  persona lo manda desde su celular. Ese código es otro y solo sirve por WhatsApp; el que manda Cuadra solo
-  sirve escrito en el portal. Tras un rechazo, la cuenta usa el respaldo 10 minutos sin volver a llamar a Meta.
+  lista del número de prueba, error 131030) o se llegó a un tope, el portal pasa solo al camino anterior:
+  muestra un código y la persona lo manda desde su celular. Ese código es otro y solo sirve por WhatsApp;
+  el que manda Cuadra solo sirve escrito en el portal.
 - Con el número de prueba, el código solo llega a los celulares de la lista de destinatarios de la app de
   Meta; con un número de producción, a cualquiera.
 
@@ -89,7 +96,9 @@ variables la ruta no existe y la app sigue con el chat web.
   con `POST /{phone-number-id}/media` y se manda con pie de foto), plantillas (7, ver
   `apps/api/src/whatsapp-templates.ts`) y aviso genérico al comercio si su ventana de 24 h cerró.
 - 15-nov: el código de verificación del celular sale por WhatsApp (`cuadra_codigo`, autenticación); falta darla
-  de alta y que Meta la apruebe. Mientras tanto se usa el respaldo.
+  de alta y que Meta la apruebe. Mientras tanto se usa el respaldo. La revisión de seguridad del mismo día
+  (migración 0017) cerró que un código rechazado sirviera mientras Meta contestaba y que registrarse de nuevo
+  reiniciara los topes.
 - Falta: probar contra Meta con llaves reales, aprobación de plantillas, notas de voz (#9) y fotos (#10).
 
 ## Listo cuando…

@@ -96,8 +96,9 @@ button:focus-visible,a:focus-visible,input:focus-visible{outline:3px solid var(-
 .aviso{display:flex;align-items:flex-start;gap:.75rem;padding:.85rem 1rem;margin-bottom:.7rem}
 /* Verificación por WhatsApp */
 .code{font-family:var(--font-head);font-weight:800;font-size:min(2.6rem,11vw);letter-spacing:.28em;white-space:nowrap;text-align:center;padding:1rem .5rem 1rem .9rem;margin:.6rem 0 1rem;font-variant-numeric:tabular-nums;color:var(--heading)}
-/* Código que llega por WhatsApp: 6 números, del mismo estilo que el NIP pero más ancho. */
-.otp-field{width:min(100%,17rem);font-size:min(1.9rem,9vw);letter-spacing:.3em;font-variant-numeric:tabular-nums}
+/* Código que llega por WhatsApp: 6 números, del mismo estilo que el NIP pero más ancho y con letra que
+   cabe en un celular de 320 px con letra grande. Dos clases para ganarle a .pin-field (va más abajo). */
+.pin-field.otp-field{width:min(100%,17rem);font-size:min(1.9rem,9vw);letter-spacing:.3em;font-variant-numeric:tabular-nums}
 .otp .err{margin:-.4rem 0 .9rem}
 .btn--wa{text-decoration:none}
 .tip-small{color:var(--ink-2);font-size:.9rem;text-align:center;margin:.5rem 0 1rem}
@@ -915,17 +916,17 @@ function pinPad(el, onDone, { phone = "", nuevo = false, invalid = false } = {})
   if (matchMedia("(hover:hover) and (pointer:fine)").matches) setTimeout(() => f.focus(), 60);
 }
 
-// Verificar el celular: la persona manda por WhatsApp el código que le mostramos. El webhook lo
-// recibe desde su número y así sabemos que el celular es suyo. Mientras, revisamos cada 3 s.
 // Verificación del celular. Normal: Cuadra manda un código por WhatsApp y aquí se escribe.
 // Respaldo (si no se pudo mandar o si la persona lo pide): ella nos manda por WhatsApp, desde su
 // celular, el código que ve en pantalla, y la página espera a que llegue.
 SCREENS.verificar = async (arg) => {
-  const { method = null, resend = false } = arg || {}; // go() puede pasar null
+  // go() puede pasar null. Siempre se dice qué camino se quiere (sin `method`, el servidor da el respaldo
+  // a las pestañas con el portal de antes).
+  const { method = "code_to_phone", resend = false } = arg || {};
   clearInterval(verifyTimer);
   app.innerHTML = `<div class="wait"><div class="spin"></div>${method === "code_from_phone" ? "Preparando tu código…" : "Mandándote un código por WhatsApp…"}</div>`;
   let r;
-  try { r = await authPost("/api/auth/verify/start", { ...(method ? { method } : {}), ...(resend ? { resend: true } : {}) }); }
+  try { r = await authPost("/api/auth/verify/start", { method, ...(resend ? { resend: true } : {}) }); }
   catch { r = { ok: false, error: "No hay conexión. Revisa tu internet y vuelve a intentar." }; }
   if (r.status === 401) { signedOut(); return; }
   if (r.verified) { me = { ...me, verified: true }; home(); return; }
@@ -934,7 +935,7 @@ SCREENS.verificar = async (arg) => {
   app.innerHTML = `<h1>Un momento</h1><p class="lead">${esc(r.error || "No pudimos preparar tu código.")}</p>
     <button class="go btn btn--block" type="button" id="again">${ic("refresh")}Intentar otra vez</button>
     <button class="link" type="button" id="out">Salir</button>`;
-  $("#again").onclick = () => go("verificar", method ? { method } : null, false);
+  $("#again").onclick = () => go("verificar", { method }, false);
   $("#out").onclick = () => logout();
 };
 
@@ -1009,6 +1010,7 @@ function verifyByCode(r, resent) {
 function verifyFromPhone(r) {
   const why = r.reason === "limit" ? "Ya te mandamos varios códigos. Para seguir, mándanos"
     : r.reason === "not_sent" ? "No pudimos mandarte el código por WhatsApp. Para seguir, mándanos"
+    : r.reason === "locked" ? "Se escribieron varios códigos equivocados. Por seguridad, para seguir mándanos"
     : "Mándanos";
   app.innerHTML = `<h1>Verifica tu celular</h1>
     <p class="lead">${why} este código por WhatsApp <b>desde tu celular</b>. Así sabemos que el número es tuyo.</p>
@@ -1032,7 +1034,7 @@ function verifyFromPhone(r) {
   };
   $("#check").onclick = check;
   $("#new").onclick = () => go("verificar", { method: "code_from_phone" }, false);
-  const tp = $("#to-phone"); if (tp) tp.onclick = () => go("verificar", null, false);
+  const tp = $("#to-phone"); if (tp) tp.onclick = () => go("verificar", { method: "code_to_phone" }, false);
   $("#out").onclick = () => { clearInterval(verifyTimer); logout(); };
   verifyTimer = setInterval(() => { if (!document.hidden) check(); }, 3000);
 }

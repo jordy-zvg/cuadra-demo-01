@@ -61,17 +61,26 @@ export const portalAccounts = pgTable("portal_accounts", {
   otpHash: text("otp_hash"),
   otpExpiresAt: ts("otp_expires_at"),
   otpAttempts: integer("otp_attempts").notNull().default(0),
-  otpSentAt: ts("otp_sent_at"),
-  /** Último envío que WhatsApp rechazó (por un rato se usa directo el respaldo). */
-  otpFailedAt: ts("otp_failed_at"),
   createdAt: ts("created_at").notNull().defaultNow(),
 });
 
-/** Envíos del código por celular: tope por hora aunque la persona se registre de nuevo. */
+/**
+ * Intentos de mandar el código por WhatsApp, por celular (no por cuenta: registrarse de nuevo no
+ * reinicia los topes). Se apartan antes de llamar a Meta y cuentan aunque Meta los rechace.
+ * `sentAt` es la hora del intento. Nunca guarda el código.
+ */
 export const phoneCodeSends = pgTable("phone_code_sends", {
   id: bigserial("id", { mode: "number" }).primaryKey(),
   phone: text("phone").notNull(),
   sentAt: ts("sent_at").notNull().defaultNow(),
+  status: text("status").$type<"pending" | "sent" | "failed">().notNull().default("sent"),
+});
+
+/** Códigos equivocados escritos en el portal, por celular (con muchos en 24 h, solo el respaldo). */
+export const phoneCodeMisses = pgTable("phone_code_misses", {
+  id: bigserial("id", { mode: "number" }).primaryKey(),
+  phone: text("phone").notNull(),
+  missedAt: ts("missed_at").notNull().defaultNow(),
 });
 
 export const portalSessions = pgTable("portal_sessions", {

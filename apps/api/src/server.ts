@@ -39,7 +39,7 @@ export interface ServerOpts {
     llave?: "demo" | "off";
     now?: () => Date;
     /** Verificación del celular por WhatsApp (ver auth.ts). Sin esto, apagada. */
-    verification?: { mode: "whatsapp" | "off"; waNumber: string | null; sendCode?: (phone10: string, code: string) => Promise<void> };
+    verification?: { mode: "whatsapp" | "off"; waNumber: string | null; sendCode?: (phone10: string, code: string) => Promise<void>; dailyBudget?: number };
   };
 }
 

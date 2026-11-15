@@ -4,7 +4,7 @@ import type { FastifyInstance, FastifyReply, FastifyRequest } from "fastify";
 import { z } from "zod";
 import type { Db } from "@cuadra/db";
 import { realPhone10, schema, storeForPerson } from "@cuadra/db";
-import { and, eq, gt, gte, isNotNull, isNull, lt, lte, or, sql } from "drizzle-orm";
+import { and, desc, eq, gt, isNotNull, isNull, lt, lte, or, sql } from "drizzle-orm";
 
 /**
  * Login del portal: celular (10 dígitos) + NIP de 4 dígitos, pensado para personas con poca
@@ -39,6 +39,8 @@ export interface AuthOpts {
     waNumber: string | null;
     /** Manda el código al celular (10 dígitos). Si no existe o lanza error, se usa el respaldo. */
     sendCode?: (phone10: string, code: string) => Promise<void>;
+    /** Intentos de envío al día en todo Cuadra (por omisión PHONE_CODE_DAILY_BUDGET). */
+    dailyBudget?: number;
   };
   /** Log JSON del servidor (sin secretos, sin el código y sin el celular completo). */
   log?: (r: Record<string, unknown>) => void;
@@ -151,16 +153,37 @@ const VERIFY_RESEND_MS = 20_000;
 
 /**
  * Código que manda Cuadra por WhatsApp: vence en 10 minutos (lo mismo que dice la plantilla
- * cuadra_codigo), admite 5 intentos, se puede reenviar cada minuto y a lo más 5 veces por hora al
- * mismo celular.
+ * cuadra_codigo) y admite 5 intentos. Solo se puede escribir después de que WhatsApp lo aceptó.
+ * Los topes van por celular, no por cuenta (registrarse de nuevo no los reinicia), y cuentan todos los
+ * intentos de envío, también los que Meta rechaza:
+ * - un envío a la vez y el siguiente hasta después de un minuto;
+ * - a lo más 5 por hora y 10 al día;
+ * - si Meta rechazó el último (plantilla sin aprobar, número fuera de la lista de prueba), 10 minutos
+ *   directo al respaldo, sin volver a llamar a Meta en cada recarga;
+ * - con 10 códigos equivocados en 24 horas, ese celular ya no recibe códigos: queda el respaldo, que
+ *   exige escribir desde su WhatsApp.
+ * Además, en todo Cuadra a lo más PHONE_CODE_DAILY_BUDGET intentos al día (costo de Meta y reputación
+ * del número de WhatsApp, que también manda cobros y recordatorios); después, también el respaldo.
  */
 export const PHONE_CODE_TTL_MS = 10 * 60_000;
 export const PHONE_CODE_MAX_ATTEMPTS = 5;
 export const PHONE_CODE_RESEND_MS = 60_000;
 export const PHONE_CODE_MAX_PER_HOUR = 5;
-/** Si WhatsApp rechazó el envío (plantilla sin aprobar, número fuera de la lista de prueba), durante
- * este tiempo la cuenta usa directo el respaldo, sin volver a llamar a Meta en cada recarga. */
+export const PHONE_CODE_MAX_PER_DAY = 10;
 export const PHONE_CODE_FAIL_BACKOFF_MS = 10 * 60_000;
+export const PHONE_CODE_MAX_MISSES_PER_DAY = 10;
+export const PHONE_CODE_DAILY_BUDGET = 200;
+/** Un intento que sigue en "pending" después de esto se da por perdido (p. ej. se reinició el proceso
+ * mientras Meta contestaba; WhatsApp corta la llamada a los 15 s). */
+const PHONE_CODE_PENDING_STALE_MS = 2 * 60_000;
+const DAY_MS = 86_400_000;
+
+/** Por qué se usa el respaldo en lugar de mandar el código: no salió, ya van muchos o muchos equivocados. */
+type FallbackReason = "not_sent" | "limit" | "locked";
+type SendState = { kind: "go" } | { kind: "wait"; retryAfterS: number } | { kind: "fallback"; reason: FallbackReason; log?: string };
+type ToPhone = { kind: "ok"; expiresAt: Date; resendInS: number } | { kind: "wait"; retryAfterS: number } | { kind: "fallback"; reason: FallbackReason };
+/** Respuesta de /api/auth/verify/start (la misma para dos peticiones de la misma cuenta a la vez). */
+type StartRes = { status: number; body: Record<string, unknown> };
 
 /** Texto que la persona manda por WhatsApp (el enlace wa.me ya lo trae escrito). */
 export const verifyMessage = (code: string) => `Mi código de Cuadra es ${code}`;
@@ -269,80 +292,180 @@ export class PortalAuth {
   }
 
   /**
-   * Manda (o deja vigente) el código por WhatsApp. "ok": hay un código en camino. "wait": pidió
-   * reenviar antes de tiempo. "limit": ya van PHONE_CODE_MAX_PER_HOUR envíos a ese celular en la última
-   * hora. "not_sent": no hay cómo mandarlo (sin WhatsApp, número no válido o Meta lo rechazó).
+   * Peticiones de «mándame el código» en curso por cuenta (en este proceso). Si llega otra de la misma
+   * cuenta mientras Meta contesta (otra pestaña, una recarga), espera y recibe la misma respuesta: no
+   * se manda otro mensaje, no se dice «te lo mandamos» antes de saberlo y, si toca el respaldo, las dos
+   * pantallas muestran el mismo código. Entre cuentas y procesos, el candado de claimSend.
    */
-  private async codeToPhone(
-    a: PortalAccount,
-    now: Date,
-    resend: boolean,
-  ): Promise<{ kind: "ok"; expiresAt: Date; resendInS: number } | { kind: "wait"; retryAfterS: number } | { kind: "limit" | "not_sent" }> {
-    const send = this.o.verification?.sendCode;
-    const phone = realPhone10(a.phone);
-    if (!send || !phone) return { kind: "not_sent" };
-    const A = schema.portalAccounts;
-    const [row] = await this.o.db
-      .select({ hash: A.otpHash, expiresAt: A.otpExpiresAt, attempts: A.otpAttempts, sentAt: A.otpSentAt, failedAt: A.otpFailedAt })
-      .from(A)
-      .where(eq(A.id, a.id));
-    if (row?.failedAt && now.getTime() - row.failedAt.getTime() < PHONE_CODE_FAIL_BACKOFF_MS) return { kind: "not_sent" };
-    const waitS = row?.sentAt ? Math.max(0, Math.ceil((row.sentAt.getTime() + PHONE_CODE_RESEND_MS - now.getTime()) / 1000)) : 0;
-    const live = Boolean(row?.hash && row.expiresAt && row.expiresAt > now && row.attempts < PHONE_CODE_MAX_ATTEMPTS);
-    // Ya va uno en camino y no pidió otro: se usa ese (no se manda otro mensaje).
-    if (live && !resend) return { kind: "ok", expiresAt: row!.expiresAt!, resendInS: waitS };
-    if (waitS > 0) return { kind: "wait", retryAfterS: waitS };
-    const S = schema.phoneCodeSends;
-    const [count] = await this.o.db
-      .select({ n: sql<number>`count(*)::int` })
-      .from(S)
-      .where(and(eq(S.phone, a.phone), gte(S.sentAt, new Date(now.getTime() - 3_600_000))));
-    if ((count?.n ?? 0) >= PHONE_CODE_MAX_PER_HOUR) {
-      this.o.log?.({ msg: "phone_code_limit", merchant_id: a.merchantId, account_id: a.id });
-      return { kind: "limit" };
-    }
-    const code = String(randomInt(100_000, 1_000_000));
-    const expiresAt = new Date(now.getTime() + PHONE_CODE_TTL_MS);
-    // Se guarda antes de mandarlo (sirve en cuanto llegue) y deja sin valor al anterior.
-    await this.o.db.update(A).set({ otpHash: sha256(code), otpExpiresAt: expiresAt, otpAttempts: 0 }).where(eq(A.id, a.id));
+  private readonly starting = new Map<string, Promise<StartRes>>();
+
+  private async once(accountId: string, run: () => Promise<StartRes>): Promise<StartRes> {
+    const busy = this.starting.get(accountId);
+    if (busy) return busy;
+    const job = run(); // entre get y set no hay await: dos peticiones de este proceso nunca empiezan juntas
+    this.starting.set(accountId, job);
     try {
-      await send(phone, code);
+      return await job;
+    } finally {
+      if (this.starting.get(accountId) === job) this.starting.delete(accountId);
+    }
+  }
+
+  private async startToPhone(a: PortalAccount, now: Date, resend: boolean): Promise<StartRes> {
+    const sent = await this.codeToPhone(a, now, resend);
+    const toPhone = { verified: false, method: "code_to_phone" as const, phone_last4: a.phone.slice(-4) };
+    if (sent.kind === "ok") return { status: 200, body: { ...toPhone, expires_at: sent.expiresAt.toISOString(), resend_in_s: sent.resendInS } };
+    if (sent.kind === "wait") {
+      return { status: 429, body: { ...toPhone, error: "Espera un momento para pedir otro código.", retry_after_s: sent.retryAfterS } };
+    }
+    // Sin forma de mandarlo, ya van muchos envíos o muchos códigos equivocados: el respaldo, con el motivo.
+    return this.codeFromPhone(a, now, sent.reason);
+  }
+
+  /**
+   * Manda el código por WhatsApp o deja vigente el que ya tiene. "ok": hay un código que WhatsApp
+   * aceptó. "wait": todavía no se puede mandar otro. "fallback": se usa el respaldo, con el motivo.
+   */
+  private async codeToPhone(a: PortalAccount, now: Date, resend: boolean): Promise<ToPhone> {
+    const send = this.o.verification?.sendCode;
+    const phone10 = realPhone10(a.phone);
+    if (!send || !phone10) return { kind: "fallback", reason: "not_sent" };
+    const A = schema.portalAccounts;
+    const [row] = await this.o.db.select({ hash: A.otpHash, expiresAt: A.otpExpiresAt, attempts: A.otpAttempts }).from(A).where(eq(A.id, a.id));
+    // Ya tiene uno vigente y no pidió otro (volvió a la pantalla): se usa ese, sin mandar otro mensaje.
+    if (!resend && row?.hash && row.expiresAt && row.expiresAt > now && row.attempts < PHONE_CODE_MAX_ATTEMPTS) {
+      return { kind: "ok", expiresAt: row.expiresAt, resendInS: await this.resendWaitS(a.phone, now) };
+    }
+    const claim = await this.claimSend(a.phone, now);
+    if (claim.kind === "claimed") return this.deliver(a, phone10, claim.id, send);
+    if (claim.kind === "fallback") {
+      if (claim.log) this.o.log?.({ msg: claim.log, merchant_id: a.merchantId, account_id: a.id });
+      return { kind: "fallback", reason: claim.reason };
+    }
+    return claim;
+  }
+
+  /**
+   * ¿Se puede intentar mandar un código a este celular ahora? Solo lee. Todo va por celular y con la
+   * hora de cada intento (también los rechazados), así que registrarse de nuevo no cambia nada.
+   */
+  private async sendState(db: Db, phone: string, now: Date): Promise<SendState> {
+    const S = schema.phoneCodeSends;
+    const M = schema.phoneCodeMisses;
+    const dayAgo = new Date(now.getTime() - DAY_MS);
+    const [misses] = await db.select({ n: sql<number>`count(*)::int` }).from(M).where(and(eq(M.phone, phone), gt(M.missedAt, dayAgo)));
+    if ((misses?.n ?? 0) >= PHONE_CODE_MAX_MISSES_PER_DAY) return { kind: "fallback", reason: "locked" };
+    const tries = await db
+      .select({ at: S.sentAt, status: S.status })
+      .from(S)
+      .where(and(eq(S.phone, phone), gt(S.sentAt, dayAgo)))
+      .orderBy(desc(S.sentAt), desc(S.id));
+    const last = tries[0];
+    const age = last ? now.getTime() - last.at.getTime() : Number.POSITIVE_INFINITY;
+    if (last?.status === "failed" && age < PHONE_CODE_FAIL_BACKOFF_MS) return { kind: "fallback", reason: "not_sent" };
+    if (age < PHONE_CODE_RESEND_MS || (last?.status === "pending" && age < PHONE_CODE_PENDING_STALE_MS)) {
+      return { kind: "wait", retryAfterS: Math.max(1, Math.ceil((PHONE_CODE_RESEND_MS - age) / 1000)) };
+    }
+    const hourAgo = now.getTime() - 3_600_000;
+    if (tries.filter((t) => t.at.getTime() > hourAgo).length >= PHONE_CODE_MAX_PER_HOUR || tries.length >= PHONE_CODE_MAX_PER_DAY) {
+      return { kind: "fallback", reason: last?.status === "failed" ? "not_sent" : "limit", log: "phone_code_limit" };
+    }
+    // Presupuesto de todo Cuadra (sin candado global: con muchas peticiones a la vez se puede pasar por
+    // unas cuantas; sirve para el costo y la reputación del número, no para la seguridad de una cuenta).
+    const [all] = await db.select({ n: sql<number>`count(*)::int` }).from(S).where(gt(S.sentAt, dayAgo));
+    if ((all?.n ?? 0) >= (this.o.verification?.dailyBudget ?? PHONE_CODE_DAILY_BUDGET)) {
+      return { kind: "fallback", reason: "not_sent", log: "phone_code_budget" };
+    }
+    return { kind: "go" };
+  }
+
+  /**
+   * Aparta un intento de envío ANTES de llamar a Meta. El candado por celular hace que dos peticiones
+   * a la vez (dos pestañas, dos procesos, un script) no pasen juntas las revisiones de espera y topes.
+   */
+  private claimSend(phone: string, now: Date): Promise<{ kind: "claimed"; id: number } | Exclude<SendState, { kind: "go" }>> {
+    return this.o.db.transaction(async (tx) => {
+      // 7001: espacio de candados del código por celular (no choca con los de otras partes).
+      await tx.execute(sql`SELECT pg_advisory_xact_lock(7001, hashtext(${phone}))`);
+      const st = await this.sendState(tx, phone, now);
+      if (st.kind !== "go") return st;
+      const [row] = await tx
+        .insert(schema.phoneCodeSends)
+        .values({ phone, sentAt: now, status: "pending" })
+        .returning({ id: schema.phoneCodeSends.id });
+      return { kind: "claimed" as const, id: row!.id };
+    });
+  }
+
+  /** Llama a Meta. Solo si WhatsApp acepta el mensaje, el código queda guardado (y se puede escribir). */
+  private async deliver(a: PortalAccount, phone10: string, sendId: number, send: (phone10: string, code: string) => Promise<void>): Promise<ToPhone> {
+    const S = schema.phoneCodeSends;
+    const A = schema.portalAccounts;
+    const code = String(randomInt(100_000, 1_000_000));
+    try {
+      await send(phone10, code);
     } catch (e) {
-      // No salió: ese código no sirve y el portal pasa al respaldo. No cuenta para el tope por hora.
-      await this.o.db.update(A).set({ otpHash: null, otpExpiresAt: null, otpFailedAt: now }).where(eq(A.id, a.id));
+      // No salió (o no contestó a tiempo): ese código nunca se guardó, así que no sirve. Si había uno
+      // vigente, ese sigue igual. El portal pasa al respaldo.
+      await this.o.db.update(S).set({ status: "failed" }).where(eq(S.id, sendId));
       const meta = (e as { code?: unknown } | null)?.code;
       this.o.log?.({ msg: "phone_code_not_sent", merchant_id: a.merchantId, account_id: a.id, code: typeof meta === "number" ? meta : null });
-      return { kind: "not_sent" };
+      return { kind: "fallback", reason: "not_sent" };
     }
-    // Salió: cuenta para el tope por hora y para la espera de reenvío.
-    await this.o.db.update(A).set({ otpSentAt: now, otpFailedAt: null }).where(eq(A.id, a.id));
-    await this.o.db.insert(S).values({ phone: a.phone, sentAt: now });
+    // WhatsApp lo aceptó: desde ahora se puede escribir, y el anterior ya no sirve.
+    const expiresAt = new Date(this.o.now().getTime() + PHONE_CODE_TTL_MS);
+    await this.o.db
+      .update(A)
+      .set({ otpHash: sha256(code), otpExpiresAt: expiresAt, otpAttempts: 0 })
+      .where(and(eq(A.id, a.id), isNull(A.phoneVerifiedAt)));
+    await this.o.db.update(S).set({ status: "sent" }).where(eq(S.id, sendId));
     this.o.log?.({ msg: "phone_code_sent", merchant_id: a.merchantId, account_id: a.id });
     return { kind: "ok", expiresAt, resendInS: Math.round(PHONE_CODE_RESEND_MS / 1000) };
   }
 
+  /** Segundos que faltan para poder pedir otro código a este celular. */
+  private async resendWaitS(phone: string, now: Date): Promise<number> {
+    const S = schema.phoneCodeSends;
+    const [last] = await this.o.db.select({ at: S.sentAt }).from(S).where(eq(S.phone, phone)).orderBy(desc(S.sentAt), desc(S.id)).limit(1);
+    return last ? Math.max(0, Math.ceil((last.at.getTime() + PHONE_CODE_RESEND_MS - now.getTime()) / 1000)) : 0;
+  }
+
+  /**
+   * Respaldo pedido a propósito («¿No te llega?», «Pedir otro código»): si ahora tampoco se le podría
+   * mandar el código, el motivo. Así el portal no ofrece «Mejor mándenme el código a mí» cuando no va a
+   * funcionar, y el motivo no se pierde al pedir otro código del respaldo.
+   */
+  private async toPhoneBlocked(a: PortalAccount, now: Date): Promise<FallbackReason | null> {
+    if (!this.o.verification?.sendCode || !realPhone10(a.phone)) return "not_sent";
+    const st = await this.sendState(this.o.db, a.phone, now);
+    return st.kind === "fallback" ? st.reason : null;
+  }
+
   /** Respaldo: un código que la persona manda desde su celular por WhatsApp (enlace wa.me ya escrito). */
-  private async codeFromPhone(a: PortalAccount, now: Date, reply: FastifyReply, reason: "limit" | "not_sent" | null) {
+  private async codeFromPhone(a: PortalAccount, now: Date, reason: FallbackReason | null): Promise<StartRes> {
     const [row] = await this.o.db
       .select({ expiresAt: schema.portalAccounts.verifyExpiresAt })
       .from(schema.portalAccounts)
       .where(eq(schema.portalAccounts.id, a.id));
     if (row?.expiresAt && row.expiresAt.getTime() - VERIFY_CODE_TTL_MS + VERIFY_RESEND_MS > now.getTime()) {
-      return reply.code(429).send({ error: "Espera unos segundos para pedir otro código." });
+      return { status: 429, body: { error: "Espera unos segundos para pedir otro código." } };
     }
     const code = String(randomInt(100_000, 1_000_000));
     const expiresAt = new Date(now.getTime() + VERIFY_CODE_TTL_MS);
     await this.o.db.update(schema.portalAccounts).set({ verifyCodeHash: sha256(code), verifyExpiresAt: expiresAt }).where(eq(schema.portalAccounts.id, a.id));
     const number = this.o.verification?.waNumber ?? null;
     return {
-      verified: false,
-      method: "code_from_phone" as const,
-      ...(reason ? { reason } : {}),
-      code,
-      message: verifyMessage(code),
-      number,
-      link: number ? `https://wa.me/${number}?text=${encodeURIComponent(verifyMessage(code))}` : null,
-      expires_at: expiresAt.toISOString(),
+      status: 200,
+      body: {
+        verified: false,
+        method: "code_from_phone" as const,
+        ...(reason ? { reason } : {}),
+        code,
+        message: verifyMessage(code),
+        number,
+        link: number ? `https://wa.me/${number}?text=${encodeURIComponent(verifyMessage(code))}` : null,
+        expires_at: expiresAt.toISOString(),
+      },
     };
   }
 
@@ -517,17 +640,13 @@ export class PortalAuth {
       const parsed = StartBody.safeParse(json(req.body));
       const body = parsed.success ? parsed.data : {};
       const now = o.now();
-      if (body.method !== "code_from_phone") {
-        const sent = await this.codeToPhone(a, now, body.resend === true);
-        const toPhone = { verified: false, method: "code_to_phone" as const, phone_last4: a.phone.slice(-4) };
-        if (sent.kind === "ok") return { ...toPhone, expires_at: sent.expiresAt.toISOString(), resend_in_s: sent.resendInS };
-        if (sent.kind === "wait") {
-          return reply.code(429).send({ ...toPhone, error: "Espera un momento para pedir otro código.", retry_after_s: sent.retryAfterS });
-        }
-        // Sin forma de mandarlo (o ya van muchos envíos en la hora): sigue el respaldo, con el motivo.
-        return this.codeFromPhone(a, now, reply, sent.kind);
-      }
-      return this.codeFromPhone(a, now, reply, null);
+      // Sin `method`: una pestaña con el portal de antes (solo conoce el respaldo y truena con la otra
+      // respuesta). Se le da el respaldo de siempre; el portal nuevo siempre dice qué camino quiere.
+      const res =
+        body.method === undefined ? await this.codeFromPhone(a, now, null)
+        : body.method === "code_from_phone" ? await this.codeFromPhone(a, now, await this.toPhoneBlocked(a, now))
+        : await this.once(a.id, () => this.startToPhone(a, now, body.resend === true));
+      return reply.code(res.status).send(res.body);
     });
 
     const CheckBody = z.object({ code: z.string().max(40) });
@@ -555,6 +674,19 @@ export class PortalAuth {
         return reply.code(410).send({ error, reason });
       }
       if (!sameSecret(sha256(code), row.hash)) {
+        // Cada código equivocado se anota por celular. Con muchos en 24 horas se anula el código y ese
+        // celular ya no recibe más (solo el respaldo, que exige escribir desde su WhatsApp).
+        const M = schema.phoneCodeMisses;
+        await o.db.insert(M).values({ phone: a.phone, missedAt: now });
+        const [misses] = await o.db
+          .select({ n: sql<number>`count(*)::int` })
+          .from(M)
+          .where(and(eq(M.phone, a.phone), gt(M.missedAt, new Date(now.getTime() - DAY_MS))));
+        if ((misses?.n ?? 0) >= PHONE_CODE_MAX_MISSES_PER_DAY) {
+          await o.db.update(A).set({ otpHash: null, otpExpiresAt: null }).where(eq(A.id, a.id));
+          o.log?.({ msg: "phone_code_locked", merchant_id: a.merchantId, account_id: a.id });
+          return reply.code(400).send({ error: "Ese código no es y ya no quedan intentos. Pide un código nuevo.", reason: "wrong", attempts_left: 0 });
+        }
         const left = Math.max(0, PHONE_CODE_MAX_ATTEMPTS - row.attempts);
         const error =
           left === 0

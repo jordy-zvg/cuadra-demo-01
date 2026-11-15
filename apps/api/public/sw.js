@@ -1,7 +1,8 @@
 // Service worker del portal (/login). Solo guarda la "cáscara" de la página para que abra rápido
 // y sin internet muestre el aviso de conexión. NUNCA guarda /api/*: saldos, cobros y pagos
 // siempre se piden en vivo al servidor.
-const CACHE = "cuadra-portal-v19";
+const CACHE = "cuadra-portal-v20";
+// v20: el campo del código cabe en el celular; tras un rechazo de WhatsApp el respaldo conserva el motivo.
 // v19: verificar el celular con el código que manda Cuadra por WhatsApp (y respaldo si no llega).
 // v18: anillo de foco blanco en la casita (se ve sobre la banda verde con teclado).
 // v17: en la entrada, una casita arriba a la izquierda lleva a la página principal (en lugar de "Cuadra").

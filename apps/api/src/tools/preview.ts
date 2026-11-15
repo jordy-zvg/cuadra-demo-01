@@ -41,12 +41,15 @@ async function main(): Promise<void> {
         // PREVIEW_VERIFICATION=whatsapp muestra la pantalla de verificación. Con PREVIEW_CODES=<archivo>,
         // el código que "manda" Cuadra se escribe en ese archivo (en lugar de WhatsApp) para probar la
         // pantalla de escribir el código; sin él, la vista previa usa el respaldo (mandarlo desde el celular).
+        // PREVIEW_SEND_FAIL=<código de error de Meta> (p. ej. 132001) simula que WhatsApp rechaza el envío.
         verification: {
           mode: process.env.PREVIEW_VERIFICATION === "whatsapp" ? "whatsapp" : "off",
           waNumber: "15550001111",
-          ...(process.env.PREVIEW_CODES
-            ? { sendCode: async (phone10: string, code: string) => appendFileSync(process.env.PREVIEW_CODES!, `${JSON.stringify({ phone10, code })}\n`) }
-            : {}),
+          ...(process.env.PREVIEW_SEND_FAIL
+            ? { sendCode: async () => { throw Object.assign(new Error("Meta"), { code: Number(process.env.PREVIEW_SEND_FAIL) }); } }
+            : process.env.PREVIEW_CODES
+              ? { sendCode: async (phone10: string, code: string) => appendFileSync(process.env.PREVIEW_CODES!, `${JSON.stringify({ phone10, code })}\n`) }
+              : {}),
         },
       },
       passkey: { rpID: "localhost", origins: ["http://localhost"], now },
