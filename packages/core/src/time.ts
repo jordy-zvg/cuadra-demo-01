@@ -35,6 +35,24 @@ export function isWithinMxHours(d: Date, fromHour: number, toHour: number): bool
   return m >= fromHour * 60 && m < toHour * 60;
 }
 
+/** Horario [desde, hasta) en horas enteras de CDMX: 0 ≤ desde < hasta ≤ 24. */
+export function isValidHourRange(h: readonly [number, number]): boolean {
+  return Number.isInteger(h[0]) && Number.isInteger(h[1]) && h[0] >= 0 && h[1] <= 24 && h[0] < h[1];
+}
+
+/** true si el horario cubre el día completo ("0-24"): no hay restricción de hora. */
+export function isAllDay(h: readonly [number, number]): boolean {
+  return h[0] <= 0 && h[1] >= 24;
+}
+
+/** "8-22" o "0-24" → [desde, hasta]; null si falta o no es válido (entonces rige el horario normal). */
+export function parseHourRange(v: string | undefined): readonly [number, number] | null {
+  const m = /^\s*(\d{1,2})\s*-\s*(\d{1,2})\s*$/.exec(v ?? "");
+  if (!m) return null;
+  const h = [Number(m[1]), Number(m[2])] as const;
+  return isValidHourRange(h) ? h : null;
+}
+
 export const HOUR_MS = 60 * 60 * 1000;
 export const MINUTE_MS = 60 * 1000;
 

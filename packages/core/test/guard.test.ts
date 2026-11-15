@@ -184,6 +184,23 @@ describe("guard de salidas", () => {
     expect(run({ now: at("06:59") }).decision).toBe("require_passkey");
   });
 
+  it("R10 con horario configurable (OUTFLOW_HOURS): 0-24 quita la hora, no el tope por hora", () => {
+    expect(run({ now: at("22:30"), outflow_hours: [0, 24] }).decision).toBe("allow");
+    expect(run({ now: at("03:00"), outflow_hours: [0, 24] }).decision).toBe("allow");
+    expect(run({ now: at("06:59"), outflow_hours: [0, 24] }).decision).toBe("allow");
+    const narrow = run({ now: at("21:30"), outflow_hours: [8, 21] });
+    expect(narrow).toMatchObject({ decision: "require_passkey", rules_failed: [{ rule_id: "R10" }] });
+    expect(narrow.rules_failed[0]!.reason).toBe("Fuera del horario de 8:00 a 21:00.");
+    expect(run({ now: at("22:30") }).rules_failed[0]!.reason).toBe("Fuera del horario de 7:00 a 22:00.");
+    // Un horario inválido nunca abre nada: rige el normal de 7 a 22.
+    for (const h of [[22, 7], [-1, 30], [5, 5], [7.5, 22], [0, 25]] as const) {
+      expect(run({ now: at("22:30"), outflow_hours: h }).decision).toBe("require_passkey");
+    }
+    // El tope de salidas por hora sigue aplicando sin horario.
+    const five = [1, 2, 3, 4, 5].map((i) => ({ payee_id: `x${i}`, amount_cents: 1n, concept: "x", created_at: new Date(at("03:00").getTime() - 30 * 60_000) }));
+    expect(run({ now: at("03:00"), outflow_hours: [0, 24], recent_outflows: five })).toMatchObject({ decision: "deny", rules_failed: [{ rule_id: "R10" }] });
+  });
+
   it("R11 contenido de terceros → passkey; datos bancarios en la propuesta → deny", () => {
     expect(run({ proposal: { ...proposal, provenance: "third_party_content" } })).toMatchObject({
       decision: "require_passkey", rules_failed: [{ rule_id: "R11" }],

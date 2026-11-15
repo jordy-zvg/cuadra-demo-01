@@ -80,7 +80,8 @@ R06 Tope por operación del mandato.
 R07 Tope acumulado por periodo (mandato) y tope global diario del comercio.
 R08 Saldo disponible suficiente (1100 − 2400 − retenciones) y conciliación del día OK.
 R09 Duplicado: mismo beneficiario + monto + concepto en ventana de 10 min.
-R10 Velocidad y horario: máx. N salidas/hora; fuera de 07:00–22:00 → requiere passkey.
+R10 Velocidad y horario: máx. N salidas/hora; fuera de 07:00–22:00 → requiere passkey. Solo demo (decisión
+14-nov-2026): `OUTFLOW_HOURS=0-24` quita el horario en la API y el executor (deben tener la misma); el tope por hora sigue.
 R11 Procedencia: `third_party_content` no crea beneficiarios ni ejecuta sin passkey; datos bancarios solo del sistema.
 R12 Estado de riesgo: kill switch, cuenta congelada, conciliación descuadrada o veto del auditor → deny.
 Resultado: `allow` | `require_passkey` | `deny`, con `rules_failed[]`.
@@ -94,7 +95,8 @@ Saldo en ledger > 0 · monto = saldo · máx. 1 por cliente cada 72 h · horario
 Reenvío (decisión 14-nov-2026): la solicitud CoDi al celular dura 6 min (mínimo de pey). Si venció sin pago, el
 comercio puede reenviarla (solo la solicitud, sin otro mensaje) hasta 3 veces por recordatorio; nunca mientras
 haya una viva (pagaría doble) y nunca desde los recordatorios programados. Solo en desarrollo,
-`REMINDER_MIN_INTERVAL_MINUTES` baja las 72 h (p. ej. 0 para probar seguido); en producción no se define.
+`REMINDER_MIN_INTERVAL_MINUTES` baja las 72 h (p. ej. 0 para probar seguido) y `REMINDER_HOURS=0-24` quita el
+horario 09:00–20:00; con clientes reales no se definen.
 
 ## Conciliación de abonos (cascada)
 1. CLABE virtual del cliente (si el proveedor la ofrece).

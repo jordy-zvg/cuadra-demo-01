@@ -5,7 +5,7 @@
  */
 import { type AssertionVerifier, DbBankSimProvider, applyProviderEvent, bankSimBalance, runReconciliation, schema } from "@cuadra/db";
 import { connectPostgres } from "@cuadra/db/node";
-import { formatMXN } from "@cuadra/core";
+import { formatMXN, parseHourRange } from "@cuadra/core";
 import { and, asc, eq } from "drizzle-orm";
 import { verifyProposalAssertion } from "@cuadra/adapters";
 import { executeOutflow } from "./execute.js";
@@ -29,18 +29,23 @@ async function main(): Promise<void> {
   const rpID = env("WEBAUTHN_RP_ID") ?? (publicUrl ? new URL(publicUrl).hostname : "localhost");
   const origins = (env("WEBAUTHN_ORIGINS") ?? publicUrl ?? "http://localhost:3000").split(",");
   const settleMs = Number(env("SIM_SETTLE_MS") ?? 4000);
+  // Solo demo: OUTFLOW_HOURS="0-24" quita el horario de R10 (normal: fuera de 7-22 pide passkey).
+  // Debe ser la misma que en la API: si no coinciden, el executor detiene lo que la API dejó pasar.
+  const outflowHours = parseHourRange(env("OUTFLOW_HOURS"));
+  if (env("OUTFLOW_HOURS") && !outflowHours) log({ msg: "config_invalid", variable: "OUTFLOW_HOURS" });
   const deps = (merchantId: string) => ({
     db,
     provider: providerOf(merchantId),
     verify: ((a) => verifyProposalAssertion({ ...a, config: { rpID, origins } })) satisfies AssertionVerifier,
     now: () => new Date(),
     log,
+    ...(outflowHours ? { outflowHours } : {}),
   });
   const say = (merchantId: string, body: string) =>
     db.insert(schema.messages).values({ merchantId, thread: "comercio", direction: "out", body });
 
   let lastRecon = 0;
-  log({ msg: "executor_poll_started", provider: "bank_sim", scope: "todas las tiendas" });
+  log({ msg: "executor_poll_started", provider: "bank_sim", scope: "todas las tiendas", outflow_hours: outflowHours ?? [7, 22] });
   for (;;) {
     try {
       const merchantIds = (await db.select({ id: schema.merchants.id }).from(schema.merchants)).map((m) => m.id);

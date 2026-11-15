@@ -1,5 +1,5 @@
 import { PeyClient, WhatsAppClient, verifyProposalAssertion } from "@cuadra/adapters";
-import { parseUdiValue } from "@cuadra/core";
+import { parseHourRange, parseUdiValue } from "@cuadra/core";
 import { AnthropicInterpreter, FallbackInterpreter, type Interpreter, RuleInterpreter } from "@cuadra/agents";
 import { connectPostgres, migratePostgres } from "@cuadra/db/node";
 import { assignAccountStores, schema, seedDemo } from "@cuadra/db";
@@ -86,6 +86,13 @@ async function main(): Promise<void> {
     log({ msg: "reminder_interval_override", minutes: reminderMinIntervalMs / 60_000, warning: "solo para desarrollo; en producción debe quedar sin definir" });
   }
 
+  // Horarios (solo demo): REMINDER_HOURS para cobros (normal 9-20) y OUTFLOW_HOURS para pagos a
+  // proveedor sin passkey (R10, normal 7-22). "0-24" = sin límite. El executor lee la misma OUTFLOW_HOURS.
+  const reminderHours = parseHourRange(env("REMINDER_HOURS"));
+  const outflowHours = parseHourRange(env("OUTFLOW_HOURS"));
+  if (env("REMINDER_HOURS") && !reminderHours) log({ msg: "config_invalid", variable: "REMINDER_HOURS" });
+  if (env("OUTFLOW_HOURS") && !outflowHours) log({ msg: "config_invalid", variable: "OUTFLOW_HOURS" });
+
   // Una tienda por persona. Solo la demo (dueña de la cuenta receptora en pey) cobra en vivo; las
   // tiendas nuevas cobran y pagan en simulado hasta que registren su propia cuenta.
   await db.update(schema.merchants).set({ livePayments: !gateway.simulated }).where(eq(schema.merchants.id, demo.merchantId));
@@ -104,7 +111,9 @@ async function main(): Promise<void> {
     // Al confirmar un fiado se avisa al cliente (WhatsApp + solicitud CoDi). AUTO_COBRO_FIADO=off lo apaga.
     chargeOnFiado: env("AUTO_COBRO_FIADO") !== "off",
     // Solo demo: REMINDER_HOURS="0-24" quita el horario de cobros (normal: 9-20).
-    ...(parseHours(env("REMINDER_HOURS")) ? { reminderHours: parseHours(env("REMINDER_HOURS"))! } : {}),
+    ...(reminderHours ? { reminderHours } : {}),
+    // Solo demo: OUTFLOW_HOURS="0-24" quita el horario de R10 (normal: fuera de 7-22 pide passkey).
+    ...(outflowHours ? { outflowHours } : {}),
     // Solo desarrollo/demo: REMINDER_MIN_INTERVAL_MINUTES=0 o 1 permite repetir el recordatorio (normal: 72 h).
     ...(reminderMinIntervalMs !== undefined ? { reminderMinIntervalMs } : {}),
     log,
@@ -144,7 +153,7 @@ async function main(): Promise<void> {
   }
   const port = Number(env("PORT") ?? 3000);
   await app.listen({ port, host: "0.0.0.0" });
-  log({ msg: "api_started", port, migrations: applied, gateway: gateway.name, simulated: gateway.simulated, interpreter: interpreters[0]!.name, whatsapp: Boolean(whatsapp), phone_verification: verificationMode, reminders: schedule, reminder_interval_minutes: reminderMinIntervalMs === undefined ? 72 * 60 : reminderMinIntervalMs / 60_000 });
+  log({ msg: "api_started", port, migrations: applied, gateway: gateway.name, simulated: gateway.simulated, interpreter: interpreters[0]!.name, whatsapp: Boolean(whatsapp), phone_verification: verificationMode, reminders: schedule, reminder_interval_minutes: reminderMinIntervalMs === undefined ? 72 * 60 : reminderMinIntervalMs / 60_000, reminder_hours: reminderHours ?? [9, 20], outflow_hours: outflowHours ?? [7, 22] });
 }
 
 main().catch((e: unknown) => {
@@ -152,11 +161,3 @@ main().catch((e: unknown) => {
   process.exit(1);
 });
 
-/** "0-24" o "8-22" → [desde, hasta]; null si no es válido. */
-function parseHours(v?: string): [number, number] | null {
-  const m = /^\s*(\d{1,2})\s*-\s*(\d{1,2})\s*$/.exec(v ?? "");
-  if (!m) return null;
-  const from = Number(m[1]);
-  const to = Number(m[2]);
-  return from >= 0 && to <= 24 && from < to ? [from, to] : null;
-}

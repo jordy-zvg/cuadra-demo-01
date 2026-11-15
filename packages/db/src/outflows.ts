@@ -138,6 +138,8 @@ export async function loadOutflowContext(
   proposalId: string,
   now: Date,
   verify: AssertionVerifier,
+  /** Horario de salidas (R10) configurado en el proceso; la API y el executor deben usar el mismo. */
+  opts: { outflowHours?: readonly [number, number] } = {},
 ): Promise<OutflowContext> {
   const { row, parsed } = await loadVerifiedProposal(db, proposalId);
   const outflow = OutflowProposal.safeParse(parsed);
@@ -264,6 +266,7 @@ export async function loadOutflowContext(
       auditor_veto: row.auditorVeto,
     },
     approval,
+    ...(opts.outflowHours ? { outflow_hours: opts.outflowHours } : {}),
   };
 
   return {

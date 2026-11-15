@@ -11,16 +11,31 @@ import {
   evaluateResend,
   formatMxTime,
   formatMxWhen,
+  isAllDay,
   isMandateActive,
   isWithinMxHours,
   mandateCovers,
   matchDeposit,
   mxDateKey,
+  parseHourRange,
   proposalHash,
 } from "../src/index.js";
 
 // CDMX = UTC-6 todo el año.
 const at = (hhmm: string, day = "2026-11-14") => new Date(`${day}T${hhmm}:00-06:00`);
+
+describe("parseHourRange (REMINDER_HOURS / OUTFLOW_HOURS)", () => {
+  it("lee desde-hasta; 0-24 es el día completo", () => {
+    expect(parseHourRange("0-24")).toEqual([0, 24]);
+    expect(parseHourRange(" 8 - 22 ")).toEqual([8, 22]);
+    expect(isAllDay([0, 24])).toBe(true);
+    expect(isAllDay([1, 24])).toBe(false);
+    expect(isAllDay([0, 23])).toBe(false);
+  });
+  it("lo que no es un horario válido no cuenta (rige el horario normal)", () => {
+    for (const v of [undefined, "", "24-0", "7-7", "0-25", "a-b", "7", "-1-5", "7-22-1", "07:00-22:00"]) expect(parseHourRange(v)).toBeNull();
+  });
+});
 
 describe("time", () => {
   it("usa hora de CDMX", () => {
