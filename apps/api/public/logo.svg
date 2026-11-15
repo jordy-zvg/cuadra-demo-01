@@ -1,7 +1,10 @@
-<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 256 256" role="img" aria-label="Cuadra">
-  <!-- Cuadra · La tanda: cuatro piezas que giran alrededor de un centro vacío. La pieza menta es a
-       quien le toca recibir; el centro vacío dice que Cuadra nunca guarda el dinero; juntas forman
-       un cuadro (la cuenta cuadra, la cuadra del barrio). El borde blanco hace que se lea igual
-       sobre blanco que sobre la banda verde azulada. -->
-  <g fill="none" stroke="#FFFFFF" stroke-width="14" stroke-linejoin="round"><path d="M50 20H136A8 8 0 0 1 144 28V84A8 8 0 0 1 136 92H28A8 8 0 0 1 20 84V50A30 30 0 0 1 50 20Z"/><path d="M172 20H206A30 30 0 0 1 236 50V136A8 8 0 0 1 228 144H172A8 8 0 0 1 164 136V28A8 8 0 0 1 172 20Z"/><path d="M120 164H228A8 8 0 0 1 236 172V206A30 30 0 0 1 206 236H120A8 8 0 0 1 112 228V172A8 8 0 0 1 120 164Z"/><path d="M28 112H84A8 8 0 0 1 92 120V228A8 8 0 0 1 84 236H50A30 30 0 0 1 20 206V120A8 8 0 0 1 28 112Z"/></g><path fill="#43C1A0" d="M50 20H136A8 8 0 0 1 144 28V84A8 8 0 0 1 136 92H28A8 8 0 0 1 20 84V50A30 30 0 0 1 50 20Z"/><path fill="#126367" d="M172 20H206A30 30 0 0 1 236 50V136A8 8 0 0 1 228 144H172A8 8 0 0 1 164 136V28A8 8 0 0 1 172 20Z"/><path fill="#126367" d="M120 164H228A8 8 0 0 1 236 172V206A30 30 0 0 1 206 236H120A8 8 0 0 1 112 228V172A8 8 0 0 1 120 164Z"/><path fill="#126367" d="M28 112H84A8 8 0 0 1 92 120V228A8 8 0 0 1 84 236H50A30 30 0 0 1 20 206V120A8 8 0 0 1 28 112Z"/>
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 100 100" role="img" aria-label="Cuadra">
+  <!-- Cuadra: un cuadro hecho de dos piezas que encajan (cuentas que cuadran / una cuadra del barrio).
+       El borde blanco hace que se lea igual sobre blanco que sobre la banda verde azulada. -->
+  <g fill="none" stroke="#FFFFFF" stroke-width="7" stroke-linejoin="round">
+    <path d="M26 8H63V31H45A6 6 0 0 0 39 37V63A6 6 0 0 0 45 69H63V92H26A18 18 0 0 1 8 74V26A18 18 0 0 1 26 8Z"/>
+    <path d="M68 8H74A18 18 0 0 1 92 26V74A18 18 0 0 1 74 92H68V64H50A6 6 0 0 1 44 58V42A6 6 0 0 1 50 36H68Z"/>
+  </g>
+  <path fill="#126367" d="M26 8H63V31H45A6 6 0 0 0 39 37V63A6 6 0 0 0 45 69H63V92H26A18 18 0 0 1 8 74V26A18 18 0 0 1 26 8Z"/>
+  <path fill="#43C1A0" d="M68 8H74A18 18 0 0 1 92 26V74A18 18 0 0 1 74 92H68V64H50A6 6 0 0 1 44 58V42A6 6 0 0 1 50 36H68Z"/>
 </svg>
