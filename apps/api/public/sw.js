@@ -1,7 +1,8 @@
 // Service worker del portal (/login). Solo guarda la "cáscara" de la página para que abra rápido
 // y sin internet muestre el aviso de conexión. NUNCA guarda /api/*: saldos, cobros y pagos
 // siempre se piden en vivo al servidor.
-const CACHE = "cuadra-portal-v7";
+const CACHE = "cuadra-portal-v8";
+// v8: botón de letra grande solo con ícono; "Salir de mi cuenta" lleva a la bienvenida.
 // v7: sin la leyenda de proyecto independiente en la entrada.
 // v6: la bienvenida no repite el logo en el encabezado.
 // v5: contorno blanco más marcado en el logo.

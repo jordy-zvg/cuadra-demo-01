@@ -36,10 +36,11 @@ header .who{flex:1;min-width:0}
 header .who b{display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden;font-family:var(--font-head);font-weight:600;font-size:min(1rem,20px);line-height:1.2;letter-spacing:-.005em;overflow-wrap:anywhere}
 header .who span{display:block;font-size:.75rem;color:var(--on-brand-accent);margin-top:2px}
 header :focus-visible{outline-color:#fff}
-.size{flex:none;display:inline-flex;align-items:center;gap:.45em;min-height:max(2.8rem,56px);max-width:8.6em;padding:.3em .85em .3em .7em;border-radius:var(--r-md);border:1.5px solid var(--on-brand-line);background:transparent;color:#fff;font:inherit;font-weight:700;font-size:min(.75rem,15px);line-height:1.15;text-align:left;cursor:pointer}
-.size::before{content:"";flex:none;width:1.75em;height:1.75em;background:currentColor;-webkit-mask:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24'%3E%3Cpath d='M9 4v3h5v12h3V7h5V4H9zm-6 8h3v7h3v-7h3V9H3v3z'/%3E%3C/svg%3E") center/contain no-repeat;mask:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24'%3E%3Cpath d='M9 4v3h5v12h3V7h5V4H9zm-6 8h3v7h3v-7h3V9H3v3z'/%3E%3C/svg%3E") center/contain no-repeat}
-.size:hover{background:var(--on-brand-soft)}
-.size[aria-pressed="true"]{background:#fff;color:var(--c-teal-800);border-color:#fff}
+/* Letra grande: solo el ícono, discreto (sin borde ni texto); el nombre va en aria-label y title. */
+.size{flex:none;display:inline-grid;place-items:center;width:44px;height:44px;padding:0;border:0;border-radius:50%;background:transparent;color:#fff;opacity:.85;cursor:pointer}
+.size::before{content:"";width:24px;height:24px;background:currentColor;-webkit-mask:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24'%3E%3Cpath d='M9 4v3h5v12h3V7h5V4H9zm-6 8h3v7h3v-7h3V9H3v3z'/%3E%3C/svg%3E") center/contain no-repeat;mask:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24'%3E%3Cpath d='M9 4v3h5v12h3V7h5V4H9zm-6 8h3v7h3v-7h3V9H3v3z'/%3E%3C/svg%3E") center/contain no-repeat}
+.size:hover{background:var(--on-brand-soft);opacity:1}
+.size[aria-pressed="true"]{background:var(--on-brand-soft);opacity:1}
 
 /* Hoja blanca con borde superior redondo (todas las pantallas) */
 #app{flex:1;width:100%;padding:1.4rem var(--gut) 2.5rem}
@@ -203,7 +204,7 @@ button,.opt,.keys button{touch-action:manipulation}
   <div class="wrap">
     <img class="logo" src="/logo.svg" alt="">
     <div class="who"><b id="shop">Cuadra</b><span>Tu libreta de fiado, segura</span></div>
-    <button class="size" id="size" type="button" aria-pressed="false">Letra grande</button>
+    <button class="size" id="size" type="button" aria-pressed="false" aria-label="Letra grande" title="Letra grande"></button>
   </div>
 </header>
 <main class="sheet" id="app"></main>
@@ -234,7 +235,8 @@ const ic = (n) => `<svg class="ico" aria-hidden="true"><use href="/assets/icons.
 function applySize() {
   const xl = store.get("cuadra.size") === "xl";
   document.documentElement.dataset.size = xl ? "xl" : "";
-  $("#size").textContent = xl ? "Letra normal" : "Letra grande";
+  // El nombre del botón no cambia (aria-pressed dice si está activo); la ayuda al pasar el mouse sí.
+  $("#size").title = xl ? "Volver a letra normal" : "Letra grande";
   $("#size").setAttribute("aria-pressed", xl ? "true" : "false");
 }
 $("#size").onclick = () => { store.set("cuadra.size", store.get("cuadra.size") === "xl" ? "" : "xl"); applySize(); };
@@ -709,9 +711,13 @@ function signedIn(account, phone) {
   if (next && next.startsWith("/") && !next.startsWith("//") && next !== "/login" && next !== "/portal") { location.href = next; return; }
   home();
 }
+// "Salir de mi cuenta": cierra la sesión y olvida la cuenta en este teléfono; se vuelve a entrar
+// desde el inicio (bienvenida). Si la sesión solo venció, signedOut() pide nada más el NIP.
 async function logout() {
   try { await fetch("/api/auth/logout", { method: "POST", headers: { "content-type": "application/json" }, body: "{}" }); } catch {}
-  signedOut(); // vuelve a pedir solo el NIP; “No soy yo” lleva a la bienvenida
+  store.set("cuadra.cuenta", "");
+  me = null; history_.length = 0;
+  go("bienvenida", null, false);
 }
 async function authPost(url, body) {
   const r = await fetch(url, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify(body) });
