@@ -4,10 +4,11 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Cuadra · Fía, cobra y paga sin perder la cuenta</title>
-<meta name="description" content="Cuadra es la libreta de fiado en tu celular: anota lo que te deben, cobra por CoDi desde el banco de tu cliente y paga a tus proveedores solo con tu huella. Cuadra nunca guarda tu dinero.">
+<meta name="description" content="Anota el fiado como lo dices, cobra desde la app del banco de tu cliente y paga a tus proveedores solo con tu aprobación. Cuadra nunca guarda tu dinero.">
 <meta property="og:title" content="Cuadra · Fía, cobra y paga sin perder la cuenta">
-<meta property="og:description" content="La libreta de fiado en tu celular: anota, cobra por CoDi y paga a tus proveedores con tu huella.">
+<meta property="og:description" content="La libreta de fiado en tu celular, para los negocios de barrio.">
 <meta property="og:type" content="website">
+<meta property="og:locale" content="es_MX">
 <meta name="theme-color" content="#FFFFFF">
 <meta name="color-scheme" content="light">
 <link rel="icon" href="/logo.svg" type="image/svg+xml">
@@ -19,22 +20,24 @@
 @font-face{font-family:"Montserrat";font-style:normal;font-weight:100 900;font-display:swap;src:url("/assets/fonts/montserrat-latin-wght-normal.woff2") format("woff2")}
 @font-face{font-family:"Noto Sans";font-style:normal;font-weight:100 900;font-display:swap;src:url("/assets/fonts/noto-sans-latin-wght-normal.woff2") format("woff2")}
 
-/* Cuadra · landing. Blanco y limpio como los portales de banca actuales, con el verde azulado de la
-   marca y el dorado del logo como acento. Letra grande y una sola acción principal: Entrar. */
+/* Cuadra · landing. Blanca y limpia como los portales de banca actuales, con el verde azulado de la
+   marca y el dorado del logo solo como acento. Letra grande y una sola acción principal: Entrar. */
 :root{
   color-scheme:light;
   --bg:#FFFFFF;
-  --bg-soft:#F5FAF9;
+  --bg-soft:#F4FBFB;
+  --mint-surface:#F0FEFE;
   --ink:#0A1A17;
   --ink-2:#3B4F4B;          /* 8:1 sobre blanco */
-  --accent:#126367;         /* 7.3:1 sobre blanco */
+  --accent:#126367;         /* 6.99:1 sobre blanco */
   --accent-strong:#0F4447;
   --deep:#0D3336;
-  --accent-soft:#E6F4F2;
+  --accent-soft:#E3F5F2;
   --mint:#B4E9D9;
-  --gold:#AB8547;
+  --gold:#AB8547;           /* solo decoración: íconos y líneas */
+  --gold-ink:#7A5520;       /* dorado para texto: 5.8:1 sobre --gold-soft */
   --gold-soft:#F7EFE2;
-  --line:#DCE7E6;
+  --line:#D6E5E3;
   --focus:#2D49A0;
   --font-head:"Montserrat",system-ui,-apple-system,"Segoe UI",Roboto,sans-serif;
   --font-body:"Noto Sans",system-ui,-apple-system,"Segoe UI",Roboto,sans-serif;
@@ -60,43 +63,44 @@ a{color:var(--accent)}
 .ico{width:24px;height:24px;fill:currentColor;flex:none}
 .skip{position:absolute;left:-9999px;top:8px;background:var(--ink);color:#fff;padding:12px 16px;border-radius:10px;z-index:20}
 .skip:focus{left:16px}
-.sr{position:absolute;width:1px;height:1px;padding:0;margin:-1px;overflow:hidden;clip:rect(0 0 0 0);white-space:nowrap;border:0}
 
 /* Botones */
-.btn{display:inline-flex;align-items:center;justify-content:center;gap:10px;min-height:54px;padding:0 28px;border-radius:999px;
+.btn{display:inline-flex;align-items:center;justify-content:center;gap:10px;min-height:56px;padding:0 30px;border-radius:999px;
   font-family:var(--font-head);font-weight:700;font-size:18px;line-height:1.2;text-decoration:none;border:2px solid transparent;
-  transition:background-color .15s,color .15s,border-color .15s,box-shadow .15s,transform .15s}
+  transition:background-color .15s,color .15s,border-color .15s}
 .btn svg{width:22px;height:22px;fill:currentColor}
 .btn-primary{background:var(--accent);color:#fff;box-shadow:0 8px 20px -10px rgba(18,99,103,.65)}
 .btn-primary:hover{background:var(--accent-strong)}
-.btn-ghost{background:#fff;color:var(--accent-strong);border-color:var(--line)}
+.btn-ghost{background:#fff;color:var(--accent-strong);border-color:#9DB9B6}
 .btn-ghost:hover{border-color:var(--accent);background:var(--accent-soft)}
 .btn-white{background:#fff;color:var(--accent-strong)}
 .btn-white:hover{background:var(--accent-soft)}
+.btn-onband{background:transparent;color:#fff;border-color:rgba(255,255,255,.7)}
+.btn-onband:hover{background:rgba(255,255,255,.12)}
 
 /* Encabezado */
-.top{position:sticky;top:0;z-index:10;background:rgba(255,255,255,.88);backdrop-filter:saturate(1.6) blur(14px);-webkit-backdrop-filter:saturate(1.6) blur(14px);border-bottom:1px solid transparent;transition:border-color .2s}
+.top{position:sticky;top:0;z-index:10;background:rgba(255,255,255,.92);backdrop-filter:saturate(1.6) blur(12px);-webkit-backdrop-filter:saturate(1.6) blur(12px);border-bottom:1px solid transparent;transition:border-color .2s}
 .top.scrolled{border-bottom-color:var(--line)}
 .top .wrap{display:flex;align-items:center;gap:24px;min-height:72px}
 .brand{display:inline-flex;align-items:center;gap:10px;font-family:var(--font-head);font-weight:800;font-size:22px;color:var(--ink);text-decoration:none;letter-spacing:-.015em;min-height:48px}
 .brand img{width:36px;height:36px}
-.nav{display:flex;gap:6px;margin-left:auto}
+.nav{display:flex;gap:4px;margin-left:auto}
 .nav a{display:inline-flex;align-items:center;min-height:44px;padding:0 14px;border-radius:999px;color:var(--ink-2);font-weight:600;font-size:16px;text-decoration:none}
 .nav a:hover{color:var(--accent-strong);background:var(--accent-soft)}
 .top .btn{min-height:46px;padding:0 22px;font-size:16px}
 
 /* Héroe */
-.hero{position:relative;padding:clamp(40px,6vw,88px) 0 clamp(64px,8vw,112px);background:
-  radial-gradient(900px 520px at 88% 8%,rgba(180,233,217,.55),rgba(180,233,217,0) 65%),
-  radial-gradient(700px 420px at 0% 100%,rgba(247,239,226,.9),rgba(247,239,226,0) 60%),#fff}
-.hero .wrap{display:grid;grid-template-columns:minmax(0,1.08fr) minmax(0,.92fr);gap:clamp(40px,5vw,72px);align-items:center}
+.hero{position:relative;padding:clamp(36px,6vw,88px) 0 clamp(64px,8vw,112px);background:
+  radial-gradient(900px 520px at 88% 8%,rgba(180,233,217,.5),rgba(180,233,217,0) 65%),
+  radial-gradient(700px 420px at 0% 100%,rgba(247,239,226,.85),rgba(247,239,226,0) 60%),#fff}
+.hero .wrap{display:grid;grid-template-columns:minmax(0,1.15fr) minmax(0,.85fr);gap:clamp(40px,5vw,72px);align-items:center}
 .pill{display:inline-flex;align-items:center;gap:8px;padding:7px 14px 7px 10px;border-radius:999px;background:#fff;border:1px solid var(--line);box-shadow:var(--shadow-sm);color:var(--accent-strong);font-weight:600;font-size:15px;line-height:1.3}
 .pill .ico{width:20px;height:20px;color:var(--gold)}
-.hero h1{margin-top:22px;font-size:clamp(40px,5.4vw,70px);font-weight:800;letter-spacing:-.035em;line-height:1.02;text-wrap:balance}
-.hero .lead{margin-top:22px;font-size:clamp(19px,1.5vw,21px);line-height:1.55;color:var(--ink-2);max-width:34ch}
+.hero h1{margin-top:22px;font-size:clamp(38px,4.2vw,56px);font-weight:800;letter-spacing:-.03em;line-height:1.05;text-wrap:balance}
+.hero .lead{margin-top:22px;font-size:clamp(19px,1.5vw,21px);line-height:1.55;color:var(--ink-2);max-width:36ch}
 .actions{display:flex;flex-wrap:wrap;gap:12px;margin-top:32px}
 .actions .btn{min-height:58px;padding:0 32px;font-size:19px}
-.trustrow{list-style:none;padding:0;margin:34px 0 0;display:flex;flex-wrap:wrap;gap:12px 24px}
+.trustrow{list-style:none;padding:0;margin:32px 0 0;display:flex;flex-wrap:wrap;gap:12px 24px}
 .trustrow li{display:flex;align-items:center;gap:8px;font-size:16px;font-weight:600;color:var(--ink-2)}
 .trustrow .ico{width:22px;height:22px;color:var(--accent)}
 
@@ -107,49 +111,60 @@ a{color:var(--accent)}
 .device::after{content:"";position:absolute;top:calc(var(--dw)*.05);left:50%;transform:translateX(-50%);width:calc(var(--dw)*.04);height:calc(var(--dw)*.04);border-radius:50%;background:#0b1513;box-shadow:0 0 0 2px rgba(255,255,255,.08)}
 
 .visual{position:relative;display:flex;justify-content:center;padding:24px 0}
-.visual .shape{position:absolute;width:min(78%,360px);aspect-ratio:1;border-radius:22%;background:linear-gradient(150deg,var(--accent) 0%,var(--deep) 100%);transform:rotate(-8deg);top:12%;opacity:.95}
+.visual .shape{position:absolute;width:min(78%,360px);aspect-ratio:1;border-radius:22%;background:linear-gradient(150deg,var(--accent) 0%,var(--deep) 100%);transform:rotate(-8deg);top:12%}
 .visual .shape::after{content:"";position:absolute;inset:0;border-radius:inherit;background-image:var(--pattern);background-size:60px 60px}
 .visual .device{z-index:1}
-.float{position:absolute;z-index:2;display:flex;align-items:center;gap:12px;padding:12px 16px 12px 12px;border-radius:18px;background:#fff;border:1px solid var(--line);box-shadow:var(--shadow-lg);font-size:15px;line-height:1.3;max-width:250px}
+.float{position:absolute;z-index:2;display:flex;align-items:center;gap:12px;padding:12px 16px 12px 12px;border-radius:var(--r-md);background:#fff;border:1px solid var(--line);box-shadow:var(--shadow-lg);font-size:15px;line-height:1.3;white-space:nowrap}
 .float b{display:block;font-family:var(--font-head);font-size:16px;color:var(--ink)}
 .float span{color:var(--ink-2)}
 .float .dot{width:40px;height:40px;border-radius:50%;display:grid;place-items:center;flex:none}
 .float .dot .ico{width:22px;height:22px}
 .dot.ok{background:#DFF7EE;color:#00694F}
-.dot.note{background:var(--gold-soft);color:#7A5520}
-.float{white-space:nowrap}
+.dot.note{background:var(--gold-soft);color:var(--gold-ink)}
 .float.f1{top:21%;right:-10%}
-.float.f2{bottom:19%;left:-12%}
+.float.f2{bottom:7%;left:-12%}
 
 /* Secciones */
 .sec{padding:clamp(72px,9vw,128px) 0}
 .sec.soft{background:var(--bg-soft)}
 .eyebrow{display:inline-flex;align-items:center;gap:10px;font-family:var(--font-head);font-weight:700;font-size:15px;letter-spacing:.1em;text-transform:uppercase;color:var(--accent)}
 .eyebrow::before{content:"";width:28px;height:3px;border-radius:2px;background:var(--gold)}
-.sec h2{margin-top:16px;font-size:clamp(32px,4vw,52px);font-weight:800;max-width:20ch;text-wrap:balance}
-.sec .sub{margin-top:18px;font-size:clamp(18px,1.4vw,20px);color:var(--ink-2);max-width:52ch}
+.sec h2{margin-top:16px;font-size:clamp(32px,4vw,50px);font-weight:800;max-width:20ch;text-wrap:balance}
+.sec .sub{margin-top:18px;font-size:clamp(18px,1.4vw,20px);color:var(--ink-2);max-width:52ch;text-wrap:pretty}
 .head-center{text-align:center}
 .head-center h2,.head-center .sub{margin-left:auto;margin-right:auto}
 
-/* Cómo funciona: tarjetas con la parte de arriba de la pantalla */
+/* Cómo funciona: tarjetas con la parte de arriba de cada pantalla */
 .steps{list-style:none;padding:0;margin:clamp(40px,5vw,64px) 0 0;display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:clamp(18px,2.4vw,28px)}
-.step{position:relative;display:flex;flex-direction:column;border-radius:var(--r-xl);background:#fff;border:1px solid var(--line);box-shadow:var(--shadow-sm);overflow:hidden}
+.step{display:flex;flex-direction:column;border-radius:var(--r-xl);background:#fff;border:1px solid var(--line);box-shadow:var(--shadow-sm);overflow:hidden}
 .step .txt{padding:28px 28px 0}
 .num{display:inline-grid;place-items:center;width:40px;height:40px;border-radius:12px;background:var(--accent);color:#fff;font-family:var(--font-head);font-weight:800;font-size:18px}
 .step h3{margin-top:18px;font-size:clamp(22px,1.9vw,26px);font-weight:800}
-.step p{margin-top:10px;color:var(--ink-2);font-size:17px}
-.step .stage{margin-top:28px;flex:1;display:flex;justify-content:center;align-items:flex-start;background:linear-gradient(180deg,#fff 0%,var(--accent-soft) 100%);padding-top:28px;height:340px;overflow:hidden}
-.step .device{--dw:250px;box-shadow:inset 0 0 0 1.5px #3c4b47,var(--shadow-lg)}
+.step p{margin-top:10px;color:var(--ink-2)}
+.step .txt{flex:1}
+.step .stage{margin-top:28px;flex:none;display:flex;justify-content:center;align-items:flex-start;background:linear-gradient(180deg,#fff 0%,var(--accent-soft) 100%);padding-top:28px;height:360px;overflow:hidden}
+.step .device{--dw:270px;box-shadow:inset 0 0 0 1.5px #3c4b47,var(--shadow-lg)}
 
-/* Funciones: cuadrícula tipo "bento" */
+/* Funciones: cuadrícula tipo "bento" con una tarjeta grande */
 .bento{list-style:none;padding:0;margin:clamp(40px,5vw,64px) 0 0;display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:clamp(16px,2vw,24px)}
-.card{border-radius:var(--r-lg);background:#fff;border:1px solid var(--line);padding:clamp(24px,2.4vw,32px);box-shadow:var(--shadow-sm);transition:transform .2s,box-shadow .2s}
-.card:hover{transform:translateY(-2px);box-shadow:var(--shadow-lg)}
+.card{border-radius:var(--r-lg);background:#fff;border:1px solid var(--line);padding:clamp(24px,2.4vw,32px);box-shadow:var(--shadow-sm)}
 .circ{width:52px;height:52px;border-radius:16px;display:grid;place-items:center;background:var(--accent-soft);color:var(--accent)}
 .circ .ico{width:28px;height:28px}
 .card h3{margin-top:20px;font-size:clamp(20px,1.6vw,23px);font-weight:800;line-height:1.2}
-.card p{margin-top:8px;color:var(--ink-2);font-size:17px}
-.card.gold .circ{background:var(--gold-soft);color:#7A5520}
+.card p{margin-top:8px;color:var(--ink-2)}
+.card.gold .circ{background:var(--gold-soft);color:var(--gold-ink)}
+.card.wide{grid-column:span 2;display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1fr);gap:28px;align-items:center;background:linear-gradient(135deg,#fff 0%,var(--mint-surface) 100%)}
+/* Mini conversación: los mismos textos que dice la app */
+.chat{display:flex;flex-direction:column;gap:10px;padding:18px;border-radius:20px;background:#fff;border:1px solid var(--line);box-shadow:var(--shadow-sm);font-size:16px;line-height:1.4}
+.bubble{max-width:92%;padding:10px 14px;border-radius:16px}
+.bubble.me{align-self:flex-end;background:var(--accent);color:#fff;border-bottom-right-radius:6px}
+.bubble.cu{align-self:flex-start;background:var(--mint-surface);border:1px solid #CFEDEA;color:var(--ink);border-bottom-left-radius:6px}
+.bubble.cu small{display:flex;align-items:center;gap:6px;font-size:13px;font-weight:700;color:var(--ink-2);margin-bottom:4px}
+.bubble.cu small img{width:16px;height:16px}
+.chips{display:flex;gap:8px;margin-top:10px;flex-wrap:wrap}
+.chips span{display:inline-flex;align-items:center;min-height:36px;padding:0 14px;border-radius:999px;font-weight:700;font-size:14px}
+.chips .yes{background:#007F64;color:#fff}
+.chips .no{background:#fff;border:1.5px solid var(--line);color:var(--ink)}
 
 /* Seguridad: banda oscura */
 .secure{position:relative;color:#fff;background:linear-gradient(160deg,#0D3336 0%,#0F4447 50%,#126367 100%)}
@@ -157,16 +172,17 @@ a{color:var(--accent)}
 .secure .wrap{position:relative;display:grid;grid-template-columns:minmax(0,1.2fr) minmax(0,.8fr);gap:clamp(40px,6vw,96px);align-items:center}
 .secure .eyebrow{color:var(--mint)}
 .secure h2{color:#fff}
-.secure .sub{color:rgba(255,255,255,.82)}
+.secure .sub{color:rgba(255,255,255,.85)}
 .guard{list-style:none;padding:0;margin:40px 0 0;display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:28px 32px}
 .guard li{display:grid;grid-template-columns:48px 1fr;gap:4px 16px;align-items:start}
 .guard .circ{width:48px;height:48px;border-radius:14px;background:rgba(255,255,255,.1);color:var(--mint);grid-row:span 2}
 .guard .circ .ico{width:26px;height:26px}
 .guard h3{color:#fff;font-size:19px;font-weight:700;line-height:1.3;margin-top:2px}
-.guard p{color:rgba(255,255,255,.8);font-size:16px}
-.secure .visual .shape{display:none}
+.guard p{color:rgba(255,255,255,.82);font-size:17px}
+.never{display:flex;align-items:flex-start;gap:12px;margin-top:36px;padding:16px 18px;border-radius:var(--r-md);background:rgba(255,255,255,.08);border:1px solid rgba(255,255,255,.18);font-weight:600;max-width:40em}
+.never .ico{color:var(--mint);margin-top:1px}
 .secure .device{--dw:280px}
-.secure .float.f3{bottom:20%;left:-4%}
+.secure .float.f3{bottom:6%;left:-10%}
 
 /* Preguntas */
 .faq-wrap{display:grid;grid-template-columns:minmax(0,.8fr) minmax(0,1.2fr);gap:clamp(32px,6vw,96px);align-items:start}
@@ -177,25 +193,25 @@ a{color:var(--accent)}
 .faq summary::after{content:"";flex:none;width:32px;height:32px;border-radius:50%;background:var(--accent-soft) url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24'%3E%3Cpath fill='%23126367' d='M19 13h-6v6h-2v-6H5v-2h6V5h2v6h6z'/%3E%3C/svg%3E") center/20px no-repeat;transition:transform .2s}
 .faq details[open] summary::after{transform:rotate(45deg)}
 .faq summary:hover{color:var(--accent-strong)}
-.faq .a{padding:0 48px 22px 0;color:var(--ink-2);font-size:17px}
+.faq .a{padding:0 48px 22px 0;color:var(--ink-2)}
 
 /* Cierre */
 .cta-box{position:relative;overflow:hidden;border-radius:var(--r-xl);padding:clamp(48px,7vw,88px) clamp(24px,5vw,64px);text-align:center;color:#fff;background:linear-gradient(150deg,#0D3336 0%,#105658 55%,#1A7579 100%)}
 .cta-box::before{content:"";position:absolute;inset:0;background-image:var(--pattern);background-size:72px 72px}
 .cta-box > *{position:relative}
 .cta-box img{width:72px;height:72px;margin:0 auto 24px}
-.cta-box h2{color:#fff;margin:0 auto;max-width:18ch;font-size:clamp(32px,4vw,52px);font-weight:800}
-.cta-box p{margin:16px auto 0;color:rgba(255,255,255,.85);font-size:clamp(18px,1.4vw,20px)}
+.cta-box h2{color:#fff;margin:0 auto;max-width:18ch;font-size:clamp(32px,4vw,50px);font-weight:800}
+.cta-box p{margin:16px auto 0;color:rgba(255,255,255,.88);font-size:clamp(18px,1.4vw,20px);max-width:40ch}
 .cta-box .actions{justify-content:center}
 
 footer{padding:56px 0 40px;font-size:16px;color:var(--ink-2)}
 .foot{display:grid;grid-template-columns:minmax(0,1.4fr) repeat(2,minmax(0,1fr));gap:32px}
-.foot p{margin-top:12px;max-width:36ch}
+.foot p{margin-top:12px;max-width:38ch}
 .foot h3{font-size:14px;letter-spacing:.1em;text-transform:uppercase;color:var(--ink);font-weight:700}
-.foot ul{list-style:none;padding:0;margin:12px 0 0;display:grid;gap:2px}
-.foot ul a{display:inline-flex;align-items:center;min-height:40px;color:var(--ink-2);text-decoration:none}
+.foot ul{list-style:none;padding:0;margin:12px 0 0;display:grid;gap:0}
+.foot ul a{display:inline-flex;align-items:center;min-height:44px;color:var(--ink-2);text-decoration:none}
 .foot ul a:hover{color:var(--accent-strong);text-decoration:underline;text-underline-offset:4px}
-.legal{margin-top:40px;padding-top:24px;border-top:1px solid var(--line);font-size:15px}
+.legal{margin-top:40px;padding-top:24px;border-top:1px solid var(--line);font-size:15px;display:flex;flex-wrap:wrap;gap:8px 24px;justify-content:space-between}
 
 /* Tableta */
 @media (max-width:1000px){
@@ -205,8 +221,9 @@ footer{padding:56px 0 40px;font-size:16px;color:var(--ink-2)}
   .hero .lead{max-width:44ch}
   .visual{margin-top:8px}
   .steps{grid-template-columns:1fr;max-width:560px;margin-left:auto;margin-right:auto}
-  .step .stage{height:300px}
+  .step .stage{height:320px}
   .bento{grid-template-columns:repeat(2,minmax(0,1fr))}
+  .card.wide{grid-column:1 / -1}
   .secure .wrap{grid-template-columns:1fr}
   .faq-wrap{grid-template-columns:1fr}
   .foot{grid-template-columns:1fr 1fr}
@@ -214,23 +231,23 @@ footer{padding:56px 0 40px;font-size:16px;color:var(--ink-2)}
 }
 /* Celular */
 @media (max-width:640px){
-  body{font-size:17px}
   .top .wrap{min-height:64px}
   .brand{font-size:20px}
   .brand img{width:32px;height:32px}
   .actions .btn{width:100%}
   .trustrow{flex-direction:column;gap:10px}
   .device{--dw:260px}
-  .float{font-size:13px;padding:8px 12px 8px 8px;gap:8px}
-  .float b{font-size:14px}
-  .float .dot{width:30px;height:30px}
-  .float .dot .ico{width:18px;height:18px}
-  .float.f1{left:0;right:auto;top:auto;bottom:9%}
+  .float{font-size:14px;padding:10px 14px 10px 10px;gap:10px}
+  .float b{font-size:15px}
+  .float .dot{width:34px;height:34px}
+  .float .dot .ico{width:20px;height:20px}
+  .float.f1{left:0;right:auto;top:auto;bottom:4%}
   .float.f2{display:none}
   .bento{grid-template-columns:1fr}
+  .card.wide{grid-template-columns:1fr}
   .guard{grid-template-columns:1fr}
   .secure .device{--dw:250px}
-  .secure .float.f3{left:0;bottom:12%}
+  .secure .float.f3{left:0;bottom:4%}
   .faq .a{padding-right:0}
   .foot{grid-template-columns:1fr}
 }
@@ -262,23 +279,23 @@ footer{padding:56px 0 40px;font-size:16px;color:var(--ink-2)}
       <div>
         <p class="pill"><svg class="ico" aria-hidden="true"><use href="/assets/icons.svg#i-storefront"/></svg>Hecho para los negocios de barrio</p>
         <h1 id="titulo">Fía, cobra y paga <span class="hl">sin perder la&nbsp;cuenta.</span></h1>
-        <p class="lead">Anota el fiado como lo dices, cobra por CoDi desde el banco de tu cliente y paga a tus proveedores solo con tu huella.</p>
+        <p class="lead">Anota como lo dices, cobra desde la app del banco de tu cliente y paga a tus proveedores solo con tu aprobación.</p>
         <div class="actions">
           <a class="btn btn-primary" href="/login">Entrar
             <svg aria-hidden="true" viewBox="0 0 24 24"><path d="M12 4l-1.41 1.41L16.17 11H4v2h12.17l-5.58 5.59L12 20l8-8z"/></svg></a>
-          <a class="btn btn-ghost" href="#como-funciona">Ver cómo funciona</a>
+          <a class="btn btn-ghost" href="/login?registro">Crear mi cuenta</a>
         </div>
         <ul class="trustrow" aria-label="Lo básico">
           <li><svg class="ico" aria-hidden="true"><use href="/assets/icons.svg#i-check_circle"/></svg>Cuadra nunca guarda tu dinero</li>
           <li><svg class="ico" aria-hidden="true"><use href="/assets/icons.svg#i-check_circle"/></svg>Sin terminal ni tarjeta</li>
-          <li><svg class="ico" aria-hidden="true"><use href="/assets/icons.svg#i-check_circle"/></svg>Letra grande si la necesitas</li>
+          <li><svg class="ico" aria-hidden="true"><use href="/assets/icons.svg#i-check_circle"/></svg>Pagos solo con tu aprobación</li>
         </ul>
       </div>
       <div class="visual">
         <span class="shape" aria-hidden="true"></span>
         <div class="device"><img src="/assets/landing/inicio.webp" width="390" height="844" fetchpriority="high" alt="Inicio de Cuadra: «Hola, Mari. Te deben en total $265, 2 clientes te deben», con los botones Anotar fiado, Cobrar, ¿Quién me debe?, Pagar a proveedor y Decirlo con mi voz."></div>
-        <div class="float f1" aria-hidden="true"><span class="dot ok"><svg class="ico"><use href="/assets/icons.svg#i-check_circle"/></svg></span><span><b>Doña Lupe te pagó</b><span>$185.00 por CoDi</span></span></div>
-        <div class="float f2" aria-hidden="true"><span class="dot note"><svg class="ico"><use href="/assets/icons.svg#i-edit_note"/></svg></span><span><b>Anotado</b><span>$60.00 de fiado a Beto</span></span></div>
+        <div class="float f1" aria-hidden="true"><span class="dot ok"><svg class="ico"><use href="/assets/icons.svg#i-check_circle"/></svg></span><span><b>Doña Lupe te pagó $185</b><span>Por CoDi · queda en ceros</span></span></div>
+        <div class="float f2" aria-hidden="true"><span class="dot note"><svg class="ico"><use href="/assets/icons.svg#i-edit_note"/></svg></span><span><b>Listo, anotado</b><span>Beto te debe $80</span></span></div>
       </div>
     </div>
   </section>
@@ -289,20 +306,20 @@ footer{padding:56px 0 40px;font-size:16px;color:var(--ink-2)}
       <div class="head-center">
         <p class="eyebrow">Cómo funciona</p>
         <h2 id="t-como">Del cuaderno <span class="hl">a tu celular.</span></h2>
-        <p class="sub">Escribe o di lo que pasó, como siempre. Cuadra te pregunta antes de anotar y lleva la cuenta por ti.</p>
+        <p class="sub">Con tus palabras de siempre, sin libreta ni calculadora. Cuadra te pregunta antes de anotar y lleva la cuenta por ti.</p>
       </div>
       <ol class="steps">
         <li class="step">
-          <div class="txt"><span class="num" aria-hidden="true">1</span><h3>Anota el fiado</h3><p>«Doña Lupe se llevó $60». Cuadra te pregunta si está bien y lo apunta en su cuenta.</p></div>
+          <div class="txt"><span class="num" aria-hidden="true">1</span><h3>Anota el fiado</h3><p>Escribe o di «Doña Lupe se llevó $60» y Cuadra te pregunta si está bien antes de anotarlo.</p></div>
           <div class="stage"><div class="device"><img src="/assets/landing/fiado.webp" width="390" height="844" loading="lazy" alt="Cuadra pregunta «¿Está bien así? Anoto $60.00 de fiado a Doña Lupe. ¿Confirmas?» con los botones Sí, anotar y No, cancelar."></div></div>
         </li>
         <li class="step">
-          <div class="txt"><span class="num" aria-hidden="true">2</span><h3>Cobra por CoDi</h3><p>Le llega el cobro a la app de su banco y paga desde ahí, sin tarjeta ni CLABE.</p></div>
+          <div class="txt"><span class="num" aria-hidden="true">2</span><h3>Cobra por CoDi</h3><p>A tu cliente le llega el cobro en la app de su banco; lo acepta y el dinero pasa a tu cuenta.</p></div>
           <div class="stage"><div class="device"><img src="/assets/landing/cobrar.webp" width="390" height="844" loading="lazy" alt="Pantalla «¿Cómo le cobras a Beto Ramírez? Te debe $80», con las opciones Mandarle el cobro a su celular y Mostrarle un código QR aquí."></div></div>
         </li>
         <li class="step">
-          <div class="txt"><span class="num" aria-hidden="true">3</span><h3>Ve quién te debe</h3><p>Cada pago baja la cuenta de tu cliente solito. Si no sabe de quién es, te pregunta.</p></div>
-          <div class="stage"><div class="device"><img src="/assets/landing/inicio.webp" width="390" height="844" loading="lazy" alt="Inicio de Cuadra con el total que te deben y cuántos clientes te deben."></div></div>
+          <div class="txt"><span class="num" aria-hidden="true">3</span><h3>Tus cuentas cuadran solas</h3><p>Cuando te pagan, Cuadra baja la cuenta de ese cliente; si no sabe de quién es el pago, no adivina.</p></div>
+          <div class="stage"><div class="device"><img src="/assets/landing/deben.webp" width="390" height="844" loading="lazy" alt="Pantalla «¿Quién me debe?» con la lista de clientes y lo que debe cada uno."></div></div>
         </li>
       </ol>
     </div>
@@ -314,12 +331,22 @@ footer{padding:56px 0 40px;font-size:16px;color:var(--ink-2)}
       <p class="eyebrow">Todo en un lugar</p>
       <h2 id="t-funciones">Tu negocio, <span class="hl">en una libreta que sí cuadra.</span></h2>
       <ul class="bento">
-        <li class="card"><span class="circ"><svg class="ico" aria-hidden="true"><use href="/assets/icons.svg#i-forum"/></svg></span><h3>Por chat, voz o WhatsApp</h3><p>Escribe o manda una nota de voz como siempre. Cuadra entiende y te pide confirmar.</p></li>
-        <li class="card"><span class="circ"><svg class="ico" aria-hidden="true"><use href="/assets/icons.svg#i-qr_code_scanner"/></svg></span><h3>Cobros por CoDi</h3><p>Manda la solicitud a su celular o muéstrale un QR. El dinero llega a tu cuenta.</p></li>
-        <li class="card"><span class="circ"><svg class="ico" aria-hidden="true"><use href="/assets/icons.svg#i-task_alt"/></svg></span><h3>Pagos que se acomodan solos</h3><p>Cada abono se liga al cliente correcto. Si no hay forma de saber de quién es, te pregunta.</p></li>
-        <li class="card gold"><span class="circ"><svg class="ico" aria-hidden="true"><use href="/assets/icons.svg#i-event_repeat"/></svg></span><h3>Tandas sin pozo</h3><p>Cada aportación va directo a la cuenta de quien le toca. Cuadra lleva el orden y avisa.</p></li>
-        <li class="card"><span class="circ"><svg class="ico" aria-hidden="true"><use href="/assets/icons.svg#i-local_shipping"/></svg></span><h3>Proveedores con tu huella</h3><p>Solo le pagas a quien autorizaste, y cada pago sale con tu huella o un permiso que firmaste.</p></li>
-        <li class="card"><span class="circ"><svg class="ico" aria-hidden="true"><use href="/assets/icons.svg#i-text_increase"/></svg></span><h3>Lo que debo y letra grande</h3><p>Ve lo que debes en otras tiendas y agranda la letra con un toque.</p></li>
+        <li class="card wide">
+          <div>
+            <span class="circ"><svg class="ico" aria-hidden="true"><use href="/assets/icons.svg#i-forum"/></svg></span>
+            <h3>Fiado con botones, con tu voz o por WhatsApp</h3>
+            <p>Dilo como siempre. Cuadra entiende, te pregunta «¿Está bien así?» y solo anota cuando tú confirmas.</p>
+          </div>
+          <div class="chat" aria-hidden="true">
+            <div class="bubble me">Doña Lupe se llevó $60</div>
+            <div class="bubble cu"><small><img src="/logo.svg" alt="">Cuadra dice:</small>Anoto $60.00 de fiado a Doña Lupe. ¿Confirmas?
+              <div class="chips"><span class="yes">Sí, anotar</span><span class="no">No, cancelar</span></div></div>
+          </div>
+        </li>
+        <li class="card"><span class="circ"><svg class="ico" aria-hidden="true"><use href="/assets/icons.svg#i-qr_code_scanner"/></svg></span><h3>Cobra por CoDi o QR</h3><p>Si tu cliente aceptó tus avisos, le llega el cobro al celular; si está en la tienda, escanea tu QR.</p></li>
+        <li class="card gold"><span class="circ"><svg class="ico" aria-hidden="true"><use href="/assets/icons.svg#i-event_repeat"/></svg></span><h3>Tandas sin pozo</h3><p>Cada aportación va directo a la cuenta de quien le toca; Cuadra te dice quién falta.</p></li>
+        <li class="card"><span class="circ"><svg class="ico" aria-hidden="true"><use href="/assets/icons.svg#i-local_shipping"/></svg></span><h3>Proveedores, con tu aprobación</h3><p>Solo le pagas a tu lista de proveedores, y cada pago lo apruebas en tu celular.</p></li>
+        <li class="card"><span class="circ"><svg class="ico" aria-hidden="true"><use href="/assets/icons.svg#i-text_increase"/></svg></span><h3>Letra grande y «Lo que debo»</h3><p>Agranda la letra con un toque y ve lo que tú debes en otras tiendas.</p></li>
       </ul>
     </div>
   </section>
@@ -330,17 +357,18 @@ footer{padding:56px 0 40px;font-size:16px;color:var(--ink-2)}
       <div>
         <p class="eyebrow">Seguridad</p>
         <h2 id="t-seguridad">Tu dinero se queda <span style="color:var(--mint)">en tu cuenta.</span></h2>
-        <p class="sub">Cuadra lleva la cuenta; el dinero va de banco a banco. Y nada sale sin que tú lo firmes.</p>
+        <p class="sub">Cuadra lleva la cuenta; lo que te pagan va directo a tu cuenta. Y nada sale sin tu aprobación.</p>
         <ul class="guard">
-          <li><span class="circ"><svg class="ico" aria-hidden="true"><use href="/assets/icons.svg#i-lock"/></svg></span><h3>Cuadra nunca guarda tu dinero</h3><p>Los cobros llegan a tu cuenta bancaria. Cuadra solo anota.</p></li>
-          <li><span class="circ"><svg class="ico" aria-hidden="true"><use href="/assets/icons.svg#i-fingerprint"/></svg></span><h3>Un «sí» en el chat no basta</h3><p>Para pagar se necesita tu huella o un permiso que ya firmaste.</p></li>
-          <li><span class="circ"><svg class="ico" aria-hidden="true"><use href="/assets/icons.svg#i-schedule"/></svg></span><h3>Proveedores nuevos esperan 24&nbsp;h</h3><p>Así nadie te cambia una cuenta de un momento a otro.</p></li>
-          <li><span class="circ"><svg class="ico" aria-hidden="true"><use href="/assets/icons.svg#i-pan_tool"/></svg></span><h3>Si algo no cuadra, se frena</h3><p>Cuadra compara tu cuenta con el banco y detiene los pagos si ve una diferencia.</p></li>
+          <li><span class="circ"><svg class="ico" aria-hidden="true"><use href="/assets/icons.svg#i-lock"/></svg></span><h3>Cuadra nunca guarda tu dinero</h3><p>Lo que te pagan llega a tu cuenta; Cuadra solo anota y te avisa.</p></li>
+          <li><span class="circ"><svg class="ico" aria-hidden="true"><use href="/assets/icons.svg#i-verified_user"/></svg></span><h3>Un «sí» en el chat no basta</h3><p>Cada pago se aprueba en tu celular o lo cubre un permiso con topes que ya firmaste.</p></li>
+          <li><span class="circ"><svg class="ico" aria-hidden="true"><use href="/assets/icons.svg#i-schedule"/></svg></span><h3>Proveedores nuevos, con candado</h3><p>En sus primeras 24&nbsp;h, cada pago pide tu aprobación, aunque tengas un permiso firmado.</p></li>
+          <li><span class="circ"><svg class="ico" aria-hidden="true"><use href="/assets/icons.svg#i-pan_tool"/></svg></span><h3>Si algo no cuadra, se frenan los pagos</h3><p>Cuadra compara lo anotado con tu cuenta y, si ve una diferencia, detiene los pagos.</p></li>
         </ul>
+        <p class="never"><svg class="ico" aria-hidden="true"><use href="/assets/icons.svg#i-privacy_tip"/></svg><span>Cuadra nunca te pedirá tu NIP por llamada ni por WhatsApp.</span></p>
       </div>
       <div class="visual">
-        <div class="device"><img src="/assets/landing/proveedores.webp" width="390" height="844" loading="lazy" alt="Pantalla «¿A qué proveedor le pagas?»: solo aparecen los proveedores autorizados, Refrescos Pérez y Panadería San Juan, y el aviso de que para agregar uno nuevo se necesita tu huella y esperar 24 horas."></div>
-        <div class="float f3" aria-hidden="true"><span class="dot ok"><svg class="ico"><use href="/assets/icons.svg#i-fingerprint"/></svg></span><span><b>Pago firmado</b><span>con tu huella</span></span></div>
+        <div class="device"><img src="/assets/landing/proveedores.webp" width="390" height="844" loading="lazy" alt="Pantalla «¿A qué proveedor le pagas?»: solo aparecen los proveedores autorizados, Refrescos Pérez y Panadería San Juan, y el aviso de que agregar uno nuevo necesita tu aprobación."></div>
+        <div class="float f3" aria-hidden="true"><span class="dot ok"><svg class="ico"><use href="/assets/icons.svg#i-verified_user"/></svg></span><span><b>Aprobado en tu celular</b><span>Pago a Refrescos Pérez</span></span></div>
       </div>
     </div>
   </section>
@@ -349,17 +377,17 @@ footer{padding:56px 0 40px;font-size:16px;color:var(--ink-2)}
   <section class="sec" id="preguntas" aria-labelledby="t-preguntas">
     <div class="wrap faq-wrap">
       <div>
-        <p class="eyebrow">Preguntas</p>
-        <h2 id="t-preguntas">Lo que todos <span class="hl">nos preguntan.</span></h2>
-        <p class="sub">Y si te queda una duda, adentro de Cuadra todo te dice qué hacer, paso a paso.</p>
+        <p class="eyebrow">Preguntas frecuentes</p>
+        <h2 id="t-preguntas">Resolvemos <span class="hl">tus dudas.</span></h2>
+        <p class="sub">Y adentro de Cuadra, cada pantalla te dice qué hacer, paso a paso.</p>
       </div>
       <div class="faq">
-        <details><summary>¿Cuadra guarda mi dinero?</summary><p class="a">No. Los cobros por CoDi llegan directo a tu cuenta bancaria. Cuadra solo anota quién te debe, quién te pagó y a quién le pagaste.</p></details>
-        <details><summary>¿Mis clientes tienen que instalar algo?</summary><p class="a">No. La solicitud de cobro les llega a la app de su banco y pagan desde ahí. Si están en tu tienda, también pueden pagar con un código QR.</p></details>
-        <details><summary>¿Qué es CoDi?</summary><p class="a">Es la forma de cobrar del Banco de México: el pago va de la cuenta de tu cliente a la tuya, sin tarjeta ni terminal.</p></details>
-        <details><summary>¿Y si me equivoco al anotar?</summary><p class="a">Antes de anotar, Cuadra siempre te pregunta «¿Está bien así?». Si algo no cuadra, tocas «No, cancelar» y no se anota nada.</p></details>
-        <details><summary>¿Cómo se protege mi cuenta?</summary><p class="a">Entras con tu celular y un NIP de 4 números, y verificas tu celular por WhatsApp. Los pagos a proveedores necesitan tu huella o tu rostro.</p></details>
-        <details><summary>¿Puedo usarlo si no veo bien la letra?</summary><p class="a">Sí. Toca el botón de letra grande arriba a la derecha y todo se agranda.</p></details>
+        <details><summary>¿Cuadra guarda mi dinero?</summary><p class="a">No. Lo que te pagan llega a tu cuenta, no a Cuadra. Cuadra solo anota quién te debe, quién te pagó y a quién le pagaste.</p></details>
+        <details><summary>¿Mis clientes tienen que instalar algo?</summary><p class="a">No. Pagan desde la app de su banco: con la solicitud que les llega al celular o escaneando tu QR. No se registran en Cuadra.</p></details>
+        <details><summary>¿Qué es CoDi?</summary><p class="a">Es el cobro digital de cuenta a cuenta. A tu cliente le llega una solicitud en la app de su banco que dura 6 minutos; al aceptarla, el dinero pasa a tu cuenta. Si vence, se la reenvías.</p></details>
+        <details><summary>¿Qué pasa si me equivoco al anotar?</summary><p class="a">Antes de anotar, Cuadra siempre te pregunta «¿Está bien así?». Si algo está mal, tocas «No, cancelar» y no se anota nada.</p></details>
+        <details><summary>¿Cómo se protege mi cuenta?</summary><p class="a">Entras con tu celular y un NIP de 4 números, y tu celular se verifica por WhatsApp. Los pagos se aprueban en tu celular con tu huella, tu rostro o tu bloqueo de pantalla.</p></details>
+        <details><summary>¿Puedo usarlo con letra grande?</summary><p class="a">Sí. Toca el botón de letra grande, arriba a la derecha, y todo se agranda. También puedes escuchar las respuestas en voz alta.</p></details>
       </div>
     </div>
   </section>
@@ -370,9 +398,12 @@ footer{padding:56px 0 40px;font-size:16px;color:var(--ink-2)}
       <div class="cta-box">
         <img src="/logo.svg" alt="" width="72" height="72">
         <h2 id="t-cta">Tu libreta, siempre cuadrada.</h2>
-        <p>Entra con tu celular y tu NIP.</p>
-        <div class="actions"><a class="btn btn-white" href="/login">Entrar
-          <svg aria-hidden="true" viewBox="0 0 24 24"><path d="M12 4l-1.41 1.41L16.17 11H4v2h12.17l-5.58 5.59L12 20l8-8z"/></svg></a></div>
+        <p>Entra con tu celular y tu NIP. Si es tu primera vez, crea tu cuenta en un momento.</p>
+        <div class="actions">
+          <a class="btn btn-white" href="/login">Entrar
+            <svg aria-hidden="true" viewBox="0 0 24 24"><path d="M12 4l-1.41 1.41L16.17 11H4v2h12.17l-5.58 5.59L12 20l8-8z"/></svg></a>
+          <a class="btn btn-onband" href="/login?registro">Crear mi cuenta</a>
+        </div>
       </div>
     </div>
   </section>
@@ -383,12 +414,12 @@ footer{padding:56px 0 40px;font-size:16px;color:var(--ink-2)}
     <div class="foot">
       <div>
         <a class="brand" href="/" aria-label="Cuadra, inicio"><img src="/logo.svg" alt="" width="36" height="36"><span>Cuadra</span></a>
-        <p>Fía, cobra y paga sin perder la cuenta. La libreta de fiado para los negocios de barrio.</p>
+        <p>La libreta de fiado en tu celular, para los negocios de barrio.</p>
       </div>
-      <nav aria-labelledby="f-cuadra"><h3 id="f-cuadra">Cuadra</h3><ul><li><a href="#como-funciona">Cómo funciona</a></li><li><a href="#seguridad">Seguridad</a></li><li><a href="#preguntas">Preguntas</a></li></ul></nav>
-      <nav aria-labelledby="f-cuenta"><h3 id="f-cuenta">Tu cuenta</h3><ul><li><a href="/login">Entrar</a></li><li><a href="/privacidad">Aviso de privacidad</a></li></ul></nav>
+      <nav aria-labelledby="f-cuadra"><h3 id="f-cuadra">Cuadra</h3><ul><li><a href="#como-funciona">Cómo funciona</a></li><li><a href="#seguridad">Seguridad</a></li><li><a href="#preguntas">Preguntas frecuentes</a></li></ul></nav>
+      <nav aria-labelledby="f-cuenta"><h3 id="f-cuenta">Tu cuenta</h3><ul><li><a href="/login">Entrar</a></li><li><a href="/login?registro">Crear mi cuenta</a></li><li><a href="/privacidad">Aviso de privacidad</a></li></ul></nav>
     </div>
-    <p class="legal">© 2026 Cuadra</p>
+    <div class="legal"><span>© 2026 Cuadra</span><span>Cuadra no es un banco y no guarda tu dinero.</span></div>
   </div>
 </footer>
 <script>

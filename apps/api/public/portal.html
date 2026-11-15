@@ -230,7 +230,8 @@ button,.opt,.keys button{touch-action:manipulation}
   body.auth .wide-only{display:block}
   body.auth #app > .hero + .sheet{padding:1.2rem 0 0;background:transparent;border-radius:0}
   body.auth .secure,body.auth .legal{margin-left:0}
-  body.auth .keys,body.auth .amount,body.auth .dots,body.auth .keys + .go{max-width:none;margin-left:0;margin-right:0}
+  body.auth .keys,body.auth .dots{max-width:20rem;margin-left:0;margin-right:0}
+  body.auth .link{width:auto;text-align:left;color:var(--heading)}
 }
 @media (prefers-reduced-motion: reduce){.spin{animation-duration:3s}.mic.on{animation:none;box-shadow:0 0 0 1.1rem var(--glyph-bg)}}
 </style>
@@ -247,9 +248,10 @@ button,.opt,.keys button{touch-action:manipulation}
   <div class="brand"><img src="/logo.svg" alt="" width="64" height="64"><span>Cuadra</span></div>
   <p class="tagline">Fía, cobra y paga sin perder la&nbsp;cuenta.</p>
   <ul>
-    <li><svg class="ico" aria-hidden="true"><use href="/assets/icons.svg#i-edit_note"/></svg><span>Anota el fiado como lo dices: por chat, por voz o por WhatsApp.</span></li>
-    <li><svg class="ico" aria-hidden="true"><use href="/assets/icons.svg#i-account_balance"/></svg><span>Tus clientes te pagan por CoDi desde su banco.</span></li>
-    <li><svg class="ico" aria-hidden="true"><use href="/assets/icons.svg#i-fingerprint"/></svg><span>Ningún pago a proveedores sale sin tu huella o un permiso que firmaste con ella.</span></li>
+    <li><svg class="ico" aria-hidden="true"><use href="/assets/icons.svg#i-edit_note"/></svg><span>Anota el fiado con botones, con tu voz o por WhatsApp.</span></li>
+    <li><svg class="ico" aria-hidden="true"><use href="/assets/icons.svg#i-account_balance"/></svg><span>Tus clientes te pagan desde la app de su banco, por CoDi.</span></li>
+    <li><svg class="ico" aria-hidden="true"><use href="/assets/icons.svg#i-verified_user"/></svg><span>Ningún pago a proveedores sale sin tu aprobación.</span></li>
+    <li><svg class="ico" aria-hidden="true"><use href="/assets/icons.svg#i-lock"/></svg><span>Cuadra nunca guarda tu dinero.</span></li>
   </ul>
 </aside>
 <main class="sheet" id="app"></main>
@@ -364,7 +366,7 @@ function go(screen, arg, push = true) {
 let current = null;
 function back() { const p = history_.pop(); if (p) go(p.screen, p.arg, false); else go("home", null, false); }
 function home() { history_.length = 0; go("home", null, false); }
-const navHtml = (showBack = true) => `<div class="nav">${showBack ? `<button class="btn btn--outline" type="button" data-nav="back">${ic("arrow_back")}Regresar</button>` : ""}<button class="btn btn--outline" type="button" data-nav="home">${ic("home")}Inicio</button></div>`;
+const navHtml = (showBack = true) => `<div class="nav">${showBack ? `<button class="btn btn--outline" type="button" data-nav="back">${ic("arrow_back")}Regresar</button>` : ""}${me ? `<button class="btn btn--outline" type="button" data-nav="home">${ic("home")}Inicio</button>` : ""}</div>`;
 app.addEventListener("click", (e) => {
   const n = e.target.closest("[data-nav]"); if (!n) return;
   n.dataset.nav === "back" ? back() : home();
@@ -567,7 +569,7 @@ SCREENS.pagar = async () => {
   try { ps = await payees(); } catch (e) { if (!(e instanceof NeedLogin)) offline(() => go("pagar", null, false)); return; }
   app.innerHTML = `<h1>¿A qué proveedor le pagas?</h1><p class="lead">Solo aparecen los proveedores que ya autorizaste.</p>
     <div class="list">${ps.map((p) => `<button class="opt" type="button" data-p="${esc(p.id)}"><span class="av" aria-hidden="true">${ic("local_shipping")}</span><span class="t">${esc(p.alias)}<small>Cuenta que termina en ${esc(p.clabe_last4)}</small></span>${ic("chevron_right")}</button>`).join("") || `<p class="empty">No tienes proveedores autorizados.</p>`}</div>
-    <div class="tip">${ic("lock")}<span>Para agregar un proveedor nuevo se necesita tu huella y esperar 24 horas. Así nadie te engaña con una cuenta falsa.</span></div>${navHtml()}`;
+    <div class="tip">${ic("lock")}<span>Para agregar un proveedor nuevo se necesita tu aprobación, y en sus primeras 24 horas cada pago también la pide. Así nadie te engaña con una cuenta falsa.</span></div>${navHtml()}`;
   app.querySelectorAll("[data-p]").forEach((b) => (b.onclick = () => go("monto", { mode: "pago", who: ps.find((p) => p.id === b.dataset.p) })));
 };
 
@@ -840,7 +842,7 @@ SCREENS.bienvenida = () => {
     <p class="wide-only">Entra con tu celular y tu NIP.</p></section>
     <div class="sheet">
     <button class="go btn btn--block" type="button" id="in">Entrar</button>
-    <button class="go soft btn btn--outline btn--block" type="button" id="new">Soy nuevo, quiero registrarme</button>
+    <button class="go soft btn btn--outline btn--block" type="button" id="new">Crear mi cuenta</button>
     ${llaveMode === "demo" ? `<button class="go soft btn btn--tertiary btn--block" type="button" id="llave">${ic("key")}<span>Entrar con Llave CDMX</span></button>` : ""}
     <p class="secure">${ic("lock")}<span>Tu cuenta se protege con tu NIP y tu celular.</span></p>
     <a class="legal" href="/privacidad">Aviso de privacidad</a>
@@ -863,7 +865,7 @@ SCREENS.celular = (arg) => {
   app.innerHTML = `
     ${reg ? `<div class="steps">Paso 2 de ${needsShopCode ? 4 : 3}</div>` : ""}
     <h1>¿Cuál es tu número de celular?</h1>
-    <p class="lead">Los 10 números, sin espacios.</p>
+    <p class="lead">Los 10 números de tu celular.</p>
     <form id="f"><input class="field" id="tel" type="tel" inputmode="numeric" autocomplete="tel-national" maxlength="14" placeholder="55 1234 5678" aria-label="Número de celular" value="${esc(arg.phone || "")}">
     ${arg.error ? `<div class="err" role="alert">${ic("error")}<span>${esc(arg.error)}</span></div>` : ""}
     <button class="go btn btn--block" type="submit">Siguiente${ic("arrow_forward")}</button></form>${navHtml()}`;
@@ -886,7 +888,8 @@ SCREENS.nip = ({ phone, name, error }) => {
     ${error ? `<div class="err" role="alert">${ic("error")}<span>${esc(error)}</span></div>` : ""}
     <div id="pad"></div>
     <button class="link" type="button" id="forgot">Olvidé mi NIP</button>
-    <button class="link" type="button" id="other">${name ? "No soy yo / usar otro celular" : "Cambiar de celular"}</button>`;
+    <button class="link" type="button" id="other">${name ? "No soy yo / usar otro celular" : "Cambiar de celular"}</button>
+    <p class="secure">${ic("lock")}<span>Cuadra nunca te pide tu NIP por WhatsApp ni por llamada.</span></p>`;
   pinPad($("#pad"), async (pin) => {
     app.querySelector("#pad").innerHTML = `<div class="wait"><div class="spin"></div>Revisando…</div>`;
     let r;
@@ -994,6 +997,11 @@ async function start() {
     needsShopCode = !!data.needs_shop_code;
     llaveMode = data.llave || "off";
     if (r.ok) return signedIn(data.account, "");
+    if (new URLSearchParams(location.search).has("registro")) {
+      history.replaceState(history.state, "", location.pathname);
+      history_.length = 0; go("bienvenida", null, false); go("nombre", {});
+      return;
+    }
     signedOut();
   } catch {
     offline(start);
