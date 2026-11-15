@@ -396,11 +396,25 @@ export class CuadraService {
           return;
         }
         if (intent.kind === "add_credit") {
+          const amount = formatMXN(BigInt(intent.amount_cents));
           const p = await this.newProposal(
-            { type: "AddCredit", customer_id: r.row.id, amount_cents: intent.amount_cents, concept: intent.concept ?? "Fiado" },
+            {
+              type: "AddCredit",
+              customer_id: r.row.id,
+              amount_cents: intent.amount_cents,
+              concept: intent.concept ?? (intent.charge_now ? "Cobro" : "Fiado"),
+              ...(intent.charge_now ? { charge_now: true } : {}),
+            },
             provenance,
           );
-          await this.say("comercio", `Anoto ${formatMXN(BigInt(intent.amount_cents))} de fiado a ${r.row.name}. ¿Confirmas?`, confirmButtons(p.id), p.id);
+          await this.say(
+            "comercio",
+            intent.charge_now
+              ? `Le cobro a ${r.row.name} ${amount}${intent.concept ? ` por ${intent.concept}` : ""}: lo anoto y le mando la solicitud CoDi a su banco. ¿Confirmas?`
+              : `Anoto ${amount} de fiado a ${r.row.name}. ¿Confirmas?`,
+            confirmButtons(p.id),
+            p.id,
+          );
         } else {
           await this.proposeReminder(r.row, provenance);
         }
@@ -515,7 +529,7 @@ export class CuadraService {
       const [c] = await this.d.db.select().from(schema.customers).where(eq(schema.customers.id, parsed.customer_id));
       const bal = await ledgerBalance(this.d.db, this.d.merchantId, "1200", parsed.customer_id);
       await this.say("comercio", `📒 Listo. ${c?.name} te debe ${formatMXN(bal)}.`);
-      if (this.d.chargeOnFiado) await this.chargeAfterFiado(parsed.customer_id, parsed.provenance);
+      if (parsed.charge_now || this.d.chargeOnFiado) await this.chargeAfterFiado(parsed.customer_id, parsed.provenance);
       return;
     }
     if (parsed.type === "CreateCustomer") {

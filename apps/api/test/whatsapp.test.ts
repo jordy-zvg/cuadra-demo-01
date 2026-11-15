@@ -101,6 +101,16 @@ describe("canal WhatsApp", () => {
     expect(f.wa.sent.at(-1)!.body).toMatch(/Te deben:\n• Doña Lupe: \$185\.00/);
   });
 
+  it("cobro por servicio: “Cóbrale a Doña Lupe $350 por la reparación” anota y manda la solicitud CoDi", async () => {
+    const f = await setup();
+    await f.channel.handleInbound([f.text("Cóbrale a Doña Lupe $350 por la reparación")], f.svc);
+    expect(f.wa.sent.at(-1)!.body).toMatch(/Le cobro a Doña Lupe \$350\.00 por la reparación.*solicitud CoDi/);
+    await f.channel.handleInbound([{ kind: "button", id: "b1", from: OWNER_WA, button_id: f.wa.sent.at(-1)!.buttons[0]!.id }], f.svc);
+    expect(await ledgerBalance(f.db, M, "1200", "c_lupe")).toBe(35000n);
+    const charges = await f.db.select().from(schema.charges).where(eq(schema.charges.customerId, "c_lupe"));
+    expect(charges.filter((c) => c.channel === "codi_pn" && c.amountCents === 35000n)).toHaveLength(1);
+  });
+
   it("con AUTO_COBRO_FIADO, confirmar el fiado avisa al cliente por WhatsApp y manda la solicitud CoDi", async () => {
     const f = await setup({ chargeOnFiado: true });
     await f.channel.handleInbound([f.text("Doña Lupe se llevó $185")], f.svc);
