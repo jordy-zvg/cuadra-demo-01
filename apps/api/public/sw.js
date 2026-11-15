@@ -1,11 +1,12 @@
 // Service worker del portal (/login). Solo guarda la "cáscara" de la página para que abra rápido
 // y sin internet muestre el aviso de conexión. NUNCA guarda /api/*: saldos, cobros y pagos
 // siempre se piden en vivo al servidor.
-const CACHE = "cuadra-portal-v2";
+const CACHE = "cuadra-portal-v3";
+// v3: aviso de conexión compartido (/assets/red.js).
 // v2: diseño nuevo. La hoja de estilos, las tipografías y los íconos también van en la cáscara.
 const SHELL = [
   "/login", "/logo.svg", "/manifest.webmanifest", "/icons/icon-192.png", "/icons/icon-512.png",
-  "/assets/cuadra.css", "/assets/icons.svg",
+  "/assets/cuadra.css", "/assets/icons.svg", "/assets/red.js",
   "/assets/fonts/montserrat-latin-wght-normal.woff2", "/assets/fonts/noto-sans-latin-wght-normal.woff2",
 ];
 

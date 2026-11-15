@@ -26,6 +26,8 @@ export interface StoresConfig {
   reminderMinIntervalMs?: number;
   /** Al confirmar un fiado, avisar al cliente y mandar la solicitud CoDi (AUTO_COBRO_FIADO). */
   chargeOnFiado?: boolean;
+  /** Horario de cobros [desde, hasta) en CDMX (REMINDER_HOURS, solo demo); sin valor: 9 a 20. */
+  reminderHours?: readonly [number, number];
 }
 
 export function createStoreRegistry(c: StoresConfig): StoreRegistry {
@@ -51,6 +53,7 @@ export function createStoreRegistry(c: StoresConfig): StoreRegistry {
         ...(c.channels ? { channels: c.channels } : {}),
         ...(c.reminderMinIntervalMs !== undefined ? { reminderMinIntervalMs: c.reminderMinIntervalMs } : {}),
         ...(c.chargeOnFiado !== undefined ? { chargeOnFiado: c.chargeOnFiado } : {}),
+        ...(c.reminderHours ? { reminderHours: c.reminderHours } : {}),
       }),
   });
 }
