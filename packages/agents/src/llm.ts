@@ -14,6 +14,7 @@ import { normalizeAmountWords } from "./numbers.js";
 export const LlmExtraction = z.object({
   kind: z.enum([
     "add_credit",
+    "charge_service",
     "register_cash_payment",
     "send_reminder",
     "resend_reminder",
@@ -44,6 +45,7 @@ Tu única tarea es extraer UNA intención estructurada del mensaje del comercio.
 
 Intenciones:
 - add_credit: el comercio le fió algo a un cliente ("Doña Lupe se llevó $185", "anótale 80 a Beto").
+- charge_service: quiere cobrar ahora un servicio, trabajo o venta con monto ("cóbrale a Rosa $350 por la reparación", "cóbrale 120 a Beto de la consulta"). Pon en concept qué se cobra.
 - register_cash_payment: un cliente le pagó en efectivo.
 - send_reminder: quiere cobrarle o recordarle a un cliente ("cóbrale a Lupe").
 - resend_reminder: quiere volver a mandar una solicitud de cobro que ya mandó ("vuélvele a mandar la notificación", "reenvíale el cobro a Beto"). customer_name es opcional: null si no lo dice.
@@ -111,6 +113,12 @@ export function toIntent(x: LlmExtraction): Intent {
   const unclear = (q?: string): Intent => (q ? { kind: "unclear", question: q.slice(0, 200) } : { kind: "unclear" });
 
   switch (x.kind) {
+    case "charge_service": {
+      const n = name(x.customer_name);
+      const a = cents();
+      if (!n || a === null) return unclear("¿A quién le cobro y cuánto?");
+      return { kind: "add_credit", customer_name: n, amount_cents: a, charge_now: true, ...(x.concept ? { concept: x.concept.slice(0, 140) } : {}) };
+    }
     case "add_credit":
     case "register_cash_payment": {
       const n = name(x.customer_name);

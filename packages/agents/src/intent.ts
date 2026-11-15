@@ -5,7 +5,8 @@ import { z } from "zod";
  * nombres tal como los dijo el comercio y montos en centavos. El código resuelve el resto.
  */
 export const Intent = z.discriminatedUnion("kind", [
-  z.object({ kind: z.literal("add_credit"), customer_name: z.string().min(1).max(80), amount_cents: z.number().int().positive().safe(), concept: z.string().max(140).optional() }),
+  /** charge_now: cobro por servicio ("cóbrale a Rosa $350 por la reparación"): se anota y se cobra enseguida. */
+  z.object({ kind: z.literal("add_credit"), customer_name: z.string().min(1).max(80), amount_cents: z.number().int().positive().safe(), concept: z.string().max(140).optional(), charge_now: z.literal(true).optional() }),
   z.object({ kind: z.literal("register_cash_payment"), customer_name: z.string().min(1).max(80), amount_cents: z.number().int().positive().safe() }),
   z.object({ kind: z.literal("send_reminder"), customer_name: z.string().min(1).max(80) }),
   // "Vuélvele a mandar la notificación": sin nombre, el código usa el cliente de la última solicitud.
@@ -46,6 +47,7 @@ function key(i: Intent): string {
   if ("customer_name" in i && i.customer_name) o.n = normalizeName(i.customer_name);
   if ("payee_name" in i) o.p = normalizeName(i.payee_name);
   if ("amount_cents" in i) o.a = i.amount_cents;
+  if ("charge_now" in i && i.charge_now) o.c = true; // fiado y cobro por servicio no son lo mismo
   return JSON.stringify(o);
 }
 

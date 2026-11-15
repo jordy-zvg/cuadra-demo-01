@@ -26,7 +26,8 @@ const base = { merchant_id: id, provenance: Provenance };
 export const OutflowPurpose = z.enum(["proveedor", "tanda", "devolucion"]);
 export type OutflowPurpose = z.infer<typeof OutflowPurpose>;
 
-export const AddCredit = z.object({ ...base, type: z.literal("AddCredit"), customer_id: id, amount_cents: CentavosSchema, concept: text });
+/** charge_now: cobro por servicio; al confirmar se anota y se manda la solicitud CoDi enseguida. */
+export const AddCredit = z.object({ ...base, type: z.literal("AddCredit"), customer_id: id, amount_cents: CentavosSchema, concept: text, charge_now: z.literal(true).optional() });
 export const RegisterCashPayment = z.object({ ...base, type: z.literal("RegisterCashPayment"), customer_id: id, amount_cents: CentavosSchema });
 export const SendReminder = z.object({ ...base, type: z.literal("SendReminder"), customer_id: id });
 /**

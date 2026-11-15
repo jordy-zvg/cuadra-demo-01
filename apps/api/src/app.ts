@@ -24,6 +24,8 @@ export interface StoresConfig {
   log: (r: Record<string, unknown>) => void;
   channels?: OutboundChannel[];
   reminderMinIntervalMs?: number;
+  /** Al confirmar un fiado, avisar al cliente y mandar la solicitud CoDi (AUTO_COBRO_FIADO). */
+  chargeOnFiado?: boolean;
 }
 
 export function createStoreRegistry(c: StoresConfig): StoreRegistry {
@@ -48,6 +50,7 @@ export function createStoreRegistry(c: StoresConfig): StoreRegistry {
         log: c.log,
         ...(c.channels ? { channels: c.channels } : {}),
         ...(c.reminderMinIntervalMs !== undefined ? { reminderMinIntervalMs: c.reminderMinIntervalMs } : {}),
+        ...(c.chargeOnFiado !== undefined ? { chargeOnFiado: c.chargeOnFiado } : {}),
       }),
   });
 }

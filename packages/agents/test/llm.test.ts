@@ -20,6 +20,10 @@ describe("toIntent: el código convierte montos, no el LLM", () => {
     expect(toIntent({ ...base, kind: "create_customer", customer_name: "Joel", amount_as_written: null })).toEqual({ kind: "create_customer", customer_name: "Joel" });
     expect(toIntent({ ...base, kind: "create_customer", customer_name: " ", amount_as_written: null }).kind).toBe("unclear");
   });
+  it("cobro por servicio", () => {
+    expect(toIntent({ ...base, kind: "charge_service", customer_name: "Rosa", amount_as_written: "$350", concept: "reparación" })).toEqual({ kind: "add_credit", customer_name: "Rosa", amount_cents: 35000, charge_now: true, concept: "reparación" });
+    expect(toIntent({ ...base, kind: "charge_service", amount_as_written: null }).kind).toBe("unclear");
+  });
   it("monto con letra: lo convierte el código, no el LLM", () => {
     expect(toIntent({ ...base, amount_as_written: "ciento ochenta pesos" })).toMatchObject({ kind: "add_credit", amount_cents: 18000 });
   });

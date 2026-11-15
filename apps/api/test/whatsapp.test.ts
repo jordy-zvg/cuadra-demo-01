@@ -55,7 +55,7 @@ class QrGateway extends SimulatedGateway {
   }
 }
 
-async function setup() {
+async function setup(o: { chargeOnFiado?: boolean } = {}) {
   const { db } = await createTestDb();
   await seedDemo(db, NOW, { ownerPhone: "+525511112222", lupePhone: "+525512345678" });
   const wa = new FakeWhatsApp();
@@ -66,6 +66,7 @@ async function setup() {
     gateway: new QrGateway(db), verify: async () => false, now: () => NOW, publicUrl: null,
     peyWebhookSecret: null, bankSim: false, udi: null, log: (r) => logs.push(r),
     channels: [channel],
+    ...(o.chargeOnFiado ? { chargeOnFiado: true } : {}),
   });
   let n = 0;
   const text = (body: string, from = OWNER_WA, forwarded = false): WhatsAppInbound => ({ kind: "text", id: `w${++n}`, from, text: body, forwarded });
@@ -98,6 +99,33 @@ describe("canal WhatsApp", () => {
 
     await f.channel.handleInbound([{ kind: "button", id: "b2", from: OWNER_WA, button_id: opts[0]!.id }], f.svc);
     expect(f.wa.sent.at(-1)!.body).toMatch(/Te deben:\n• Doña Lupe: \$185\.00/);
+  });
+
+  it("cobro por servicio: “Cóbrale a Doña Lupe $350 por la reparación” anota y manda la solicitud CoDi", async () => {
+    const f = await setup();
+    await f.channel.handleInbound([f.text("Cóbrale a Doña Lupe $350 por la reparación")], f.svc);
+    expect(f.wa.sent.at(-1)!.body).toMatch(/Le cobro a Doña Lupe \$350\.00 por la reparación.*solicitud CoDi/);
+    await f.channel.handleInbound([{ kind: "button", id: "b1", from: OWNER_WA, button_id: f.wa.sent.at(-1)!.buttons[0]!.id }], f.svc);
+    expect(await ledgerBalance(f.db, M, "1200", "c_lupe")).toBe(35000n);
+    const charges = await f.db.select().from(schema.charges).where(eq(schema.charges.customerId, "c_lupe"));
+    expect(charges.filter((c) => c.channel === "codi_pn" && c.amountCents === 35000n)).toHaveLength(1);
+  });
+
+  it("con AUTO_COBRO_FIADO, confirmar el fiado avisa al cliente por WhatsApp y manda la solicitud CoDi", async () => {
+    const f = await setup({ chargeOnFiado: true });
+    await f.channel.handleInbound([f.text("Doña Lupe se llevó $185")], f.svc);
+    await f.channel.handleInbound([{ kind: "button", id: "b1", from: OWNER_WA, button_id: f.wa.sent.at(-1)!.buttons[0]!.id }], f.svc);
+    const charges = await f.db.select().from(schema.charges).where(eq(schema.charges.customerId, "c_lupe"));
+    expect(charges.filter((c) => c.channel === "codi_pn" && c.amountCents === 18500n)).toHaveLength(1);
+    expect(f.wa.templates.find((t) => t.name === "cuadra_cobro_fiado")).toMatchObject({ to: "525512345678" });
+  });
+
+  it("con AUTO_COBRO_FIADO y un cliente sin permiso de mensajes, el fiado queda y se explica por qué no se avisó", async () => {
+    const f = await setup({ chargeOnFiado: true });
+    await f.channel.handleInbound([f.text("Chela Gómez se llevó $50")], f.svc);
+    await f.channel.handleInbound([{ kind: "button", id: "b1", from: OWNER_WA, button_id: f.wa.sent.at(-1)!.buttons[0]!.id }], f.svc);
+    expect(f.wa.sent.at(-1)!.body).toMatch(/No le avisé a su banco todavía/);
+    expect(await ledgerBalance(f.db, M, "1200", "c_chela")).toBe(5000n);
   });
 
   it("un reintento de Meta con el mismo id no se procesa dos veces", async () => {

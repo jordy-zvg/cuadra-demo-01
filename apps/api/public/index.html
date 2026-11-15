@@ -109,6 +109,23 @@ td.n,th.n{text-align:right;white-space:nowrap}
   .col h2 .ttl{white-space:normal}
   .links{margin-left:0;width:100%}
 }
+/* Tableta: chat del comercio y teléfono del cliente lado a lado; el panel en vivo abajo a lo ancho. */
+@media (min-width:601px) and (max-width:1000px){
+  main{grid-template-columns:minmax(0,1.15fr) minmax(0,1fr)}
+  main > .col:last-child{grid-column:1 / -1}
+  .thread{max-height:60vh}
+}
+/* Pantallas táctiles (celular y tableta): todo lo que se toca mide al menos 44 px y los campos
+   usan 16 px para que el iPhone no haga zoom al escribir. En laptop se queda compacto. */
+button,.chip,select,a.btn{touch-action:manipulation}
+@media (pointer:coarse){
+  button,.links .btn,select{min-height:44px}
+  .chip{min-height:44px;padding:8px 12px;font-size:14px}
+  .mic{width:44px;height:44px}
+  .toggle{min-height:44px;font-size:14px}
+  .toggle input{width:22px;height:22px}
+  input[type=text]{min-height:44px;font-size:16px}
+}
 </style>
 </head>
 <body>

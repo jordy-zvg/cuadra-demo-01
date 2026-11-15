@@ -48,4 +48,12 @@ describe("montos con letra", () => {
     expect(await r.interpret("Da de alta a Joel Hernández")).toEqual({ kind: "create_customer", customer_name: "Joel Hernández" });
     expect(await r.interpret("nuevo cliente Rosa cel +52 1 55 9876 5432")).toEqual({ kind: "create_customer", customer_name: "Rosa", phone: "5598765432" });
   });
+
+  it("cobro por servicio por reglas", async () => {
+    const r = new RuleInterpreter();
+    expect(await r.interpret("Cóbrale a Rosa $350 por la reparación")).toEqual({ kind: "add_credit", customer_name: "Rosa", amount_cents: 35000, charge_now: true, concept: "la reparación" });
+    expect(await r.interpret("cobrarle a Beto ciento veinte pesos de la consulta")).toEqual({ kind: "add_credit", customer_name: "Beto", amount_cents: 12000, charge_now: true, concept: "la consulta" });
+    // Sin monto sigue siendo el recordatorio del saldo.
+    expect(await r.interpret("Cóbrale a Doña Lupe")).toEqual({ kind: "send_reminder", customer_name: "Doña Lupe" });
+  });
 });

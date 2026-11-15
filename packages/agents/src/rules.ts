@@ -49,6 +49,15 @@ const PATTERNS: Array<[RegExp, (m: RegExpExecArray) => Intent]> = [
   [new RegExp(String.raw`^${RESEND_NOT}${RESEND_VERB}${AGAIN}${RESEND_WHAT}?${AGAIN}${RESEND_WHO}$`, "i"), resend],
   // "Mándale el cobro otra vez a Lupe"
   [new RegExp(String.raw`^${RESEND_NOT}(?:m[aá]nda|env[ií]a)(?:le|selo|sela)?${RESEND_WHAT}\s+(?:otra\s+vez|de\s+nuevo)${RESEND_WHO}$`, "i"), resend],
+  // Cobro por servicio: "Cóbrale a Rosa $350 por la reparación", "cobrarle a Beto 120 de la consulta"
+  [new RegExp(String.raw`^(?:c[oó]brale|cobrar(?:le)?|c[oó]brate)\s+a\s+(.+?)\s+${MONEY}\s*(?:(?:por|de|del|de la)\s+)?(.*)$`, "i"),
+    (m) => ({
+      kind: "add_credit",
+      customer_name: clean(m[1]!),
+      amount_cents: cents(m[2]!, m[3]),
+      charge_now: true,
+      ...(m[4] && clean(m[4]) ? { concept: clean(m[4]) } : {}),
+    })],
   // "Cóbrale a Doña Lupe", "mándale recordatorio a Beto"
   [/^(?:c[oó]brale|cobrar(?:le)?|m[aá]ndale\s+(?:el\s+)?(?:cobro|recordatorio)|recu[eé]rdale)\s+a\s+(.+)$/i,
     (m) => ({ kind: "send_reminder", customer_name: clean(m[1]!) })],
