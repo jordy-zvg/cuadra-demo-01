@@ -9,6 +9,7 @@ import { seedHistory } from "./seed-history.js";
 import { buildServer } from "./server.js";
 import { CuadraService } from "./service.js";
 import { WhatsAppChannel } from "./whatsapp.js";
+import { parsePortalReset, resetPortalAccounts } from "./portal-reset.js";
 import { parseMinIntervalMinutes } from "./reminder-config.js";
 import { parseReminderSchedule, startReminderScheduler } from "./scheduler.js";
 
@@ -29,6 +30,12 @@ async function main(): Promise<void> {
     ...(env("DEMO_CUSTOMER_PHONE") ? { lupePhone: env("DEMO_CUSTOMER_PHONE")! } : {}),
     ...(env("DEMO_OWNER_PHONE") ? { ownerPhone: env("DEMO_OWNER_PHONE")! } : {}),
   });
+  // Borrado de cuentas del portal pedido por el dueño (NIP olvidado). Ver portal-reset.ts.
+  const reset = parsePortalReset(process.env.PORTAL_RESET);
+  if (reset.invalid.length) log({ msg: "config_invalid", variable: "PORTAL_RESET", entries: reset.invalid });
+  if (reset.entries.length) {
+    for (const r of await resetPortalAccounts(db, demo.merchantId, reset.entries)) log({ msg: "portal_account_reset", merchant_id: demo.merchantId, ...r });
+  }
   const bankSim = env("BANK_SIM") !== "off";
   // Cuenta receptora del comercio registrada en pey (POST /bank-account, estado ACTIVE).
   if (env("PEY_BANK_ACCOUNT_ID")) {

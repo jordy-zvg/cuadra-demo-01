@@ -9,7 +9,7 @@
 <meta name="mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-title" content="Cuadra">
 <meta name="apple-mobile-web-app-status-bar-style" content="default">
-<title>Mi Cuadra</title>
+<title>Cuadra</title>
 <link rel="icon" href="/logo.svg" type="image/svg+xml">
 <link rel="apple-touch-icon" href="/icons/apple-touch-icon.png">
 <link rel="manifest" href="/manifest.webmanifest" crossorigin="use-credentials">
@@ -166,7 +166,7 @@ button:focus-visible,a:focus-visible,input:focus-visible{outline:3px solid var(-
 <header class="top">
   <div class="wrap">
     <img class="logo" src="/logo.svg" alt="">
-    <div class="who"><b id="shop">Mi Cuadra</b><span>Tu libreta de fiado, segura</span></div>
+    <div class="who"><b id="shop">Cuadra</b><span>Tu libreta de fiado, segura</span></div>
     <button class="size" id="size" type="button" aria-pressed="false">Letra grande</button>
   </div>
 </header>
@@ -223,7 +223,7 @@ async function load() {
   checkAuth(r);
   if (!r.ok) throw new Error("estado " + r.status);
   state = await r.json();
-  $("#shop").textContent = state.merchant?.name || "Mi Cuadra";
+  $("#shop").textContent = state.merchant?.name || "Cuadra";
   return state;
 }
 let payeesCache = null;
