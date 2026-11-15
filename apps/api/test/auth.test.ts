@@ -390,7 +390,7 @@ describe("verificación del celular por WhatsApp", () => {
       expect(x.statusCode, url).toBe(403);
       expect(x.json()).toMatchObject({ needs_verification: true });
     }
-    expect((await a.server.inject({ url: "/", headers: { cookie } })).statusCode).toBe(302);
+    expect((await a.server.inject({ url: "/panel", headers: { cookie } })).statusCode).toBe(302);
     const v = await startCode(a, cookie);
     expect(v.code).toMatch(/^\d{6}$/);
     expect(v.link).toBe(`https://wa.me/15550001111?text=${encodeURIComponent(`Mi código de Cuadra es ${v.code}`)}`);
