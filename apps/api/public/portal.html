@@ -641,7 +641,7 @@ function actionHtml(a, i, body = "") {
   if (a.kind === "qr") return a.url ? `<img class="qr" alt="Código QR para pagar" src="${esc(a.url)}">` : `<div class="qr sim">Código QR<br>(de prueba)</div>`;
   const label = a.kind === "confirm" ? ic("check_circle") + (/^Anoto/.test(body) ? "Sí, anotar" : /^Le mando/.test(body) ? "Sí, mandar el cobro" : "Sí, está bien")
     : a.kind === "cancel" ? ic("close") + "No, cancelar"
-    : a.kind === "approve" ? ic("fingerprint") + "Aprobar con mi huella"
+    : a.kind === "approve" ? ic("check_circle") + "Aprobar"
     : esc(a.label);
   const cls = a.kind === "confirm" ? "go ok btn btn--ok btn--block" : a.kind === "cancel" ? "go soft btn btn--outline btn--block" : "go btn btn--block";
   return `<button class="${cls}" type="button" data-a="${i}">${label}</button>`;
