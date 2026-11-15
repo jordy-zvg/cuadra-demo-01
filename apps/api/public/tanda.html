@@ -11,19 +11,27 @@
 *{box-sizing:border-box}
 body{margin:0;background:var(--bg);color:var(--ink);font:16px/1.45 var(--font-body);display:flex;justify-content:center;padding:24px 16px}
 .card{background:var(--panel);border:1px solid var(--line);border-radius:16px;padding:20px;max-width:560px;width:100%}
+/* Tableta y laptop: tarjeta más ancha para que nombre, celular y CLABE quepan en un renglón. */
+@media (min-width:700px){.card{max-width:780px;padding:28px}}
 h1{font-size:20px;margin:0 0 4px}
 .muted{color:var(--muted);font-size:13px}
 label{display:block;font-size:13px;color:var(--muted);margin-top:10px}
 input,select{width:100%;font:inherit;padding:9px 10px;border-radius:10px;border:1px solid var(--line);background:var(--bg);color:var(--ink);margin-top:4px}
 .row{display:grid;grid-template-columns:1fr 1fr;gap:10px}
-.member{display:grid;grid-template-columns:28px 1fr 1fr 1.4fr 32px;gap:6px;align-items:center;margin-top:8px}
-.member input{margin-top:0;font-size:14px;padding:8px}
+.member{display:grid;grid-template-columns:28px 1fr 1fr 1.4fr 44px;gap:6px;align-items:center;margin-top:8px}
+.member input{margin-top:0;font-size:16px;padding:9px 10px;min-height:44px}
 .n{font-weight:600;color:var(--muted);text-align:center}
 button{font:inherit;border:0;border-radius:12px;padding:12px;cursor:pointer;background:var(--brand);color:var(--brand-ink);font-weight:600;width:100%;margin-top:16px}
 button.ghost{background:var(--chip);color:var(--ink);font-weight:500;width:auto;padding:8px 12px;margin-top:10px}
-button.x{background:transparent;color:var(--muted);padding:4px;margin:0;width:auto}
+button.x{background:transparent;color:var(--muted);padding:0;margin:0;width:44px;height:44px;display:inline-flex;align-items:center;justify-content:center}
+button.x:hover{color:var(--bad);background:var(--bad-bg)}
+button.x .ico,button.ghost .ico{width:22px;height:22px}
+button.ghost{display:inline-flex;align-items:center;gap:6px;min-height:44px}
+button{touch-action:manipulation;min-height:44px}
+button:disabled{opacity:.5;cursor:default}
+input,select{min-height:44px}
 .msg{border-radius:10px;padding:10px;margin-top:12px;display:none;background:var(--bad-bg);color:var(--bad)}
-@media (max-width:560px){.member{grid-template-columns:22px 1fr 32px}.member input.ph,.member input.cl{grid-column:2 / 3}}
+@media (max-width:699px){.member{grid-template-columns:22px 1fr 44px;padding-bottom:10px;border-bottom:1px solid var(--line)}.member input.ph,.member input.cl{grid-column:2 / 3}}
 
 /* Familia Cuadra: tokens y letra vienen de /assets/cuadra.css */
 body{background:var(--bg-soft)}
@@ -47,32 +55,43 @@ input,select{border-color:var(--line-strong)}
   </div>
   <label>Integrantes en orden de turno (nombre, celular de 10 dígitos y CLABE donde recibe)</label>
   <div id="members"></div>
-  <button type="button" class="ghost" id="add">+ Agregar integrante</button>
+  <button type="button" class="ghost" id="add"><svg class="ico" aria-hidden="true"><use href="/assets/icons.svg#i-add"/></svg>Agregar integrante</button>
   <button type="button" id="go">Revisar y firmar</button>
-  <div class="msg" id="out"></div>
+  <div class="msg" id="out" role="alert"></div>
 </div>
 <script>
 const $ = (s) => document.querySelector(s);
 function addMember(v = {}) {
   const d = document.createElement("div");
   d.className = "member";
-  d.innerHTML = `<span class="n"></span><input class="nm" placeholder="Nombre" maxlength="80"><input class="ph" placeholder="Celular" inputmode="numeric" maxlength="13"><input class="cl" placeholder="CLABE (18 dígitos)" inputmode="numeric" maxlength="22"><button class="x" type="button" title="Quitar">✕</button>`;
+  d.innerHTML = `<span class="n"></span><input class="nm" placeholder="Nombre" maxlength="80" autocomplete="off"><input class="ph" type="tel" placeholder="Celular" inputmode="numeric" maxlength="13" autocomplete="off"><input class="cl" placeholder="CLABE (18 dígitos)" inputmode="numeric" maxlength="22" autocomplete="off"><button class="x" type="button"><svg class="ico" aria-hidden="true"><use href="/assets/icons.svg#i-close"/></svg></button>`;
   d.querySelector(".nm").value = v.name || ""; d.querySelector(".ph").value = v.phone || ""; d.querySelector(".cl").value = v.clabe || "";
   d.querySelector(".x").onclick = () => { d.remove(); renumber(); };
   $("#members").appendChild(d); renumber();
 }
-function renumber() { [...document.querySelectorAll(".member .n")].forEach((n, i) => (n.textContent = i + 1)); }
+// Cada campo dice a qué integrante pertenece (los lectores de pantalla no ven los ejemplos).
+function renumber() {
+  [...document.querySelectorAll(".member")].forEach((d, i) => {
+    const n = i + 1;
+    d.querySelector(".n").textContent = n;
+    d.querySelector(".nm").setAttribute("aria-label", `Nombre del integrante ${n}`);
+    d.querySelector(".ph").setAttribute("aria-label", `Celular del integrante ${n}`);
+    d.querySelector(".cl").setAttribute("aria-label", `CLABE del integrante ${n}`);
+    d.querySelector(".x").setAttribute("aria-label", `Quitar al integrante ${n}`);
+  });
+}
 for (let i = 0; i < 3; i++) addMember();
 $("#add").onclick = () => addMember();
 $("#go").onclick = async () => {
   const members = [...document.querySelectorAll(".member")].map((d) => ({
     name: d.querySelector(".nm").value.trim(), phone: d.querySelector(".ph").value.trim(), clabe: d.querySelector(".cl").value.trim(),
   })).filter((m) => m.name || m.phone || m.clabe);
+  const go = $("#go"); go.disabled = true; go.textContent = "Revisando…";
   const r = await fetch("/api/tanda/propose", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({
     name: $("#name").value.trim(), contribution_pesos: Number($("#amount").value), period: $("#period").value, members,
-  }) });
-  const j = await r.json().catch(() => ({}));
-  if (!r.ok) { const o = $("#out"); o.textContent = j.error || "Revisa los datos."; o.style.display = "block"; return; }
+  }) }).catch(() => null);
+  const j = r ? await r.json().catch(() => ({})) : { error: "No hay conexión. Revisa tu internet y vuelve a intentar." };
+  if (!r?.ok) { go.disabled = false; go.textContent = "Revisar y firmar"; const o = $("#out"); o.textContent = j.error || "Revisa los datos."; o.style.display = "block"; return; }
   location.href = "/aprobar/" + encodeURIComponent(j.id);
 };
 </script>
