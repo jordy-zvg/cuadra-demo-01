@@ -1,7 +1,8 @@
 // Service worker del portal (/login). Solo guarda la "cáscara" de la página para que abra rápido
 // y sin internet muestre el aviso de conexión. NUNCA guarda /api/*: saldos, cobros y pagos
 // siempre se piden en vivo al servidor.
-const CACHE = "cuadra-portal-v11";
+const CACHE = "cuadra-portal-v12";
+// v12: textos de aprobación en lugar de "huella".
 // v11: el botón de aprobación dice solo "Aprobar".
 // v10: el encabezado dice solo "Cuadra" (sin el nombre de la tienda).
 // v9: slogan nuevo en la bienvenida.

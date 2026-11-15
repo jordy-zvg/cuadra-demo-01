@@ -519,7 +519,7 @@ SCREENS.pagar = async () => {
   try { ps = await payees(); } catch (e) { if (!(e instanceof NeedLogin)) offline(() => go("pagar", null, false)); return; }
   app.innerHTML = `<h1>¿A qué proveedor le pagas?</h1><p class="lead">Solo aparecen los proveedores que ya autorizaste.</p>
     <div class="list">${ps.map((p) => `<button class="opt" type="button" data-p="${esc(p.id)}"><span class="av" aria-hidden="true">${ic("local_shipping")}</span><span class="t">${esc(p.alias)}<small>Cuenta que termina en ${esc(p.clabe_last4)}</small></span>${ic("chevron_right")}</button>`).join("") || `<p class="empty">No tienes proveedores autorizados.</p>`}</div>
-    <div class="tip">${ic("lock")}<span>Para agregar un proveedor nuevo se necesita tu huella y esperar 24 horas. Así nadie te engaña con una cuenta falsa.</span></div>${navHtml()}`;
+    <div class="tip">${ic("lock")}<span>Para agregar un proveedor nuevo se necesita tu aprobación y esperar 24 horas. Así nadie te engaña con una cuenta falsa.</span></div>${navHtml()}`;
   app.querySelectorAll("[data-p]").forEach((b) => (b.onclick = () => go("monto", { mode: "pago", who: ps.find((p) => p.id === b.dataset.p) })));
 };
 
