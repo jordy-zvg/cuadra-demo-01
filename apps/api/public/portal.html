@@ -38,6 +38,8 @@ header .who{flex:1;min-width:0}
 .home-link{display:none;flex:none;place-items:center;width:44px;height:44px;margin-left:-10px;border-radius:50%;color:#fff;opacity:.9}
 .home-link .ico{width:26px;height:26px;vertical-align:0}
 .home-link:hover{background:var(--on-brand-soft);opacity:1}
+/* Foco con teclado: anillo blanco sobre la banda verde y el panel de marca (le gana a a:focus-visible). */
+.home-link:focus-visible{outline-color:#fff;opacity:1}
 body.auth header .home-link{display:inline-grid}
 body.auth header .logo,body.auth header .who{display:none}
 header .who b{display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden;font-family:var(--font-head);font-weight:600;font-size:min(1rem,20px);line-height:1.2;letter-spacing:-.005em;overflow-wrap:anywhere}
@@ -235,7 +237,6 @@ button,.opt,.keys button{touch-action:manipulation}
   body.auth header .home-link{display:none}
   body.auth .auth-aside{position:relative}
   body.auth .aside-home{display:inline-grid;position:absolute;top:18px;left:calc(clamp(40px,5vw,88px) - 10px);margin:0}
-  body.auth .aside-home:focus-visible{outline-color:#fff}
   body.auth .size{color:var(--heading)}
   body.auth .size:hover,body.auth .size[aria-pressed="true"]{background:var(--glyph-bg)}
   body.auth header :focus-visible{outline-color:var(--focus)}

@@ -67,11 +67,12 @@ Panel (`/panel`): pantalla dividida: WhatsApp del comercio (chat web con el mism
 3. **Pago y conciliación:** el cliente aprueba en su banco → webhook `codi.pn.payment_received` (firma
    Standard Webhooks) → Cuadra **confirma el pago desde el servidor** con `GET /transaction/{id}` y abona el
    `base` a la deuda exacta. Recibo al cliente y al comercio; la balanza cuadra.
-4. **Permiso de pago (mandato):** botón **Firmar permiso** → “Refrescos Pérez, hasta $1,500 por pago y $3,000 por
-   semana, 90 días” → **Firmar permiso**: la aprobación del dispositivo (passkey: huella, rostro o bloqueo de pantalla)
+4. **Permiso de pago (mandato):** botón **Firmar permiso** → proveedor y topes (“Refrescos Pérez, hasta $1,500 por
+   pago y $3,000 por semana, 90 días”) → **Revisar permiso** → **Firmar permiso**: la aprobación del dispositivo (passkey: huella, rostro o bloqueo de pantalla)
    firma el hash del contenido. La primera vez se activa con **Activar en este dispositivo**.
 5. **Pago agéntico:** `Paga al de los refrescos $1,200` → dentro del permiso → el executor revalida y envía
-   el SPEI (cuenta operativa **simulada**) → recibo. `$1,600` pide aprobación en el celular (R06): **Aprobar el pago**.
+   el SPEI (cuenta operativa **simulada**) → recibo. `$1,600` pide tu aprobación (R06): **Aprobar el pago**
+   abre la aprobación en otra pestaña y la firma el dispositivo donde se abre.
 6. **QR en mostrador:** `QR para Doña Lupe` → QR CoDi por el saldo exacto que el cliente escanea con su banco.
    Mientras haya un cobro abierto no se emite otro (no hay pagos dobles).
 7. **Tanda sin pozo:** botón **🤝 Crear tanda** → integrantes en orden (celular y CLABE) firmados con la aprobación del dispositivo (passkey).
