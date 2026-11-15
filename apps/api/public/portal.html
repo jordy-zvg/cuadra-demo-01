@@ -159,6 +159,18 @@ button:focus-visible,a:focus-visible,input:focus-visible{outline:3px solid var(-
 .steps{display:inline-flex;margin:.1rem 0 .5rem;padding:.2rem .7rem;border-radius:var(--r-pill);background:var(--glyph-bg);color:var(--heading);font-weight:700;font-size:.85rem}
 .sr{position:absolute;width:1px;height:1px;overflow:hidden;clip:rect(0 0 0 0)}
 @media (max-width:480px){header .who span{display:none}}
+/* Sin la espera de doble toque en celulares y tabletas. */
+button,.opt,.keys button{touch-action:manipulation}
+/* Tableta y pantallas anchas: columna más amplia, las cinco acciones en una fila y los teclados
+   de números con un ancho cómodo para el pulgar (no se estiran a toda la pantalla). */
+@media (min-width:700px){
+  .keys,.amount,.dots,.keys + .go{max-width:26rem;margin-left:auto;margin-right:auto}
+}
+@media (min-width:700px) and (max-width:959px){
+  :root{--gut:max(24px, calc(50% - 320px))}
+  header .wrap{max-width:none;padding-left:var(--gut);padding-right:var(--gut)}
+  .svc-grid > *{flex-basis:calc((100% - 1.6em) / 5)}
+}
 /* Laptop y escritorio: el encabezado se abre a lo ancho y el Inicio pasa a dos columnas
    (cifra y acciones a la izquierda, avisos a la derecha). Las demás pantallas siguen siendo
    una sola pregunta en una columna cómoda; el teclado de la laptop también escribe montos y NIP. */
@@ -341,11 +353,13 @@ SCREENS.home = async () => {
   showInstall();
   pollTimer = setInterval(async () => { try { await load(); renderAvisos(); } catch {} }, 4000);
 };
+// Los avisos ya llevan su ícono: se quitan los emojis del texto que viene del chat de WhatsApp.
+const noEmoji = (s) => String(s).replace(/[\p{Extended_Pictographic}️‍]+\s?/gu, "");
 function renderAvisos() {
   const el = $("#avisos"); if (!el) return;
   const out = chat().filter((m) => m.direction === "out" && !(m.actions || []).some((a) => a.kind === "confirm")).slice(-3).reverse();
   el.innerHTML = out.length
-    ? out.map((m) => `<div class="aviso card"><span class="ic-circle" aria-hidden="true">${ic("notifications")}</span><div class="txt">${esc(m.body)}<small>${esc(new Date(m.at).toLocaleString("es-MX", { weekday: "long", hour: "numeric", minute: "2-digit" }))}</small></div></div>`).join("")
+    ? out.map((m) => `<div class="aviso card"><span class="ic-circle" aria-hidden="true">${ic("notifications")}</span><div class="txt">${esc(noEmoji(m.body))}<small>${esc(new Date(m.at).toLocaleString("es-MX", { weekday: "long", hour: "numeric", minute: "2-digit" }))}</small></div></div>`).join("")
     : `<p class="empty">Todavía no hay avisos.</p>`;
 }
 
