@@ -171,11 +171,14 @@ describe("login del portal (servidor)", () => {
     expect(panel.statusCode).toBe(302);
     expect(panel.headers.location).toBe("/login?next=%2Fpanel");
     expect((await server.inject({ url: "/index.html" })).statusCode).toBe(302);
-    // "/" es la landing pública, con el botón Entrar hacia /login.
+    // "/" es la landing pública: Entrar abre el celular y Crear mi cuenta el registro (enlaces directos a /login).
     const landing = await server.inject({ url: "/" });
     expect(landing.statusCode).toBe(200);
-    expect(landing.body).toContain('href="/login"');
+    expect(landing.body).toContain('href="/login?entrar"');
+    expect(landing.body).toContain('href="/login?registro"');
+    expect(landing.body).not.toMatch(/demo|demostración|datos de prueba/i);
     expect((await server.inject({ url: "/login" })).statusCode).toBe(200);
+    expect((await server.inject({ url: "/login?registro" })).statusCode).toBe(200);
   });
 
   it("celular repetido da 409 (aunque venga con lada)", async () => {

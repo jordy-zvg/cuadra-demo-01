@@ -35,7 +35,7 @@ header.top.sin-logo .logo{display:none}
 header .who{flex:1;min-width:0}
 header .who b{display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden;font-family:var(--font-head);font-weight:600;font-size:min(1rem,20px);line-height:1.2;letter-spacing:-.005em;overflow-wrap:anywhere}
 header .who span{display:block;font-size:.75rem;color:var(--on-brand-accent);margin-top:2px}
-header :focus-visible{outline-color:#fff}
+header :focus-visible,header button:focus-visible{outline-color:#fff}
 /* Letra grande: solo el ícono, discreto (sin borde ni texto); el nombre va en aria-label y title. */
 .size{flex:none;display:inline-grid;place-items:center;width:44px;height:44px;padding:0;border:0;border-radius:50%;background:transparent;color:#fff;opacity:.85;cursor:pointer}
 .size::before{content:"";width:24px;height:24px;background:currentColor;-webkit-mask:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24'%3E%3Cpath d='M9 4v3h5v12h3V7h5V4H9zm-6 8h3v7h3v-7h3V9H3v3z'/%3E%3C/svg%3E") center/contain no-repeat;mask:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24'%3E%3Cpath d='M9 4v3h5v12h3V7h5V4H9zm-6 8h3v7h3v-7h3V9H3v3z'/%3E%3C/svg%3E") center/contain no-repeat}
@@ -103,7 +103,7 @@ button:focus-visible,a:focus-visible,input:focus-visible{outline:3px solid var(-
 /* Listas para elegir */
 .list{display:flex;flex-direction:column;gap:.7rem}
 .opt{display:flex;align-items:center;gap:.8rem;width:100%;min-height:3.8rem;padding:.7rem .8rem .7rem .75rem;border-radius:var(--r-lg);border:1px solid var(--card-line);background:var(--surface);box-shadow:var(--shadow-1);color:var(--ink);text-align:left;font-weight:600;font-size:1.05rem;line-height:1.25}
-.opt:hover{border-color:var(--primary)}
+@media (hover:hover) and (pointer:fine){.opt:hover{border-color:var(--primary)}}
 .opt:active{background:var(--glyph-bg)}
 .opt .av{flex:none;width:2.7rem;height:2.7rem;border-radius:50%;background:var(--glyph-bg);color:var(--glyph);display:flex;align-items:center;justify-content:center;font-family:var(--font-head);font-weight:700;font-size:.9rem;letter-spacing:.02em}
 .opt .av .ico{width:1.45rem;height:1.45rem}
@@ -123,8 +123,8 @@ button:focus-visible,a:focus-visible,input:focus-visible{outline:3px solid var(-
 .amount.empty-v{color:var(--ink-2);font-weight:600}
 .keys{display:grid;grid-template-columns:repeat(3,1fr);gap:.55rem}
 .keys button{display:flex;align-items:center;justify-content:center;min-height:3.3rem;border-radius:var(--r-md);border:1px solid var(--card-line);background:var(--surface);box-shadow:var(--shadow-1);color:var(--ink);font-family:var(--font-head);font-size:1.5rem;font-weight:600}
-.keys button:hover{border-color:var(--primary)}
-.keys button:active{background:var(--glyph-bg)}
+@media (hover:hover) and (pointer:fine){.keys button:hover{border-color:var(--primary)}}
+.keys button:active{background:var(--glyph-bg-hover,var(--glyph-bg));border-color:var(--primary)}
 .keys button .ico{width:1.6rem;height:1.6rem;color:var(--glyph)}
 
 /* Respuesta de Cuadra */
@@ -161,8 +161,8 @@ button:focus-visible,a:focus-visible,input:focus-visible{outline:3px solid var(-
 /* Entrar / registrarse */
 .field{display:block;width:100%;font:inherit;font-family:var(--font-head);font-size:1.6rem;font-weight:600;letter-spacing:.06em;text-align:center;padding:.65rem;border-radius:var(--r-lg);border:2px solid var(--line-strong);background:var(--surface-plain);color:var(--ink);margin:.3rem 0 .2rem}
 .field.name{letter-spacing:0;font-size:1.3rem}
-.field::placeholder{color:var(--ink-2);opacity:.85}
-.field:focus,.field:focus-visible{border-color:var(--primary);outline:3px solid var(--glyph-bg);outline-offset:0;box-shadow:0 0 0 1px var(--primary)}
+.field::placeholder{color:var(--ink-2);opacity:.85;font-weight:400;letter-spacing:0}
+.field:focus,.field:focus-visible{border-color:var(--primary);outline:3px solid var(--focus);outline-offset:2px}
 .dots{display:flex;justify-content:center;gap:1.1rem;margin:.6rem 0 1.2rem}
 .dots span{width:1.3rem;height:1.3rem;border-radius:50%;border:3px solid var(--glyph);background:transparent}
 .dots span.on{background:var(--glyph)}
@@ -206,12 +206,14 @@ button,.opt,.keys button{touch-action:manipulation}
 .btn--tertiary{background:transparent;border-color:transparent;color:var(--heading)}
 .btn--tertiary:hover{background:var(--surface);border-color:var(--card-line)}
 .btn--tertiary .ico{color:var(--glyph)}
-.auth-aside .brand{display:flex;align-items:center;gap:.8rem;font-family:var(--font-head);font-weight:700;font-size:1.5rem;letter-spacing:-.01em}
+.auth-aside .brand{display:flex;align-items:center;gap:.8rem;width:fit-content;color:inherit;text-decoration:none;font-family:var(--font-head);font-weight:700;font-size:1.5rem;letter-spacing:-.01em}
+.auth-aside .brand:focus-visible{outline-color:#fff}
+.auth-aside .tl2{display:block}
 .auth-aside .brand img{width:3.2rem;height:3.2rem;flex:none}
-.auth-aside .tagline{font-family:var(--font-head);font-weight:700;font-size:clamp(1.9rem,2.5vw,2.5rem);line-height:1.12;letter-spacing:-.02em;margin:2.2rem 0 0;max-width:13ch;text-wrap:balance}
+.auth-aside .tagline{font-family:var(--font-head);font-weight:700;font-size:clamp(30px,2.6vw,46px);line-height:1.12;letter-spacing:-.02em;margin:2.2rem 0 0}
 .auth-aside ul{list-style:none;padding:0;margin:2.2rem 0 0;display:grid;gap:1.1rem}
-.auth-aside li{display:flex;align-items:flex-start;gap:.8rem;color:var(--on-brand-accent);font-size:.95rem;line-height:1.4;max-width:25rem}
-.auth-aside li .ico{width:1.35rem;height:1.35rem;flex:none;color:#fff;margin-top:.05rem}
+.auth-aside li{display:flex;align-items:flex-start;gap:.8rem;color:#fff;font-size:.95rem;line-height:1.4;max-width:25rem}
+.auth-aside li .ico{width:1.35rem;height:1.35rem;flex:none;color:var(--on-brand-accent);margin-top:.05rem}
 @media (min-width:960px){
   body.auth{display:grid;grid-template-columns:minmax(380px,42%) minmax(0,1fr);grid-template-rows:auto minmax(0,1fr)}
   body.auth::before{inset:0 auto 0 0;width:max(380px,42%);height:auto;background-image:var(--pattern),linear-gradient(165deg,#0D3336 0%,#105658 48%,#1A7579 100%)}
@@ -222,7 +224,8 @@ button,.opt,.keys button{touch-action:manipulation}
   body.auth .size{color:var(--heading)}
   body.auth .size:hover,body.auth .size[aria-pressed="true"]{background:var(--glyph-bg)}
   body.auth header :focus-visible{outline-color:var(--focus)}
-  body.auth #app,body.auth #app:has(> .hero){grid-column:2;grid-row:2;align-self:center;display:block;width:100%;max-width:30rem;margin:0 auto;padding:1.5rem 2.5rem 4rem;background:transparent;border-radius:0}
+  body.auth #app,body.auth #app:has(> .hero){grid-column:2;grid-row:2;align-self:start;display:block;width:100%;max-width:30rem;margin:0 auto;padding:clamp(24px,8vh,96px) 2.5rem 1.5rem;background:transparent;border-radius:0}
+  body.auth .keys button{min-height:2.9rem}
   body.auth #app > .hero{color:var(--ink);padding:0;text-align:left}
   body.auth #app > .hero h1{color:var(--heading);font-size:1.9rem}
   body.auth #app > .hero p{color:var(--ink-2)}
@@ -231,8 +234,11 @@ button,.opt,.keys button{touch-action:manipulation}
   body.auth #app > .hero + .sheet{padding:1.2rem 0 0;background:transparent;border-radius:0}
   body.auth .secure,body.auth .legal{margin-left:0}
   body.auth .keys,body.auth .dots{max-width:20rem;margin-left:0;margin-right:0}
-  body.auth .link{width:auto;text-align:left;color:var(--heading)}
+  body.auth .link{width:auto;text-align:left;color:var(--heading);padding-left:0;padding-right:0;min-height:2.4rem}
 }
+@media (min-width:700px) and (max-width:959px){body.auth{--gut:max(24px, calc(50% - 13rem))}}
+/* Celular acostado: la bienvenida deja los botones a la vista. */
+@media (orientation:landscape) and (max-height:500px){.hero--hello img{display:none}.hero--hello{padding-top:0;padding-bottom:1rem}}
 @media (prefers-reduced-motion: reduce){.spin{animation-duration:3s}.mic.on{animation:none;box-shadow:0 0 0 1.1rem var(--glyph-bg)}}
 </style>
 </head>
@@ -245,8 +251,8 @@ button,.opt,.keys button{touch-action:manipulation}
   </div>
 </header>
 <aside class="auth-aside" aria-label="Cuadra">
-  <div class="brand"><img src="/logo.svg" alt="" width="64" height="64"><span>Cuadra</span></div>
-  <p class="tagline">Fía, cobra y paga sin perder la&nbsp;cuenta.</p>
+  <a class="brand" href="/" aria-label="Cuadra, inicio"><img src="/logo.svg" alt="" width="64" height="64"><span>Cuadra</span></a>
+  <p class="tagline">Fía, cobra y paga <span class="tl2">sin perder la&nbsp;cuenta.</span></p>
   <ul>
     <li><svg class="ico" aria-hidden="true"><use href="/assets/icons.svg#i-edit_note"/></svg><span>Anota el fiado con botones, con tu voz o por WhatsApp.</span></li>
     <li><svg class="ico" aria-hidden="true"><use href="/assets/icons.svg#i-account_balance"/></svg><span>Tus clientes te pagan desde la app de su banco, por CoDi.</span></li>
@@ -350,12 +356,15 @@ let verifyTimer = null;
 const LOGO_AL_CENTRO = new Set(["bienvenida", "listo"]);
 // Pantallas de entrada: en laptop se ven en dos paneles (marca a la izquierda, paso a la derecha).
 const ENTRADA = new Set(["bienvenida", "celular", "nip", "noEncontrado", "olvide", "nombre", "codigo", "nipNuevo", "listo", "verificar"]);
+// Título de la pestaña en las pantallas de entrada (lectores de pantalla y pestañas del navegador).
+const TITULOS = { celular: "Tu celular", nip: "Tu NIP", noEncontrado: "Celular sin cuenta", olvide: "Olvidé mi NIP", nombre: "Crear mi cuenta", codigo: "Código", nipNuevo: "Tu NIP nuevo", listo: "Cuenta creada", verificar: "Verifica tu celular" };
 function go(screen, arg, push = true) {
   if (push && current) history_.push(current);
   arm();
   current = { screen, arg };
   document.querySelector("header.top")?.classList.toggle("sin-logo", LOGO_AL_CENTRO.has(screen));
   document.body.classList.toggle("auth", ENTRADA.has(screen));
+  document.title = TITULOS[screen] ? `${TITULOS[screen]} · Cuadra` : "Cuadra";
   clearInterval(pollTimer); pollTimer = null;
   clearInterval(verifyTimer); verifyTimer = null;
   if (canSpeak) speechSynthesis.cancel();
@@ -864,13 +873,18 @@ SCREENS.celular = (arg) => {
   const reg = arg.mode === "registro";
   app.innerHTML = `
     ${reg ? `<div class="steps">Paso 2 de ${needsShopCode ? 4 : 3}</div>` : ""}
-    <h1>¿Cuál es tu número de celular?</h1>
+    <h1 id="q-tel">¿Cuál es tu número de celular?</h1>
     <p class="lead">Los 10 números de tu celular.</p>
-    <form id="f"><input class="field" id="tel" type="tel" inputmode="numeric" autocomplete="tel-national" maxlength="14" placeholder="55 1234 5678" aria-label="Número de celular" value="${esc(arg.phone || "")}">
+    <form id="f"><input class="field" id="tel" type="tel" inputmode="numeric" autocomplete="tel-national" maxlength="14" placeholder="Ej. 55 1234 5678" aria-labelledby="q-tel" value="${esc(arg.phone || "")}">
     ${arg.error ? `<div class="err" role="alert">${ic("error")}<span>${esc(arg.error)}</span></div>` : ""}
     <button class="go btn btn--block" type="submit">Siguiente${ic("arrow_forward")}</button></form>${navHtml()}`;
   const tel = $("#tel");
   setTimeout(() => tel.focus(), 50);
+  // Agrupa los 10 números como se dicen (55 1234 5678); con lada u otros caracteres se deja tal cual.
+  tel.oninput = () => {
+    const d = tel.value.replace(/\D/g, "");
+    if (d.length <= 10 && /^[\d\s-]*$/.test(tel.value)) tel.value = [d.slice(0, 2), d.slice(2, 6), d.slice(6, 10)].filter(Boolean).join(" ");
+  };
   $("#f").onsubmit = (e) => {
     e.preventDefault();
     let d = tel.value.replace(/\D/g, "");
@@ -913,16 +927,16 @@ SCREENS.noEncontrado = ({ phone }) => {
 
 SCREENS.olvide = () => {
   app.innerHTML = `<h1>¿Olvidaste tu NIP?</h1>
-    <div class="tip">${ic("info")}<span>Por tu seguridad, el NIP no se puede ver ni mandar por mensaje. Pídele al dueño de la tienda que borre tu cuenta y vuelve a registrarte con tu mismo celular.</span></div>
+    <div class="tip">${ic("info")}<span>Por tu seguridad, el NIP no se puede ver ni mandar por mensaje. Pide al equipo de Cuadra que borre tu acceso y vuelve a registrarte con tu mismo celular: tu libreta no se borra.</span></div>
     <button class="go btn btn--block" type="button" data-nav="back" style="margin-top:20px">${ic("arrow_back")}Regresar</button>`;
 };
 
 SCREENS.nombre = (arg) => {
   app.innerHTML = `
     <div class="steps">Paso 1 de ${needsShopCode ? 4 : 3}</div>
-    <h1>¿Cómo te llamas?</h1>
+    <h1 id="q-nm">¿Cómo te llamas?</h1>
     <p class="lead">Así te vamos a saludar.</p>
-    <form id="f"><input class="field name" id="nm" type="text" autocomplete="given-name" maxlength="60" placeholder="Ej. Lupita" aria-label="Tu nombre" value="${esc(arg.name || "")}">
+    <form id="f"><input class="field name" id="nm" type="text" autocomplete="given-name" maxlength="60" placeholder="Ej. Lupita" aria-labelledby="q-nm" value="${esc(arg.name || "")}">
     ${arg.error ? `<div class="err" role="alert">${ic("error")}<span>${esc(arg.error)}</span></div>` : ""}
     <button class="go btn btn--block" type="submit">Siguiente${ic("arrow_forward")}</button></form>${navHtml()}`;
   setTimeout(() => $("#nm").focus(), 50);
@@ -937,9 +951,9 @@ SCREENS.nombre = (arg) => {
 SCREENS.codigo = (arg) => {
   app.innerHTML = `
     <div class="steps">Paso 3 de 4</div>
-    <h1>Código de la tienda</h1>
+    <h1 id="q-code">Código de la tienda</h1>
     <p class="lead">Pídeselo al dueño de la tienda. Así solo entra tu gente.</p>
-    <form id="f"><input class="field" id="code" type="text" inputmode="numeric" autocomplete="off" maxlength="20" aria-label="Código de la tienda" value="${esc(arg.code || "")}">
+    <form id="f"><input class="field" id="code" type="text" inputmode="numeric" autocomplete="off" maxlength="20" aria-labelledby="q-code" value="${esc(arg.code || "")}">
     ${arg.error ? `<div class="err" role="alert">${ic("error")}<span>${esc(arg.error)}</span></div>` : ""}
     <button class="go btn btn--block" type="submit">Siguiente${ic("arrow_forward")}</button></form>${navHtml()}`;
   setTimeout(() => $("#code").focus(), 50);
@@ -997,9 +1011,14 @@ async function start() {
     needsShopCode = !!data.needs_shop_code;
     llaveMode = data.llave || "off";
     if (r.ok) return signedIn(data.account, "");
-    if (new URLSearchParams(location.search).has("registro")) {
+    // Enlaces directos desde la landing: /login?registro abre el registro y /login?entrar el celular
+    // (si este teléfono ya recuerda la cuenta, se pide solo el NIP). "Regresar" lleva a la bienvenida.
+    const q = new URLSearchParams(location.search);
+    const rem = remembered();
+    if (q.has("registro") || (q.has("entrar") && !(rem && !rem.llave))) {
       history.replaceState(history.state, "", location.pathname);
-      history_.length = 0; go("bienvenida", null, false); go("nombre", {});
+      history_.length = 0; go("bienvenida", null, false);
+      if (q.has("registro")) go("nombre", {}); else go("celular", { mode: "entrar" });
       return;
     }
     signedOut();
