@@ -53,7 +53,7 @@ header :focus-visible{outline-color:#fff}
 .hero .date::first-letter{text-transform:uppercase}
 .hero--hello{text-align:center;padding-top:.6rem;padding-bottom:2.6rem}
 .hero--hello img{display:block;width:5.6rem;height:5.6rem;margin:0 auto .9rem}
-.hero--hello p{margin:.45rem 0 0;color:var(--on-brand-accent);font-size:1.05rem}
+.hero--hello p{margin:.45rem 0 0;color:var(--on-brand-accent);font-size:1.05rem;text-wrap:balance}
 @supports not selector(:has(*)){.hero{background:var(--c-deep)}}
 
 /* Títulos y texto */
@@ -789,7 +789,7 @@ SCREENS.bienvenida = () => {
   app.innerHTML = `<section class="hero hero--hello">
     <img src="/logo.svg" alt="">
     <h1>¡Hola! Esto es Cuadra</h1>
-    <p>Tu libreta de fiado, en tu celular.</p></section>
+    <p>Fía, cobra y paga sin perder la&nbsp;cuenta.</p></section>
     <div class="sheet">
     <button class="go btn btn--block" type="button" id="in">Entrar</button>
     <button class="go soft btn btn--outline btn--block" type="button" id="new">Soy nuevo, quiero registrarme</button>
