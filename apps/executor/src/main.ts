@@ -45,6 +45,7 @@ async function main(): Promise<void> {
   const config = { rpID: env("WEBAUTHN_RP_ID"), origins: env("WEBAUTHN_ORIGINS").split(",") };
   // Solo demo: OUTFLOW_HOURS="0-24" quita el horario de R10; debe ser la misma que en la API.
   const outflowHours = parseHourRange(process.env.OUTFLOW_HOURS || undefined);
+  if (process.env.OUTFLOW_HOURS && !outflowHours) log({ msg: "config_invalid", variable: "OUTFLOW_HOURS" });
   const connection = new Redis(env("REDIS_URL"), { maxRetriesPerRequest: null });
 
   const worker = new Worker(

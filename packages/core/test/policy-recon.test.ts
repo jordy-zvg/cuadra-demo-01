@@ -13,6 +13,7 @@ import {
   formatMxWhen,
   isAllDay,
   isMandateActive,
+  isValidHourRange,
   isWithinMxHours,
   mandateCovers,
   matchDeposit,
@@ -31,6 +32,13 @@ describe("parseHourRange (REMINDER_HOURS / OUTFLOW_HOURS)", () => {
     expect(isAllDay([0, 24])).toBe(true);
     expect(isAllDay([1, 24])).toBe(false);
     expect(isAllDay([0, 23])).toBe(false);
+  });
+  it("isValidHourRange: horas enteras y 0 ≤ desde < hasta ≤ 24", () => {
+    expect(isValidHourRange([0, 24])).toBe(true);
+    expect(isValidHourRange([7, 22])).toBe(true);
+    for (const h of [[7.5, 22], [7, 22.5], [22, 7], [5, 5], [-1, 24], [0, 25], [Number.NaN, 22], [0, Number.POSITIVE_INFINITY]] as const) {
+      expect(isValidHourRange(h), String(h)).toBe(false);
+    }
   });
   it("lo que no es un horario válido no cuenta (rige el horario normal)", () => {
     for (const v of [undefined, "", "24-0", "7-7", "0-25", "a-b", "7", "-1-5", "7-22-1", "07:00-22:00"]) expect(parseHourRange(v)).toBeNull();
