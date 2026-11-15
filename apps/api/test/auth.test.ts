@@ -88,13 +88,13 @@ describe("readCookie", () => {
 describe("isPublicPath", () => {
   it("lo privado exige sesión", () => {
     for (const [p, m] of [
-      ["/api/state", "GET"], ["/api/chat", "POST"], ["/", "GET"], ["/tanda", "GET"], ["/mandato", "GET"],
+      ["/api/state", "GET"], ["/api/chat", "POST"], ["/panel", "GET"], ["/index.html", "GET"], ["/tanda", "GET"], ["/mandato", "GET"],
       ["/api/passkey/register/options", "POST"], ["/api/payees", "GET"],
     ] as const) expect(isPublicPath(p, m), `${m} ${p}`).toBe(false);
   });
   it("lo público queda abierto", () => {
     for (const [p, m] of [
-      ["/login", "GET"], ["/webhooks/pey", "POST"], ["/aprobar/x", "GET"], ["/api/proposal/x", "GET"],
+      ["/", "GET"], ["/login", "GET"], ["/webhooks/pey", "POST"], ["/aprobar/x", "GET"], ["/api/proposal/x", "GET"],
       ["/api/approve/verify", "POST"], ["/api/auth/login", "POST"], ["/health", "GET"],
       // Diseño compartido: la página de entrada y la de aprobación lo necesitan sin sesión.
       ["/assets/cuadra.css", "GET"], ["/assets/icons.svg", "GET"], ["/assets/fonts/montserrat-latin-wght-normal.woff2", "GET"],
@@ -167,9 +167,14 @@ describe("login del portal (servidor)", () => {
     const { server } = await app();
     expect((await server.inject({ url: "/api/state" })).statusCode).toBe(401);
     expect((await server.inject({ url: "/api/auth/me" })).statusCode).toBe(401);
-    const home = await server.inject({ url: "/" });
-    expect(home.statusCode).toBe(302);
-    expect(home.headers.location).toBe("/login?next=%2F");
+    const panel = await server.inject({ url: "/panel" });
+    expect(panel.statusCode).toBe(302);
+    expect(panel.headers.location).toBe("/login?next=%2Fpanel");
+    expect((await server.inject({ url: "/index.html" })).statusCode).toBe(302);
+    // "/" es la landing pública, con el botón Entrar hacia /login.
+    const landing = await server.inject({ url: "/" });
+    expect(landing.statusCode).toBe(200);
+    expect(landing.body).toContain('href="/login"');
     expect((await server.inject({ url: "/login" })).statusCode).toBe(200);
   });
 

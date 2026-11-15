@@ -83,7 +83,10 @@ export function buildServer(o: ServerOpts): FastifyInstance {
   app.addHook("onRequest", (req, reply) => auth.guard(req, reply));
   auth.register(app, json);
 
-  app.register(fastifyStatic, { root: o.publicDir ?? fileURLToPath(new URL("../public/", import.meta.url)) });
+  // index:false — "/" es la landing pública; el panel de la demo vive en /panel (con sesión).
+  app.register(fastifyStatic, { root: o.publicDir ?? fileURLToPath(new URL("../public/", import.meta.url)), index: false });
+  app.get("/", async (_req, reply) => reply.type("text/html; charset=utf-8").sendFile("landing.html"));
+  app.get("/panel", async (_req, reply) => reply.type("text/html; charset=utf-8").sendFile("index.html"));
   app.get("/privacidad", async (_req, reply) => reply.type("text/html; charset=utf-8").sendFile("privacidad.html"));
   // Portal sencillo para el comercio (letra grande, un paso por pantalla). Usa la misma API que el chat.
   for (const path of ["/login", "/portal"]) {

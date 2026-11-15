@@ -53,9 +53,11 @@ WhatsApp y manda notas de voz:
 
 ## Demo en vivo
 
-**https://api-production-3d19d021.up.railway.app**
+**https://api-production-3d19d021.up.railway.app** — landing pública con el botón **Entrar**
+(lleva a `/login`: registro o entrada con celular + NIP, o Llave CDMX en modo demo, y de ahí a la
+plataforma). El panel de la demo está en **`/panel`** (pide sesión).
 
-Pantalla dividida: WhatsApp del comercio (chat web simulado) · teléfono del cliente · panel en vivo
+Panel (`/panel`): pantalla dividida: WhatsApp del comercio (chat web simulado) · teléfono del cliente · panel en vivo
 (balanza, conciliación, ledger, cobros CoDi, bloqueos del guard).
 
 1. **Fiado:** escribe `Doña Lupe se llevó $185` → **Confirmar**. El asiento (D 1200 / H 4100) aparece en el panel.
