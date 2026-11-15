@@ -67,7 +67,15 @@ el portal (`POST /api/auth/verify/start` y `POST /api/auth/verify/check`, en `ap
   rechazo, 10 minutos directo al respaldo sin llamar a Meta; con 10 códigos equivocados en 24 horas, ese
   celular ya no recibe códigos (solo el respaldo). En todo Cuadra, a lo más 200 intentos al día (costo y
   reputación del número). Cada intento se aparta en `phone_code_sends` antes de llamar a Meta, con un
-  candado de Postgres por celular, así que dos pestañas o dos procesos a la vez no mandan dos mensajes.
+  candado de Postgres por celular, así que dos pestañas o dos procesos a la vez no mandan dos mensajes. La
+  revisión de cada código usa el mismo candado: el tope de 10 equivocados se cumple aunque lleguen varios a
+  la vez o haya otro código en camino (ese ya no se guarda). Estas carreras se prueban con Postgres real en
+  `apps/api/test/phone-code.postgres.test.ts` (CI levanta un Postgres desechable).
+- **Por sesión:** al comprobar el celular (con el código escrito o con el del respaldo) queda verificada la
+  sesión que lo comprobó y se cierran las demás sesiones de la cuenta. El código del respaldo es de la
+  sesión que lo pidió; otra sesión no lo puede reemplazar. Así, si alguien abre una sesión con la Llave
+  CDMX de demo (basta la CURP y el celular), esa sesión no queda verificada cuando la dueña comprueba su
+  celular.
 - **Respaldo:** si WhatsApp no lo entrega (plantilla aún sin aprobar, error 132001; celular fuera de la
   lista del número de prueba, error 131030) o se llegó a un tope, el portal pasa solo al camino anterior:
   muestra un código y la persona lo manda desde su celular. Ese código es otro y solo sirve por WhatsApp;
@@ -98,7 +106,8 @@ variables la ruta no existe y la app sigue con el chat web.
 - 15-nov: el código de verificación del celular sale por WhatsApp (`cuadra_codigo`, autenticación); falta darla
   de alta y que Meta la apruebe. Mientras tanto se usa el respaldo. La revisión de seguridad del mismo día
   (migración 0017) cerró que un código rechazado sirviera mientras Meta contestaba y que registrarse de nuevo
-  reiniciara los topes.
+  reiniciara los topes. La segunda revisión (migración 0018) hizo que comprobar el celular cuente solo para la
+  sesión que lo comprobó y que el tope de 10 equivocados se cumpla con peticiones a la vez.
 - Falta: probar contra Meta con llaves reales, aprobación de plantillas, notas de voz (#9) y fotos (#10).
 
 ## Listo cuando…

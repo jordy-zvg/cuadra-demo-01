@@ -54,9 +54,6 @@ export const portalAccounts = pgTable("portal_accounts", {
   lockedUntil: ts("locked_until"),
   /** Cuándo la persona probó por WhatsApp que el celular es suyo (null: sin verificar). */
   phoneVerifiedAt: ts("phone_verified_at"),
-  /** Hash del código que la persona manda desde su celular (camino de respaldo; nunca el código). */
-  verifyCodeHash: text("verify_code_hash"),
-  verifyExpiresAt: ts("verify_expires_at"),
   /** Hash del código que Cuadra manda por WhatsApp y la persona escribe en el portal (nunca el código). */
   otpHash: text("otp_hash"),
   otpExpiresAt: ts("otp_expires_at"),
@@ -87,6 +84,12 @@ export const portalSessions = pgTable("portal_sessions", {
   tokenHash: text("token_hash").primaryKey(),
   accountId: text("account_id").notNull(),
   expiresAt: ts("expires_at").notNull(),
+  /**
+   * Hash del código del respaldo que pidió ESTA sesión (la persona lo manda desde su WhatsApp; nunca el
+   * código). Al comprobar el celular quedan solo las sesiones que lo comprobaron.
+   */
+  verifyCodeHash: text("verify_code_hash"),
+  verifyExpiresAt: ts("verify_expires_at"),
   createdAt: ts("created_at").notNull().defaultNow(),
 });
 

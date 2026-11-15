@@ -4,7 +4,7 @@ import type { FastifyInstance, FastifyReply, FastifyRequest } from "fastify";
 import { z } from "zod";
 import type { Db } from "@cuadra/db";
 import { realPhone10, schema, storeForPerson } from "@cuadra/db";
-import { and, desc, eq, gt, isNotNull, isNull, lt, lte, or, sql } from "drizzle-orm";
+import { and, desc, eq, gt, isNotNull, isNull, lt, lte, notInArray, or, sql } from "drizzle-orm";
 
 /**
  * Login del portal: celular (10 dígitos) + NIP de 4 dígitos, pensado para personas con poca
@@ -145,6 +145,8 @@ export interface PortalAccount {
   merchantId: string;
   /** Ya probó por WhatsApp que el celular es suyo (o la verificación está apagada). */
   verified: boolean;
+  /** Hash del token de la sesión de esta petición (nunca el token). */
+  session: string;
 }
 
 /** Respaldo (la persona manda el código desde su celular): vigencia y espera mínima para pedir otro. */
@@ -189,29 +191,55 @@ type StartRes = { status: number; body: Record<string, unknown> };
 export const verifyMessage = (code: string) => `Mi código de Cuadra es ${code}`;
 
 /**
- * Un mensaje de WhatsApp que llega del celular `phone10` con el código vigente de su cuenta la
- * verifica: el celular es de quien tiene la cuenta. También verifica al dueño de su tienda (mismo
- * celular), para que Cuadra le conteste por WhatsApp. Devuelve el nombre si verificó.
+ * Un mensaje de WhatsApp que llega del celular `phone10` con el código vigente de una sesión de su cuenta
+ * la verifica: el celular es de quien tiene esa sesión. Las demás sesiones de la cuenta se cierran (ver
+ * markPhoneVerified). También verifica al dueño de su tienda (mismo celular), para que Cuadra le conteste
+ * por WhatsApp. Devuelve el nombre si verificó.
  */
 export async function verifyPhoneByWhatsApp(db: Db, phone10: string, text: string, now: Date): Promise<{ name: string } | null> {
   const m = /(?:^|\D)(\d{6})(?:\D|$)/.exec(text);
   if (!m) return null;
   const [acc] = await db.select().from(schema.portalAccounts).where(eq(schema.portalAccounts.phone, phone10));
-  if (!acc || acc.phoneVerifiedAt || !acc.verifyCodeHash || !acc.verifyExpiresAt || acc.verifyExpiresAt <= now) return null;
-  if (!sameSecret(sha256(m[1]!), acc.verifyCodeHash)) return null;
-  await markPhoneVerified(db, acc, now);
+  if (!acc || acc.phoneVerifiedAt) return null;
+  const S = schema.portalSessions;
+  const pending = await db
+    .select({ tokenHash: S.tokenHash, hash: S.verifyCodeHash })
+    .from(S)
+    .where(and(eq(S.accountId, acc.id), isNotNull(S.verifyCodeHash), gt(S.verifyExpiresAt, now), gt(S.expiresAt, now)));
+  const got = sha256(m[1]!);
+  const [first, ...rest] = pending.filter((p) => p.hash !== null && sameSecret(got, p.hash)).map((p) => p.tokenHash);
+  if (!first) return null;
+  await markPhoneVerified(db, acc, now, [first, ...rest]);
   return { name: acc.name };
 }
 
+/** Códigos equivocados de este celular en las últimas 24 horas. */
+async function missesToday(db: Db, phone: string, now: Date): Promise<number> {
+  const M = schema.phoneCodeMisses;
+  const [r] = await db
+    .select({ n: sql<number>`count(*)::int` })
+    .from(M)
+    .where(and(eq(M.phone, phone), gt(M.missedAt, new Date(now.getTime() - DAY_MS))));
+  return r?.n ?? 0;
+}
+
+/** Candado por celular (7001: espacio de candados del código; no choca con los de otras partes). */
+const lockPhone = (tx: Db, phone: string) => tx.execute(sql`SELECT pg_advisory_xact_lock(7001, hashtext(${phone}))`);
+
 /**
- * Deja la cuenta verificada y borra sus códigos (los de los dos caminos). También verifica al dueño
- * de su tienda si es el mismo celular, para que Cuadra le conteste por WhatsApp.
+ * Deja la cuenta verificada, borra sus códigos y cierra las demás sesiones: solo siguen abiertas las que
+ * comprobaron el celular (`keep`). Así, una sesión abierta por otra persona (p. ej. con la Llave CDMX de
+ * demo, que no comprueba identidad) no queda verificada cuando la dueña comprueba su celular.
+ * También verifica al dueño de su tienda si es el mismo celular, para que Cuadra le conteste por WhatsApp.
  */
-async function markPhoneVerified(db: Db, acc: { id: string; merchantId: string; phone: string }, now: Date): Promise<void> {
+async function markPhoneVerified(db: Db, acc: { id: string; merchantId: string; phone: string }, now: Date, keep: [string, ...string[]]): Promise<void> {
   await db
     .update(schema.portalAccounts)
-    .set({ phoneVerifiedAt: now, verifyCodeHash: null, verifyExpiresAt: null, otpHash: null, otpExpiresAt: null, otpAttempts: 0 })
+    .set({ phoneVerifiedAt: now, otpHash: null, otpExpiresAt: null, otpAttempts: 0 })
     .where(eq(schema.portalAccounts.id, acc.id));
+  const S = schema.portalSessions;
+  await db.delete(S).where(and(eq(S.accountId, acc.id), notInArray(S.tokenHash, keep)));
+  await db.update(S).set({ verifyCodeHash: null, verifyExpiresAt: null }).where(eq(S.accountId, acc.id));
   const owners = await db
     .select({ id: schema.merchantUsers.id, phone: schema.merchantUsers.phone })
     .from(schema.merchantUsers)
@@ -252,7 +280,9 @@ export class PortalAuth {
       .innerJoin(schema.portalAccounts, eq(schema.portalAccounts.id, schema.portalSessions.accountId))
       .where(eq(schema.portalSessions.tokenHash, sha256(token)));
     if (!row || row.expiresAt <= this.o.now()) return null;
-    const account = { id: row.id, name: row.name, phone: row.phone, merchantId: row.merchantId, verified: this.isVerified(row.phoneVerifiedAt) };
+    const account = {
+      id: row.id, name: row.name, phone: row.phone, merchantId: row.merchantId, verified: this.isVerified(row.phoneVerifiedAt), session: sha256(token),
+    };
     this.seen.set(req, account);
     return account;
   }
@@ -292,22 +322,24 @@ export class PortalAuth {
   }
 
   /**
-   * Peticiones de «mándame el código» en curso por cuenta (en este proceso). Si llega otra de la misma
-   * cuenta mientras Meta contesta (otra pestaña, una recarga), espera y recibe la misma respuesta: no
-   * se manda otro mensaje, no se dice «te lo mandamos» antes de saberlo y, si toca el respaldo, las dos
-   * pantallas muestran el mismo código. Entre cuentas y procesos, el candado de claimSend.
+   * Peticiones de «mándame el código» en curso por SESIÓN (en este proceso). Si llega otra de la misma
+   * sesión mientras Meta contesta (otra pestaña del mismo navegador, una recarga), espera y recibe la
+   * misma respuesta: no se manda otro mensaje, no se dice «te lo mandamos» antes de saberlo y, si toca el
+   * respaldo, las dos pantallas muestran el mismo código. Por sesión y no por cuenta: el código del
+   * respaldo es de la sesión que lo pidió y nunca se le entrega a otra. Entre sesiones y procesos, el
+   * candado de claimSend.
    */
   private readonly starting = new Map<string, Promise<StartRes>>();
 
-  private async once(accountId: string, run: () => Promise<StartRes>): Promise<StartRes> {
-    const busy = this.starting.get(accountId);
+  private async once(session: string, run: () => Promise<StartRes>): Promise<StartRes> {
+    const busy = this.starting.get(session);
     if (busy) return busy;
     const job = run(); // entre get y set no hay await: dos peticiones de este proceso nunca empiezan juntas
-    this.starting.set(accountId, job);
+    this.starting.set(session, job);
     try {
       return await job;
     } finally {
-      if (this.starting.get(accountId) === job) this.starting.delete(accountId);
+      if (this.starting.get(session) === job) this.starting.delete(session);
     }
   }
 
@@ -351,10 +383,8 @@ export class PortalAuth {
    */
   private async sendState(db: Db, phone: string, now: Date): Promise<SendState> {
     const S = schema.phoneCodeSends;
-    const M = schema.phoneCodeMisses;
     const dayAgo = new Date(now.getTime() - DAY_MS);
-    const [misses] = await db.select({ n: sql<number>`count(*)::int` }).from(M).where(and(eq(M.phone, phone), gt(M.missedAt, dayAgo)));
-    if ((misses?.n ?? 0) >= PHONE_CODE_MAX_MISSES_PER_DAY) return { kind: "fallback", reason: "locked" };
+    if ((await missesToday(db, phone, now)) >= PHONE_CODE_MAX_MISSES_PER_DAY) return { kind: "fallback", reason: "locked" };
     const tries = await db
       .select({ at: S.sentAt, status: S.status })
       .from(S)
@@ -363,9 +393,11 @@ export class PortalAuth {
     const last = tries[0];
     const age = last ? now.getTime() - last.at.getTime() : Number.POSITIVE_INFINITY;
     if (last?.status === "failed" && age < PHONE_CODE_FAIL_BACKOFF_MS) return { kind: "fallback", reason: "not_sent" };
-    if (age < PHONE_CODE_RESEND_MS || (last?.status === "pending" && age < PHONE_CODE_PENDING_STALE_MS)) {
-      return { kind: "wait", retryAfterS: Math.max(1, Math.ceil((PHONE_CODE_RESEND_MS - age) / 1000)) };
-    }
+    // Un minuto entre intentos (Meta contesta en menos de 15 s). Si pasado el minuto el último sigue «en
+    // camino» (se reinició el proceso a medio envío), se espera hasta darlo por perdido.
+    const waitMs =
+      age < PHONE_CODE_RESEND_MS ? PHONE_CODE_RESEND_MS - age : last?.status === "pending" ? PHONE_CODE_PENDING_STALE_MS - age : 0;
+    if (waitMs > 0) return { kind: "wait", retryAfterS: Math.ceil(waitMs / 1000) };
     const hourAgo = now.getTime() - 3_600_000;
     if (tries.filter((t) => t.at.getTime() > hourAgo).length >= PHONE_CODE_MAX_PER_HOUR || tries.length >= PHONE_CODE_MAX_PER_DAY) {
       return { kind: "fallback", reason: last?.status === "failed" ? "not_sent" : "limit", log: "phone_code_limit" };
@@ -385,8 +417,7 @@ export class PortalAuth {
    */
   private claimSend(phone: string, now: Date): Promise<{ kind: "claimed"; id: number } | Exclude<SendState, { kind: "go" }>> {
     return this.o.db.transaction(async (tx) => {
-      // 7001: espacio de candados del código por celular (no choca con los de otras partes).
-      await tx.execute(sql`SELECT pg_advisory_xact_lock(7001, hashtext(${phone}))`);
+      await lockPhone(tx, phone);
       const st = await this.sendState(tx, phone, now);
       if (st.kind !== "go") return st;
       const [row] = await tx
@@ -412,14 +443,19 @@ export class PortalAuth {
       this.o.log?.({ msg: "phone_code_not_sent", merchant_id: a.merchantId, account_id: a.id, code: typeof meta === "number" ? meta : null });
       return { kind: "fallback", reason: "not_sent" };
     }
-    // WhatsApp lo aceptó: desde ahora se puede escribir, y el anterior ya no sirve.
-    const expiresAt = new Date(this.o.now().getTime() + PHONE_CODE_TTL_MS);
-    await this.o.db
-      .update(A)
-      .set({ otpHash: sha256(code), otpExpiresAt: expiresAt, otpAttempts: 0 })
-      .where(and(eq(A.id, a.id), isNull(A.phoneVerifiedAt)));
-    await this.o.db.update(S).set({ status: "sent" }).where(eq(S.id, sendId));
-    this.o.log?.({ msg: "phone_code_sent", merchant_id: a.merchantId, account_id: a.id });
+    // WhatsApp lo aceptó: desde ahora se puede escribir, y el anterior ya no sirve. Con el candado del
+    // celular: si mientras Meta contestaba se llegó a los 10 equivocados, este código ya no se guarda.
+    const now = this.o.now();
+    const expiresAt = new Date(now.getTime() + PHONE_CODE_TTL_MS);
+    const stored = await this.o.db.transaction(async (tx) => {
+      await lockPhone(tx, a.phone);
+      await tx.update(S).set({ status: "sent" }).where(eq(S.id, sendId));
+      if ((await missesToday(tx, a.phone, now)) >= PHONE_CODE_MAX_MISSES_PER_DAY) return false;
+      await tx.update(A).set({ otpHash: sha256(code), otpExpiresAt: expiresAt, otpAttempts: 0 }).where(and(eq(A.id, a.id), isNull(A.phoneVerifiedAt)));
+      return true;
+    });
+    this.o.log?.({ msg: "phone_code_sent", merchant_id: a.merchantId, account_id: a.id, ...(stored ? {} : { stored: false }) });
+    if (!stored) return { kind: "fallback", reason: "locked" };
     return { kind: "ok", expiresAt, resendInS: Math.round(PHONE_CODE_RESEND_MS / 1000) };
   }
 
@@ -441,18 +477,19 @@ export class PortalAuth {
     return st.kind === "fallback" ? st.reason : null;
   }
 
-  /** Respaldo: un código que la persona manda desde su celular por WhatsApp (enlace wa.me ya escrito). */
+  /**
+   * Respaldo: un código que la persona manda desde su celular por WhatsApp (enlace wa.me ya escrito). Es
+   * de esta sesión: solo esta sesión queda verificada cuando llega (y otra no lo puede reemplazar).
+   */
   private async codeFromPhone(a: PortalAccount, now: Date, reason: FallbackReason | null): Promise<StartRes> {
-    const [row] = await this.o.db
-      .select({ expiresAt: schema.portalAccounts.verifyExpiresAt })
-      .from(schema.portalAccounts)
-      .where(eq(schema.portalAccounts.id, a.id));
+    const S = schema.portalSessions;
+    const [row] = await this.o.db.select({ expiresAt: S.verifyExpiresAt }).from(S).where(eq(S.tokenHash, a.session));
     if (row?.expiresAt && row.expiresAt.getTime() - VERIFY_CODE_TTL_MS + VERIFY_RESEND_MS > now.getTime()) {
       return { status: 429, body: { error: "Espera unos segundos para pedir otro código." } };
     }
     const code = String(randomInt(100_000, 1_000_000));
     const expiresAt = new Date(now.getTime() + VERIFY_CODE_TTL_MS);
-    await this.o.db.update(schema.portalAccounts).set({ verifyCodeHash: sha256(code), verifyExpiresAt: expiresAt }).where(eq(schema.portalAccounts.id, a.id));
+    await this.o.db.update(S).set({ verifyCodeHash: sha256(code), verifyExpiresAt: expiresAt }).where(eq(S.tokenHash, a.session));
     const number = this.o.verification?.waNumber ?? null;
     return {
       status: 200,
@@ -645,7 +682,7 @@ export class PortalAuth {
       const res =
         body.method === undefined ? await this.codeFromPhone(a, now, null)
         : body.method === "code_from_phone" ? await this.codeFromPhone(a, now, await this.toPhoneBlocked(a, now))
-        : await this.once(a.id, () => this.startToPhone(a, now, body.resend === true));
+        : await this.once(a.session, () => this.startToPhone(a, now, body.resend === true));
       return reply.code(res.status).send(res.body);
     });
 
@@ -658,45 +695,54 @@ export class PortalAuth {
       const code = parsed.success ? parsed.data.code.replace(/\D/g, "") : "";
       if (code.length !== 6) return reply.code(400).send({ error: "Escribe los 6 números del código.", reason: "format" });
       const now = o.now();
-      // Primero se gasta un intento y luego se compara. El UPDATE es atómico: aunque lleguen varias
-      // peticiones a la vez, nunca se comparan más de PHONE_CODE_MAX_ATTEMPTS por código.
+      // Todo con el candado del celular (el mismo de los envíos): aunque lleguen muchos códigos a la vez,
+      // nunca se comparan más de PHONE_CODE_MAX_ATTEMPTS por código ni más de
+      // PHONE_CODE_MAX_MISSES_PER_DAY equivocados por celular en 24 horas.
       const A = schema.portalAccounts;
-      const [row] = await o.db
-        .update(A)
-        .set({ otpAttempts: sql`${A.otpAttempts} + 1` })
-        .where(and(eq(A.id, a.id), isNotNull(A.otpHash), gt(A.otpExpiresAt, now), lt(A.otpAttempts, PHONE_CODE_MAX_ATTEMPTS)))
-        .returning({ hash: A.otpHash, attempts: A.otpAttempts });
-      if (!row?.hash) {
-        const [cur] = await o.db.select({ hash: A.otpHash, expiresAt: A.otpExpiresAt }).from(A).where(eq(A.id, a.id));
-        const reason = !cur?.hash ? "none" : cur.expiresAt && cur.expiresAt <= now ? "expired" : "locked";
-        const error =
-          reason === "locked" ? "Ya usaste los 5 intentos. Pide un código nuevo." : reason === "expired" ? "Ese código ya venció. Pide uno nuevo." : "Pide un código nuevo.";
-        return reply.code(410).send({ error, reason });
-      }
-      if (!sameSecret(sha256(code), row.hash)) {
-        // Cada código equivocado se anota por celular. Con muchos en 24 horas se anula el código y ese
-        // celular ya no recibe más (solo el respaldo, que exige escribir desde su WhatsApp).
-        const M = schema.phoneCodeMisses;
-        await o.db.insert(M).values({ phone: a.phone, missedAt: now });
-        const [misses] = await o.db
-          .select({ n: sql<number>`count(*)::int` })
-          .from(M)
-          .where(and(eq(M.phone, a.phone), gt(M.missedAt, new Date(now.getTime() - DAY_MS))));
-        if ((misses?.n ?? 0) >= PHONE_CODE_MAX_MISSES_PER_DAY) {
-          await o.db.update(A).set({ otpHash: null, otpExpiresAt: null }).where(eq(A.id, a.id));
-          o.log?.({ msg: "phone_code_locked", merchant_id: a.merchantId, account_id: a.id });
-          return reply.code(400).send({ error: "Ese código no es y ya no quedan intentos. Pide un código nuevo.", reason: "wrong", attempts_left: 0 });
+      const res = await o.db.transaction(async (tx): Promise<{ status: number; body: Record<string, unknown> }> => {
+        await lockPhone(tx, a.phone);
+        const missed = await missesToday(tx, a.phone, now);
+        if (missed >= PHONE_CODE_MAX_MISSES_PER_DAY) {
+          await tx.update(A).set({ otpHash: null, otpExpiresAt: null }).where(eq(A.id, a.id));
+          return { status: 410, body: { error: "Pide un código nuevo.", reason: "none" } };
         }
-        const left = Math.max(0, PHONE_CODE_MAX_ATTEMPTS - row.attempts);
-        const error =
-          left === 0
-            ? "Ese código no es y ya usaste los 5 intentos. Pide un código nuevo."
-            : `Ese código no es. Te ${left === 1 ? "queda 1 intento" : `quedan ${left} intentos`}.`;
-        return reply.code(400).send({ error, reason: "wrong", attempts_left: left });
-      }
-      await markPhoneVerified(o.db, a, now);
-      o.log?.({ msg: "phone_verified", merchant_id: a.merchantId, account_id: a.id, method: "code_to_phone" });
-      return { verified: true };
+        // Primero se gasta un intento y luego se compara.
+        const [row] = await tx
+          .update(A)
+          .set({ otpAttempts: sql`${A.otpAttempts} + 1` })
+          .where(and(eq(A.id, a.id), isNotNull(A.otpHash), gt(A.otpExpiresAt, now), lt(A.otpAttempts, PHONE_CODE_MAX_ATTEMPTS)))
+          .returning({ hash: A.otpHash, attempts: A.otpAttempts });
+        if (!row?.hash) {
+          const [cur] = await tx.select({ hash: A.otpHash, expiresAt: A.otpExpiresAt }).from(A).where(eq(A.id, a.id));
+          const reason = !cur?.hash ? "none" : cur.expiresAt && cur.expiresAt <= now ? "expired" : "locked";
+          const error =
+            reason === "locked" ? "Ya usaste los 5 intentos. Pide un código nuevo." : reason === "expired" ? "Ese código ya venció. Pide uno nuevo." : "Pide un código nuevo.";
+          return { status: 410, body: { error, reason } };
+        }
+        if (!sameSecret(sha256(code), row.hash)) {
+          // Cada código equivocado se anota por celular. Con muchos en 24 horas se anula el código y ese
+          // celular ya no recibe más (solo el respaldo, que exige escribir desde su WhatsApp).
+          await tx.insert(schema.phoneCodeMisses).values({ phone: a.phone, missedAt: now });
+          const leftToday = PHONE_CODE_MAX_MISSES_PER_DAY - (missed + 1);
+          if (leftToday <= 0) {
+            await tx.update(A).set({ otpHash: null, otpExpiresAt: null }).where(eq(A.id, a.id));
+            o.log?.({ msg: "phone_code_locked", merchant_id: a.merchantId, account_id: a.id });
+            return { status: 400, body: { error: "Ese código no es y ya no quedan intentos. Pide un código nuevo.", reason: "wrong", attempts_left: 0 } };
+          }
+          // Lo que queda de este código, sin pasar de lo que le queda al celular hoy.
+          const left = Math.max(0, Math.min(PHONE_CODE_MAX_ATTEMPTS - row.attempts, leftToday));
+          const error =
+            left === 0
+              ? "Ese código no es y ya usaste los 5 intentos. Pide un código nuevo."
+              : `Ese código no es. Te ${left === 1 ? "queda 1 intento" : `quedan ${left} intentos`}.`;
+          return { status: 400, body: { error, reason: "wrong", attempts_left: left } };
+        }
+        // Correcto: queda verificada esta sesión y se cierran las demás de la cuenta.
+        await markPhoneVerified(tx, a, now, [a.session]);
+        return { status: 200, body: { verified: true } };
+      });
+      if (res.status === 200) o.log?.({ msg: "phone_verified", merchant_id: a.merchantId, account_id: a.id, method: "code_to_phone" });
+      return reply.code(res.status).send(res.body);
     });
 
     app.post("/api/auth/logout", async (req, reply) => {

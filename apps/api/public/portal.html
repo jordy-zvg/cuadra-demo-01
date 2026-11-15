@@ -1008,7 +1008,9 @@ function verifyByCode(r, resent) {
 
 /** Respaldo: la persona nos manda por WhatsApp, desde su celular, el código que ve aquí. */
 function verifyFromPhone(r) {
-  const why = r.reason === "limit" ? "Ya te mandamos varios códigos. Para seguir, mándanos"
+  // "limit": se llegó al tope de intentos (cuentan también los que WhatsApp rechazó), así que se dice
+  // «intentamos», no «te mandamos».
+  const why = r.reason === "limit" ? "Ya intentamos mandarte varios códigos. Para seguir, mándanos"
     : r.reason === "not_sent" ? "No pudimos mandarte el código por WhatsApp. Para seguir, mándanos"
     : r.reason === "locked" ? "Se escribieron varios códigos equivocados. Por seguridad, para seguir mándanos"
     : "Mándanos";

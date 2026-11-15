@@ -412,6 +412,50 @@ describe("Llave CDMX (demo)", () => {
     expect((await server.inject({ url: "/api/state", headers: { cookie: cookieOf(again) } })).statusCode).toBe(403);
   });
 
+  it("si alguien entra con la CURP y el celular de otra persona, cuando ella comprueba su celular se cierra la sesión del otro", async () => {
+    const sent: string[] = [];
+    const a = await app({ llave: "demo", verification: "whatsapp", sendCode: async (_p, code) => { sent.push(code); } });
+    const startFor = (cookie: string) =>
+      a.server.inject({ method: "POST", url: "/api/auth/verify/start", headers: { cookie }, payload: { method: "code_to_phone" } });
+    const checkFor = (cookie: string, code: string) =>
+      a.server.inject({ method: "POST", url: "/api/auth/verify/check", headers: { cookie }, payload: { code } });
+    const state = async (cookie: string) => (await a.server.inject({ url: "/api/state", headers: { cookie } })).statusCode;
+    const mine = cookieOf(await cb(a.server, await start(a.server)));
+    await startFor(mine);
+    expect((await checkFor(mine, sent[0]!)).json()).toEqual({ verified: true });
+    // Alguien con su CURP y su celular abre otra sesión: la cuenta vuelve a pedir el celular.
+    const intruso = cookieOf(await cb(a.server, await start(a.server)));
+    expect(await state(mine)).toBe(403);
+    expect(await state(intruso)).toBe(403);
+    // Ella escribe el código que le llega: queda solo su sesión.
+    a.advance(61_000);
+    await startFor(mine);
+    expect((await checkFor(mine, sent[1]!)).json()).toEqual({ verified: true });
+    expect(await state(mine)).toBe(200);
+    expect(await state(intruso)).toBe(401);
+  });
+
+  it("lo mismo con el respaldo: el código es de la sesión que lo pidió y otra no lo puede reemplazar", async () => {
+    const a = await app({ llave: "demo", verification: "whatsapp" }); // sin envío por WhatsApp: solo el respaldo
+    const fallback = async (cookie: string) =>
+      (await a.server.inject({ method: "POST", url: "/api/auth/verify/start", headers: { cookie }, payload: { method: "code_from_phone" } })).json() as {
+        code: string; message: string;
+      };
+    const state = async (cookie: string) => (await a.server.inject({ url: "/api/state", headers: { cookie } })).statusCode;
+    const mine = cookieOf(await cb(a.server, await start(a.server)));
+    expect(await verifyPhoneByWhatsApp(a.db, "5587654321", (await fallback(mine)).message, a.now())).toEqual({ name: "María Pérez" });
+    const intruso = cookieOf(await cb(a.server, await start(a.server)));
+    a.advance(21_000);
+    const suyo = await fallback(mine);
+    const delOtro = await fallback(intruso); // no reemplaza el de ella
+    expect(delOtro.code).toMatch(/^\d{6}$/);
+    expect(await verifyPhoneByWhatsApp(a.db, "5587654321", suyo.message, a.now())).toEqual({ name: "María Pérez" });
+    expect(await state(mine)).toBe(200);
+    expect(await state(intruso)).toBe(401);
+    // Y el código que pidió el otro ya no sirve.
+    expect(await verifyPhoneByWhatsApp(a.db, "5587654321", delOtro.message, a.now())).toBeNull();
+  });
+
   it("respeta el código de la tienda para cuentas nuevas", async () => {
     const { server } = await app({ llave: "demo", shopCode: "4321" });
     expect((await cb(server, await start(server))).statusCode).toBe(403);
@@ -555,7 +599,7 @@ describe("código por WhatsApp: Cuadra lo manda y se escribe en el portal", () =
     const [acc] = await f.db.select().from(schema.portalAccounts);
     const owners = await f.db.select().from(schema.merchantUsers).where(eq(schema.merchantUsers.merchantId, acc!.merchantId));
     expect(owners.some((o) => o.phoneVerified)).toBe(true);
-    expect(acc).toMatchObject({ otpHash: null, otpExpiresAt: null, verifyCodeHash: null });
+    expect(acc).toMatchObject({ otpHash: null, otpExpiresAt: null });
   });
 
   it("cada camino tiene su propio código: el que manda Cuadra no sirve de regreso y el del respaldo no sirve escrito", async () => {
@@ -776,6 +820,83 @@ describe("código por WhatsApp: Cuadra lo manda y se escribe en el portal", () =
     expect((await startAs(tercero)).json()).toMatchObject({ method: "code_from_phone", reason: "not_sent" });
     expect(f.calls()).toBe(2);
     expect(f.logs).toContainEqual(expect.objectContaining({ msg: "phone_code_budget" }));
+  });
+
+  it("si se llega a los 10 equivocados mientras otro código va en camino, ese código ya no se guarda", async () => {
+    const meta = slowMeta();
+    let hold = false;
+    const f = await setup({ gate: () => (hold ? meta.gate() : Promise.resolve()) });
+    await f.start();
+    for (let i = 0; i < 5; i++) await f.check(f.other(f.sent[0]!.code));
+    f.advance(MIN_1);
+    await f.start({ resend: true });
+    for (let i = 0; i < 4; i++) await f.check(f.other(f.sent[1]!.code)); // 9 equivocados
+    f.advance(MIN_1);
+    hold = true;
+    const inFlight = f.start({ resend: true }); // se apartó con 9: todavía se podía
+    await until(() => meta.waiting.length === 1);
+    expect((await f.check(f.other(f.sent[1]!.code))).json()).toMatchObject({ reason: "wrong", attempts_left: 0 }); // el décimo
+    meta.release();
+    expect((await inFlight).json()).toMatchObject({ method: "code_from_phone", reason: "locked" });
+    expect((await f.check(f.tried[2]!)).json()).toMatchObject({ reason: "none" }); // llegó, pero no sirve
+    expect(await f.db.select().from(schema.phoneCodeMisses)).toHaveLength(10);
+  });
+
+  it("los intentos que quedan nunca pasan de lo que le queda al celular hoy", async () => {
+    const f = await setup();
+    await f.start();
+    for (let i = 0; i < 3; i++) await f.check(f.other(f.sent[0]!.code));
+    f.advance(MIN_1);
+    await f.start({ resend: true });
+    for (let i = 0; i < 5; i++) await f.check(f.other(f.sent[1]!.code)); // 8 equivocados
+    f.advance(MIN_1);
+    await f.start({ resend: true });
+    expect((await f.check(f.other(f.sent[2]!.code))).json()).toEqual({ error: "Ese código no es. Te queda 1 intento.", reason: "wrong", attempts_left: 1 });
+    expect((await f.check(f.other(f.sent[2]!.code))).json()).toMatchObject({ reason: "wrong", attempts_left: 0 });
+    expect((await f.check(f.sent[2]!.code)).json()).toMatchObject({ reason: "none" });
+  });
+
+  it("a lo más 10 intentos de envío al día por celular, aunque haya pasado la hora", async () => {
+    const f = await setup();
+    await f.start();
+    for (let i = 0; i < 4; i++) { f.advance(MIN_1); await f.start({ resend: true }); }
+    f.advance(60 * 60_000);
+    for (let i = 0; i < 5; i++) { await f.start({ resend: true }); f.advance(MIN_1); }
+    expect(f.calls()).toBe(10);
+    f.advance(60 * 60_000);
+    expect((await f.start({ resend: true })).json()).toMatchObject({ method: "code_from_phone", reason: "limit" });
+    expect(f.calls()).toBe(10);
+    f.advance(DAY);
+    expect((await f.start({ resend: true })).json()).toMatchObject({ method: "code_to_phone" });
+    expect(f.calls()).toBe(11);
+  });
+
+  it("un intento que se quedó «en camino» (p. ej. se reinició el proceso) detiene otros envíos solo 2 minutos", async () => {
+    const f = await setup();
+    await f.db.insert(schema.phoneCodeSends).values({ phone: "5521111111", sentAt: new Date(f.now().getTime() - 90_000), status: "pending" });
+    const early = await f.start();
+    expect(early.statusCode).toBe(429);
+    expect(early.json()).toMatchObject({ retry_after_s: 30 });
+    f.advance(31_000);
+    expect((await f.start()).json()).toMatchObject({ method: "code_to_phone" });
+    expect(f.calls()).toBe(1);
+  });
+
+  it("dos sesiones de la misma cuenta a la vez: el código del respaldo de una nunca le llega a la otra", async () => {
+    const meta = slowMeta();
+    const f = await setup({ fail: 131030, gate: meta.gate });
+    const otra = cookieOf(await login(f.server, "2580", "5521111111")); // p. ej. alguien más con la cuenta abierta
+    const mine = f.start();
+    const theirs = f.server.inject({ method: "POST", url: "/api/auth/verify/start", headers: { cookie: otra }, payload: { method: "code_to_phone" } });
+    await until(() => meta.waiting.length === 1);
+    meta.release();
+    const [m, t] = [(await mine).json(), (await theirs).json()];
+    expect(m).toMatchObject({ method: "code_from_phone", reason: "not_sent", code: expect.stringMatching(/^\d{6}$/) });
+    expect(t.code).not.toBe(m.code);
+    // Ese código verifica solo la sesión que lo pidió.
+    expect(await verifyPhoneByWhatsApp(f.db, "5521111111", m.message, f.now())).toEqual({ name: "Ana Ruiz" });
+    expect(await f.state()).toBe(200);
+    expect((await f.server.inject({ url: "/api/state", headers: { cookie: otra } })).statusCode).toBe(401);
   });
 
   it("una pestaña con el portal de antes (sin `method`) recibe el respaldo de siempre y no se manda nada", async () => {

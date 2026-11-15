@@ -1,5 +1,7 @@
-# Typecheck y tests en cada push y pull request. Los tests de base de datos corren con PGlite
-# (Postgres en proceso), así que no hace falta un servicio de Postgres ni secretos.
+# Typecheck y tests en cada push y pull request. Casi todos los tests de base de datos corren con PGlite
+# (Postgres en proceso). Los que necesitan Postgres real (migraciones con node-postgres y carreras entre
+# dos procesos, que PGlite no puede reproducir porque corre una transacción a la vez) usan un Postgres
+# desechable del propio workflow: sin datos ni secretos.
 name: CI
 
 on:
@@ -17,8 +19,25 @@ jobs:
   test:
     runs-on: ubuntu-latest
     timeout-minutes: 15
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_USER: cuadra
+          POSTGRES_PASSWORD: cuadra
+          POSTGRES_DB: cuadra_test
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U cuadra -d cuadra_test"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
     env:
       TZ: America/Mexico_City
+      # Base vacía y desechable (ver packages/db/test/postgres.smoke.test.ts y
+      # apps/api/test/phone-code.postgres.test.ts, que crea y borra la suya).
+      TEST_DATABASE_URL: postgres://cuadra:cuadra@localhost:5432/cuadra_test
     steps:
       - uses: actions/checkout@v4
       # Toma la versión de pnpm del campo packageManager de package.json.
