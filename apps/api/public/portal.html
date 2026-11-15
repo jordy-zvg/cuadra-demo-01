@@ -159,6 +159,17 @@ button:focus-visible,a:focus-visible,input:focus-visible{outline:3px solid var(-
 .steps{display:inline-flex;margin:.1rem 0 .5rem;padding:.2rem .7rem;border-radius:var(--r-pill);background:var(--glyph-bg);color:var(--heading);font-weight:700;font-size:.85rem}
 .sr{position:absolute;width:1px;height:1px;overflow:hidden;clip:rect(0 0 0 0)}
 @media (max-width:480px){header .who span{display:none}}
+/* Laptop y escritorio: el encabezado se abre a lo ancho y el Inicio pasa a dos columnas
+   (cifra y acciones a la izquierda, avisos a la derecha). Las demás pantallas siguen siendo
+   una sola pregunta en una columna cómoda; el teclado de la laptop también escribe montos y NIP. */
+@media (min-width:960px){
+  :root{--gut-wide:max(32px, calc(50% - 540px))}
+  header .wrap{max-width:none;padding-left:var(--gut-wide);padding-right:var(--gut-wide)}
+  .hero:not(.hero--hello){padding-left:var(--gut-wide);padding-right:var(--gut-wide)}
+  #app > .hero + .sheet--home{display:grid;grid-template-columns:minmax(0,1.15fr) minmax(0,1fr);gap:0 3rem;align-items:start;padding-left:var(--gut-wide);padding-right:var(--gut-wide)}
+  .home-side{position:sticky;top:1rem}
+  .home-side .sec-title{margin-top:0}
+}
 @media (prefers-reduced-motion: reduce){.spin{animation-duration:3s}.mic.on{animation:none;box-shadow:0 0 0 1.1rem var(--glyph-bg)}}
 </style>
 </head>
@@ -273,6 +284,14 @@ app.addEventListener("click", (e) => {
   const n = e.target.closest("[data-nav]"); if (!n) return;
   n.dataset.nav === "back" ? back() : home();
 });
+// En laptop, el teclado físico aprieta las mismas teclas de pantalla (montos y NIP); Enter = Listo.
+document.addEventListener("keydown", (e) => {
+  if (e.ctrlKey || e.metaKey || e.altKey || e.target.closest?.("input,textarea,select")) return;
+  const k = e.key === "Backspace" ? "⌫" : e.key === "," ? "." : e.key;
+  const key = app.querySelector(`.keys [data-k="${CSS.escape(k)}"]`);
+  if (key) { e.preventDefault(); key.click(); return; }
+  if (e.key === "Enter" && app.querySelector(".keys") && !e.target.closest?.("button")) $("#ok")?.click();
+});
 
 // ---------- pantallas ----------
 const SCREENS = {};
@@ -292,7 +311,8 @@ SCREENS.home = async () => {
       <h1>Hola${me ? ", " + esc(firstName(me.name)) : ""}</h1>
       <p class="date">${esc(new Date().toLocaleDateString("es-MX", { weekday: "long", day: "numeric", month: "long", year: "numeric" }))}</p>
     </section>
-    <div class="sheet">
+    <div class="sheet sheet--home">
+    <div class="home-main">
     <div class="total card card--pattern" aria-label="Te deben en total ${esc(mxn(owes))}">
       <div class="l">Te deben en total</div>
       <div class="v">${esc(mxn(owes))}</div>
@@ -308,9 +328,12 @@ SCREENS.home = async () => {
       <button class="big wide alt svc" type="button" data-go="voz"><span class="ic-circle">${ic("mic")}</span>Decirlo con mi voz</button>
       <button class="big wide alt svc" type="button" id="install" hidden><span class="ic-circle">${ic("install_mobile")}</span>Poner Cuadra en mi pantalla</button>
     </div>
+    </div>
+    <div class="home-side">
     <h2 class="sec-title">Últimos avisos</h2>
     <div id="avisos"></div>
     <button class="go soft btn btn--outline btn--block" type="button" id="logout">${ic("logout")}Salir de mi cuenta</button>
+    </div>
     </div>`;
   $("#logout").onclick = logout;
   app.querySelectorAll("[data-go]").forEach((b) => (b.onclick = () => go(b.dataset.go)));
