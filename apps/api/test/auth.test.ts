@@ -5,7 +5,7 @@ import { describe, expect, it } from "vitest";
 import { cleanName, hashPin, isPublicPath, normalizeCurp, normalizePhone, pinProblem, readCookie, verifyPin } from "../src/auth.js";
 import { SimulatedGateway } from "../src/gateway.js";
 import { buildServer } from "../src/server.js";
-import { CuadraService } from "../src/service.js";
+import { createStoreRegistry } from "../src/app.js";
 
 describe("normalizePhone", () => {
   it("acepta 10 dígitos, con espacios o guiones", () => {
@@ -121,14 +121,15 @@ async function app(opts: { shopCode?: string | null; secureCookies?: boolean; de
   const { db } = await createTestDb();
   await seedDemo(db);
   const gateway = new SimulatedGateway(db);
-  const service = new CuadraService({
-    db, merchantId: DEMO.merchantId, ownerId: DEMO.ownerId, interpreters: [new RuleInterpreter()], gateway,
-    verify: async () => false, now, publicUrl: null, peyWebhookSecret: null, bankSim: false, udi: null, log: () => {},
+  const registry = createStoreRegistry({
+    db, liveGateway: gateway, interpreters: [new RuleInterpreter()], verify: async () => false, now, publicUrl: null,
+    peyWebhookSecret: null, bankSim: false, udi: null, log: () => {},
   });
   const server = buildServer({
-    db, service, merchantId: DEMO.merchantId, gateway, bankSim: false, demoPassword: opts.demoPassword ?? null, log: () => {},
+    db, registry, liveMerchantId: DEMO.merchantId, liveGateway: gateway, peyWebhookSecret: null, bankSim: false,
+    demoPassword: opts.demoPassword ?? null, log: () => {},
     portalAuth: { shopCode: opts.shopCode ?? null, secureCookies: opts.secureCookies ?? false, llave: opts.llave ?? "off", now },
-    passkey: { gateway, db, merchantId: DEMO.merchantId, ownerId: DEMO.ownerId, rpID: "localhost", origins: ["http://localhost"], now },
+    passkey: { rpID: "localhost", origins: ["http://localhost"], now },
   });
   return { server, db, advance: (ms: number) => { clock.t = new Date(clock.t.getTime() + ms); } };
 }

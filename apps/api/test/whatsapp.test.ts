@@ -60,7 +60,7 @@ async function setup() {
   await seedDemo(db, NOW, { ownerPhone: "+525511112222", lupePhone: "+525512345678" });
   const wa = new FakeWhatsApp();
   const logs: Array<Record<string, unknown>> = [];
-  const channel = new WhatsAppChannel({ db, merchantId: M, ownerId: DEMO.ownerId, client: wa, log: (r) => logs.push(r) });
+  const channel = new WhatsAppChannel({ db, client: wa, log: (r) => logs.push(r) });
   const svc = new CuadraService({
     db, merchantId: M, ownerId: DEMO.ownerId, interpreters: [new RuleInterpreter()],
     gateway: new QrGateway(db), verify: async () => false, now: () => NOW, publicUrl: null,

@@ -75,12 +75,15 @@ button:focus-visible,a:focus-visible,input:focus-visible{outline:3px solid var(-
 .total{padding:1.05rem 1.1rem 1.15rem;text-align:center}
 .total .l{font-family:var(--font-head);font-weight:700;text-transform:uppercase;letter-spacing:.12em;font-size:.78rem;color:var(--ink)}
 .total .v{font-family:var(--font-head);font-weight:700;font-size:2.9rem;line-height:1.1;margin:.3rem 0 .25rem;color:var(--hero-ink);font-variant-numeric:tabular-nums;letter-spacing:-.02em}
-.total .s{display:inline-flex;align-items:center;gap:.35rem;color:var(--ink-2);font-size:.95rem}
-.total .s .ico{color:var(--glyph)}
+.total .s{display:block;color:var(--ink-2);font-size:.95rem;text-align:center;text-wrap:balance}
+.total .s .ico{color:var(--glyph);margin-right:.35rem}
 .svc-grid{font-size:.92rem}
 .svc{min-height:2.8rem}
 .svc .ic-circle{width:3.7rem;height:3.7rem}
 .aviso{display:flex;align-items:flex-start;gap:.75rem;padding:.85rem 1rem;margin-bottom:.7rem}
+/* Lo que debo: misma forma que la lista de clientes, pero no se toca (solo lectura). */
+.opt.debo{cursor:default;margin-bottom:.7rem}
+.debo-lead{margin-top:-.4rem}
 .aviso .ic-circle{font-size:.85rem;margin-top:.1rem}
 .aviso .txt{flex:1;min-width:0;white-space:pre-wrap;overflow-wrap:anywhere}
 .aviso small{display:block;color:var(--ink-2);font-size:.75rem;margin-top:.35rem}
@@ -308,16 +311,33 @@ SCREENS.home = async () => {
       <button class="big wide alt svc" type="button" data-go="voz"><span class="ic-circle">${ic("mic")}</span>Decirlo con mi voz</button>
       <button class="big wide alt svc" type="button" id="install" hidden><span class="ic-circle">${ic("install_mobile")}</span>Poner Cuadra en mi pantalla</button>
     </div>
+    <div id="debo"></div>
     <h2 class="sec-title">Últimos avisos</h2>
     <div id="avisos"></div>
     <button class="go soft btn btn--outline btn--block" type="button" id="logout">${ic("logout")}Salir de mi cuenta</button>
     </div>`;
   $("#logout").onclick = logout;
   app.querySelectorAll("[data-go]").forEach((b) => (b.onclick = () => go(b.dataset.go)));
+  renderDebo();
   renderAvisos();
   showInstall();
   pollTimer = setInterval(async () => { try { await load(); renderAvisos(); } catch {} }, 4000);
 };
+// "Lo que debo": tiendas que te tienen como cliente con tu celular. Solo lectura: cada tienda ve su
+// propia libreta y tú solo ves tu deuda con cada una.
+async function renderDebo() {
+  const el = $("#debo"); if (!el) return;
+  let debts = [];
+  try { const r = await fetch("/api/me/debts", { cache: "no-store" }); if (r.ok) debts = (await r.json()).debts || []; } catch {}
+  debts = debts.filter((d) => BigInt(d.owes) > 0n || d.open_charge);
+  if (!debts.length) { el.innerHTML = ""; return; }
+  el.innerHTML = `<h2 class="sec-title">Lo que debo</h2>
+    <p class="lead debo-lead">Tiendas que te anotaron fiado con tu celular.</p>
+    ${debts.map((d) => `<div class="opt debo" role="group" aria-label="Le debes ${esc(mxn(d.owes))} a ${esc(d.store)}">
+      <span class="av" aria-hidden="true">${ic("storefront")}</span>
+      <span class="t">${esc(d.store)}${d.open_charge ? `<small>Tienes un cobro pendiente, ref. ${esc(d.open_charge.reference)}</small>` : ""}</span>
+      <span class="amt">${esc(mxn(d.owes))}</span></div>`).join("")}`;
+}
 function renderAvisos() {
   const el = $("#avisos"); if (!el) return;
   const out = chat().filter((m) => m.direction === "out" && !(m.actions || []).some((a) => a.kind === "confirm")).slice(-3).reverse();

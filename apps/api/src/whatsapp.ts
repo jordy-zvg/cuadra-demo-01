@@ -10,15 +10,14 @@ import {
   WhatsAppApiError,
   phone10,
 } from "@cuadra/adapters";
-import { type Db, schema } from "@cuadra/db";
-import { type OutboundChannel, type OutboundMessage, resolveThreadPhone } from "./channel.js";
+import { type Db, schema, storeOfPhone } from "@cuadra/db";
+import { and, eq } from "drizzle-orm";
+import type { OutboundChannel, OutboundMessage } from "./channel.js";
 import type { CuadraService } from "./service.js";
 import { TEMPLATE_LANGUAGE } from "./whatsapp-templates.js";
 
 export interface WhatsAppChannelDeps {
   db: Db;
-  merchantId: string;
-  ownerId: string;
   client: Pick<WhatsAppClient, "sendText" | "sendButtons" | "sendTemplate" | "uploadMedia" | "sendImage">;
   log: (r: Record<string, unknown>) => void;
 }
@@ -73,9 +72,12 @@ export class WhatsAppChannel implements OutboundChannel {
     }
   }
 
-  /** Procesa mensajes entrantes ya verificados por firma. Idempotente por id de mensaje de Meta. */
-  async handleInbound(msgs: WhatsAppInbound[], service: CuadraService): Promise<void> {
-    const owner = await resolveThreadPhone(this.d.db, this.d.merchantId, this.d.ownerId, "comercio");
+  /**
+   * Procesa mensajes entrantes ya verificados por firma. Idempotente por id de mensaje de Meta.
+   * Cada mensaje va a la tienda cuyo dueño tiene ese celular (una persona = un celular). `route`
+   * da el servicio de esa tienda; si se pasa un servicio, solo se atienden mensajes de su dueño.
+   */
+  async handleInbound(msgs: WhatsAppInbound[], route: CuadraService | ((merchantId: string) => Promise<CuadraService | null>)): Promise<void> {
     for (const m of msgs) {
       const fresh = await this.d.db
         .insert(schema.webhookEvents)
@@ -84,11 +86,19 @@ export class WhatsAppChannel implements OutboundChannel {
         .returning({ id: schema.webhookEvents.eventId });
       if (fresh.length === 0) continue;
 
-      if (!owner || phone10(m.from) !== owner) {
+      const from = phone10(m.from);
+      const store = from ? await storeOfPhone(this.d.db, from) : null;
+      const service = !store ? null : typeof route === "function" ? await route(store.merchantId) : route.merchantId === store.merchantId ? route : null;
+      if (!from || !store || !service) {
         // ponytail: clientes que responden (opt-in "SÍ") van en el componente #14; hoy solo se registra.
         this.d.log({ msg: "whatsapp_ignored_sender", message_id: m.id });
         continue;
       }
+      // Escribir desde ese celular prueba que es suyo: desde ahora Cuadra también le contesta por WhatsApp.
+      await this.d.db
+        .update(schema.merchantUsers)
+        .set({ phoneVerified: true })
+        .where(and(eq(schema.merchantUsers.id, store.ownerId), eq(schema.merchantUsers.phoneVerified, false)));
 
       if (m.kind === "text") {
         await service.handleMerchantMessage(m.text, m.forwarded ? "third_party_content" : "user_direct");
@@ -102,9 +112,9 @@ export class WhatsAppChannel implements OutboundChannel {
         else if (sep > 0 && arg && action === "say") await service.handleMerchantMessage(arg, "user_direct");
       } else {
         await this.send({
-          merchantId: this.d.merchantId,
+          merchantId: store.merchantId,
           thread: "comercio",
-          phone10: owner,
+          phone10: from,
           body: "Por ahora solo leo mensajes de texto. Escríbeme, por ejemplo: “Doña Lupe se llevó $185”.",
           actions: [],
         });

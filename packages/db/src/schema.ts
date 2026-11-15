@@ -27,6 +27,8 @@ export const merchants = pgTable("merchants", {
   maxOutflowsPerHour: integer("max_outflows_per_hour").notNull(),
   providerAccountId: text("provider_account_id").unique(),
   peyBankAccountId: text("pey_bank_account_id"),
+  /** Cobra y paga en vivo con el proveedor. Las demás tiendas, en modo simulado. */
+  livePayments: boolean("live_payments").notNull().default(false),
   createdAt: ts("created_at").notNull().defaultNow(),
 });
 

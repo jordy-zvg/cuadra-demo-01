@@ -13,3 +13,4 @@ export * from "./risk.js";
 export * from "./charges.js";
 export * from "./bank-sim.js";
 export * from "./tandas.js";
+export * from "./stores.js";

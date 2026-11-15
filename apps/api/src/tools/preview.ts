@@ -17,24 +17,27 @@ import { createTestDb } from "@cuadra/db/testing";
 import { SimulatedGateway } from "../gateway.js";
 import { seedHistory } from "../seed-history.js";
 import { buildServer } from "../server.js";
-import { CuadraService } from "../service.js";
+import { createStoreRegistry } from "../app.js";
 
 async function main(): Promise<void> {
   const { db } = await createTestDb();
   const now = () => new Date();
-  await seedDemo(db, now(), { lupePhone: "5512345678" });
+  // Dueña de la tienda demo: 5511110000. Doña Lupe (clienta de la demo): 5512345678.
+  await seedDemo(db, now(), { lupePhone: "5512345678", ownerPhone: "5511110000" });
   await seedHistory(db, DEMO.merchantId);
   const gateway = new SimulatedGateway(db);
-  const service = new CuadraService({
-    db, merchantId: DEMO.merchantId, ownerId: DEMO.ownerId, interpreters: [new RuleInterpreter()], gateway,
-    verify: async () => false, now, publicUrl: null, peyWebhookSecret: null, bankSim: true, udi: parseUdiValue("8.927827"), log: () => {},
-    reminderMinIntervalMs: 0,
+  const registry = createStoreRegistry({
+    db, liveGateway: gateway, interpreters: [new RuleInterpreter()], verify: async () => false, now, publicUrl: null,
+    peyWebhookSecret: null, bankSim: true, udi: parseUdiValue("8.927827"), log: () => {}, reminderMinIntervalMs: 0,
   });
+  const demoStore = await registry.get(DEMO.merchantId);
+  if (!demoStore) throw new Error("sin tienda demo");
+  const service = demoStore.service;
   const build = (publicDir?: string) =>
     buildServer({
-      db, service, merchantId: DEMO.merchantId, gateway, bankSim: true, log: () => {},
+      db, registry, liveMerchantId: DEMO.merchantId, liveGateway: gateway, peyWebhookSecret: null, bankSim: true, log: () => {},
       portalAuth: { shopCode: null, secureCookies: false, llave: "demo" },
-      passkey: { gateway, db, merchantId: DEMO.merchantId, ownerId: DEMO.ownerId, rpID: "localhost", origins: ["http://localhost"], now },
+      passkey: { rpID: "localhost", origins: ["http://localhost"], now },
       ...(publicDir ? { publicDir } : {}),
     });
 
@@ -59,8 +62,13 @@ async function main(): Promise<void> {
   const main = build();
   const port = Number(process.env.PORT ?? 4100);
   await main.listen({ port, host: "127.0.0.1" });
-  const reg = await main.inject({ method: "POST", url: "/api/auth/register", payload: { name: "Mari López", phone: "5512345678", pin: "2580" } });
-  const cookie = String(reg.headers["set-cookie"] ?? "").split(";")[0] ?? "";
+  const register = async (name: string, phone: string) => {
+    const r = await main.inject({ method: "POST", url: "/api/auth/register", payload: { name, phone, pin: "2580" } });
+    return String(r.headers["set-cookie"] ?? "").split(";")[0] ?? "";
+  };
+  // La dueña entra a la tienda demo; Lupe tiene su propia libreta y ve lo que le debe a la demo.
+  const cookie = await register("Mari López", "5511110000");
+  const cookieCliente = await register("Lupe Hernández", "5512345678");
 
   const variants = (process.env.PREVIEW_VARIANTS ?? "").split(",").map((v) => v.trim()).filter(Boolean);
   const ports: Record<string, string> = { [String(port)]: "apps/api/public" };
@@ -70,7 +78,7 @@ async function main(): Promise<void> {
     await build(resolve(dir)).listen({ port: Number(p), host: "127.0.0.1" });
     ports[p] = resolve(dir);
   }
-  const info = { cookie, ports, account: { phone: "5512345678", pin: "2580" } };
+  const info = { cookie, cookie_cliente: cookieCliente, ports, accounts: { duena: "5511110000", clienta: "5512345678", pin: "2580" } };
   if (process.env.PREVIEW_INFO) writeFileSync(process.env.PREVIEW_INFO, JSON.stringify(info, null, 2));
   console.log(JSON.stringify({ msg: "preview_ready", ...info }));
 }

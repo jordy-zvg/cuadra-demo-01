@@ -122,6 +122,11 @@ export class CuadraService {
   readonly tanda: TandaFlow;
   /** Cobros al mismo cliente (solicitudes CoDi y QR): de uno en uno. */
   private readonly chargeLocks = new Map<string, Promise<void>>();
+  /** Tienda a la que pertenece este servicio. */
+  get merchantId(): string {
+    return this.d.merchantId;
+  }
+
   constructor(private readonly d: ServiceDeps) {
     this.tanda = new TandaFlow({
       db: d.db,

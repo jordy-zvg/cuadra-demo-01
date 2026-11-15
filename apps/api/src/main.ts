@@ -2,12 +2,12 @@ import { PeyClient, WhatsAppClient, verifyProposalAssertion } from "@cuadra/adap
 import { parseUdiValue } from "@cuadra/core";
 import { AnthropicInterpreter, FallbackInterpreter, type Interpreter, RuleInterpreter } from "@cuadra/agents";
 import { connectPostgres, migratePostgres } from "@cuadra/db/node";
-import { schema, seedDemo } from "@cuadra/db";
+import { assignAccountStores, schema, seedDemo } from "@cuadra/db";
 import { eq } from "drizzle-orm";
 import { type ChargeGateway, PeyGateway, SimulatedGateway } from "./gateway.js";
 import { seedHistory } from "./seed-history.js";
 import { buildServer } from "./server.js";
-import { CuadraService } from "./service.js";
+import { createStoreRegistry } from "./app.js";
 import { WhatsAppChannel } from "./whatsapp.js";
 import { parsePortalReset, resetPortalAccounts } from "./portal-reset.js";
 import { parseMinIntervalMinutes } from "./reminder-config.js";
@@ -34,7 +34,7 @@ async function main(): Promise<void> {
   const reset = parsePortalReset(process.env.PORTAL_RESET);
   if (reset.invalid.length) log({ msg: "config_invalid", variable: "PORTAL_RESET", entries: reset.invalid });
   if (reset.entries.length) {
-    for (const r of await resetPortalAccounts(db, demo.merchantId, reset.entries)) log({ msg: "portal_account_reset", merchant_id: demo.merchantId, ...r });
+    for (const r of await resetPortalAccounts(db, reset.entries)) log({ msg: "portal_account_reset", ...r });
   }
   const bankSim = env("BANK_SIM") !== "off";
   // Cuenta receptora del comercio registrada en pey (POST /bank-account, estado ACTIVE).
@@ -65,8 +65,6 @@ async function main(): Promise<void> {
       ? {
           channel: new WhatsAppChannel({
             db,
-            merchantId: demo.merchantId,
-            ownerId: demo.ownerId,
             client: new WhatsAppClient({ token: waToken, phoneNumberId: waPhoneId, ...(env("WHATSAPP_GRAPH_VERSION") ? { version: env("WHATSAPP_GRAPH_VERSION")! } : {}) }),
             log,
           }),
@@ -84,12 +82,15 @@ async function main(): Promise<void> {
     log({ msg: "reminder_interval_override", minutes: reminderMinIntervalMs / 60_000, warning: "solo para desarrollo; en producción debe quedar sin definir" });
   }
 
-  const service = new CuadraService({
+  // Una tienda por persona. Solo la demo (dueña de la cuenta receptora en pey) cobra en vivo; las
+  // tiendas nuevas cobran y pagan en simulado hasta que registren su propia cuenta.
+  await db.update(schema.merchants).set({ livePayments: !gateway.simulated }).where(eq(schema.merchants.id, demo.merchantId));
+  const moved = await assignAccountStores(db, new Date());
+  if (moved) log({ msg: "portal_accounts_moved_to_own_store", accounts: moved });
+  const registry = createStoreRegistry({
     db,
-    merchantId: demo.merchantId,
-    ownerId: demo.ownerId,
+    liveGateway: gateway,
     interpreters,
-    gateway,
     verify: (a) => verifyProposalAssertion({ ...a, config: { rpID, origins } }),
     now: () => new Date(),
     publicUrl,
@@ -101,18 +102,22 @@ async function main(): Promise<void> {
     log,
     ...(whatsapp ? { channels: [whatsapp.channel] } : {}),
   });
+  const demoStore = await registry.get(demo.merchantId);
+  if (!demoStore) throw new Error("La tienda de demo no tiene dueño");
+  const service = demoStore.service;
   const app = buildServer({
     db,
-    service,
-    merchantId: demo.merchantId,
-    gateway,
+    registry,
+    liveMerchantId: demo.merchantId,
+    liveGateway: gateway,
+    peyWebhookSecret: env("PEY_WEBHOOK_SECRET") ?? null,
     bankSim,
     demoPassword: env("DEMO_PASSWORD") ?? null,
     // Registro en el portal: si PORTAL_SHOP_CODE existe, pedirlo (lo da el dueño); si no, registro abierto.
     portalAuth: { shopCode: env("PORTAL_SHOP_CODE") ?? null, secureCookies: publicUrl?.startsWith("https://") ?? false,
       // Llave CDMX: solo modo demo (simulado) mientras no haya alta con la ADIP. LLAVE_CDMX=off lo quita.
       llave: env("LLAVE_CDMX") === "off" ? "off" : "demo" },
-    passkey: { gateway, db, merchantId: demo.merchantId, ownerId: demo.ownerId, rpID, origins, now: () => new Date() },
+    passkey: { rpID, origins, now: () => new Date() },
     log,
     ...(whatsapp ? { whatsapp } : {}),
   });

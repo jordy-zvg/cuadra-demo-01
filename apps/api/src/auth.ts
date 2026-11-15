@@ -3,7 +3,7 @@ import { promisify } from "node:util";
 import type { FastifyInstance, FastifyReply, FastifyRequest } from "fastify";
 import { z } from "zod";
 import type { Db } from "@cuadra/db";
-import { schema } from "@cuadra/db";
+import { schema, storeForPerson } from "@cuadra/db";
 import { and, eq, lt } from "drizzle-orm";
 
 /**
@@ -21,7 +21,6 @@ export const LOCK_MINUTES = 15;
 
 export interface AuthOpts {
   db: Db;
-  merchantId: string;
   /** Si existe, registrarse pide este código de la tienda (lo da el dueño). */
   shopCode: string | null;
   /** Cookie con Secure (en producción, detrás de HTTPS). */
@@ -125,21 +124,40 @@ export interface PortalAccount {
   id: string;
   name: string;
   phone: string;
+  /** La tienda (libreta) de esta persona. Cada cuenta ve solo la suya. */
+  merchantId: string;
 }
 
 export class PortalAuth {
+  /** Cuenta ya verificada por el guard en esta petición (evita leer la sesión dos veces). */
+  private readonly seen = new WeakMap<FastifyRequest, PortalAccount>();
   constructor(private readonly o: AuthOpts) {}
 
   async accountFromRequest(req: FastifyRequest): Promise<PortalAccount | null> {
+    const cached = this.seen.get(req);
+    if (cached) return cached;
     const token = readCookie(req.headers.cookie, SESSION_COOKIE);
     if (!token || token.length > 200) return null;
     const [row] = await this.o.db
-      .select({ id: schema.portalAccounts.id, name: schema.portalAccounts.name, phone: schema.portalAccounts.phone, expiresAt: schema.portalSessions.expiresAt })
+      .select({
+        id: schema.portalAccounts.id,
+        name: schema.portalAccounts.name,
+        phone: schema.portalAccounts.phone,
+        merchantId: schema.portalAccounts.merchantId,
+        expiresAt: schema.portalSessions.expiresAt,
+      })
       .from(schema.portalSessions)
       .innerJoin(schema.portalAccounts, eq(schema.portalAccounts.id, schema.portalSessions.accountId))
-      .where(and(eq(schema.portalSessions.tokenHash, sha256(token)), eq(schema.portalAccounts.merchantId, this.o.merchantId)));
+      .where(eq(schema.portalSessions.tokenHash, sha256(token)));
     if (!row || row.expiresAt <= this.o.now()) return null;
-    return { id: row.id, name: row.name, phone: row.phone };
+    const account = { id: row.id, name: row.name, phone: row.phone, merchantId: row.merchantId };
+    this.seen.set(req, account);
+    return account;
+  }
+
+  /** Tienda de la persona: la que ya tiene por su celular (p. ej. el dueño de la demo) o una nueva. */
+  private storeFor(name: string, phone: string): Promise<{ merchantId: string }> {
+    return storeForPerson(this.o.db, { ownerName: name, phone10: phone, now: this.o.now() });
   }
 
   private async startSession(reply: FastifyReply, accountId: string): Promise<void> {
@@ -183,13 +201,12 @@ export class PortalAuth {
       }
       const bad = pinProblem(b.data.pin);
       if (bad) return reply.code(400).send({ field: "pin", error: bad });
-      const [exists] = await o.db
-        .select({ id: schema.portalAccounts.id })
-        .from(schema.portalAccounts)
-        .where(and(eq(schema.portalAccounts.merchantId, o.merchantId), eq(schema.portalAccounts.phone, phone)));
+      // El celular identifica a la persona en todo Cuadra: una sola cuenta por celular.
+      const [exists] = await o.db.select({ id: schema.portalAccounts.id }).from(schema.portalAccounts).where(eq(schema.portalAccounts.phone, phone));
       if (exists) return reply.code(409).send({ field: "phone", error: "Ese celular ya está registrado. Mejor entra con tu NIP." });
       const id = randomUUID();
-      await o.db.insert(schema.portalAccounts).values({ id, merchantId: o.merchantId, name, phone, pinHash: await hashPin(b.data.pin) });
+      const store = await this.storeFor(name, phone);
+      await o.db.insert(schema.portalAccounts).values({ id, merchantId: store.merchantId, name, phone, pinHash: await hashPin(b.data.pin) });
       await this.startSession(reply, id);
       return { ok: true, account: { name, phone_last4: phone.slice(-4) } };
     });
@@ -198,10 +215,7 @@ export class PortalAuth {
       const b = Login.safeParse(json(req.body));
       const phone = b.success ? normalizePhone(b.data.phone) : null;
       if (!b.success || !phone) return reply.code(400).send({ field: "phone", error: "El celular debe tener 10 números." });
-      const [acc] = await o.db
-        .select()
-        .from(schema.portalAccounts)
-        .where(and(eq(schema.portalAccounts.merchantId, o.merchantId), eq(schema.portalAccounts.phone, phone)));
+      const [acc] = await o.db.select().from(schema.portalAccounts).where(eq(schema.portalAccounts.phone, phone));
       if (!acc) return reply.code(404).send({ field: "phone", error: "No encontramos ese celular. ¿Quieres registrarte?" });
       const now = o.now();
       if (acc.lockedUntil && acc.lockedUntil > now) {
@@ -274,10 +288,7 @@ export class PortalAuth {
       if (!phone) return reply.code(400).send({ field: "phone", error: "El celular debe tener 10 números." });
       const sub = `demo:${sha256(curp)}`; // nunca se guarda la CURP
 
-      const [linked] = await o.db
-        .select()
-        .from(schema.portalAccounts)
-        .where(and(eq(schema.portalAccounts.merchantId, o.merchantId), eq(schema.portalAccounts.llaveSub, sub)));
+      const [linked] = await o.db.select().from(schema.portalAccounts).where(eq(schema.portalAccounts.llaveSub, sub));
       if (linked) {
         states.delete(b.data.state);
         await this.startSession(reply, linked.id);
@@ -287,15 +298,13 @@ export class PortalAuth {
       if (o.shopCode !== null && !sameSecret((b.data.shop_code ?? "").trim(), o.shopCode)) {
         return reply.code(403).send({ field: "shop_code", error: "Ese código de la tienda no es correcto. Pídeselo al dueño." });
       }
-      const [byPhone] = await o.db
-        .select({ id: schema.portalAccounts.id })
-        .from(schema.portalAccounts)
-        .where(and(eq(schema.portalAccounts.merchantId, o.merchantId), eq(schema.portalAccounts.phone, phone)));
+      const [byPhone] = await o.db.select({ id: schema.portalAccounts.id }).from(schema.portalAccounts).where(eq(schema.portalAccounts.phone, phone));
       // No se liga una Llave a una cuenta existente sin su NIP (evita que alguien entre a la cuenta de otro).
       if (byPhone) return reply.code(409).send({ field: "phone", error: "Ese celular ya tiene cuenta en Cuadra. Entra con tu NIP." });
       states.delete(b.data.state);
       const id = randomUUID();
-      await o.db.insert(schema.portalAccounts).values({ id, merchantId: o.merchantId, name, phone, pinHash: null, llaveSub: sub });
+      const store = await this.storeFor(name, phone);
+      await o.db.insert(schema.portalAccounts).values({ id, merchantId: store.merchantId, name, phone, pinHash: null, llaveSub: sub });
       await this.startSession(reply, id);
       return { ok: true, account: { name, phone_last4: phone.slice(-4) } };
     });
