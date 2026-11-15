@@ -24,6 +24,8 @@ export interface ServerOpts {
   demoPassword?: string | null;
   log: (r: Record<string, unknown>) => void;
   whatsapp?: { channel: WhatsAppChannel; appSecret: string; verifyToken: string };
+  /** Carpeta de las páginas. Por defecto, apps/api/public; la vista previa local puede servir otra. */
+  publicDir?: string;
   /** Login del portal (celular + NIP). Sin sesión solo quedan abiertas /login, webhooks y la aprobación con passkey. */
   portalAuth: { shopCode: string | null; secureCookies: boolean; llave?: "demo" | "off"; now?: () => Date };
 }
@@ -68,7 +70,7 @@ export function buildServer(o: ServerOpts): FastifyInstance {
   app.addHook("onRequest", (req, reply) => auth.guard(req, reply));
   auth.register(app, json);
 
-  app.register(fastifyStatic, { root: fileURLToPath(new URL("../public/", import.meta.url)) });
+  app.register(fastifyStatic, { root: o.publicDir ?? fileURLToPath(new URL("../public/", import.meta.url)) });
   app.get("/privacidad", async (_req, reply) => reply.type("text/html; charset=utf-8").sendFile("privacidad.html"));
   // Portal sencillo para el comercio (letra grande, un paso por pantalla). Usa la misma API que el chat.
   for (const path of ["/login", "/portal"]) {

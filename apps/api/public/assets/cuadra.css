@@ -1,0 +1,122 @@
+/*
+ * Cuadra · sistema de diseño compartido (tokens, tipografía y componentes base).
+ *
+ * El lenguaje visual toma como referencia la App CDMX 2026 (verde azulado profundo, superficies
+ * menta, títulos cobre, botones de píldora, íconos en círculo) para que Cuadra se sienta familiar a
+ * quien ya usa los sistemas de la ciudad. Cuadra es un proyecto independiente: no usa escudos,
+ * emblemas ni personajes oficiales.
+ *
+ * Todas las combinaciones de texto cumplen contraste AA (4.5:1) en claro y en oscuro.
+ */
+
+@font-face{
+  font-family:"Montserrat";font-style:normal;font-weight:100 900;font-display:swap;
+  src:url("/assets/fonts/montserrat-latin-wght-normal.woff2") format("woff2");
+}
+@font-face{
+  font-family:"Noto Sans";font-style:normal;font-weight:100 900;font-display:swap;
+  src:url("/assets/fonts/noto-sans-latin-wght-normal.woff2") format("woff2");
+}
+
+:root{
+  color-scheme:light dark;
+
+  /* Marca: verde azulado (de más profundo a más claro) */
+  --c-deep:#0D3336;
+  --c-teal-900:#0F4447;
+  --c-teal-800:#105658;
+  --c-teal-700:#126367;
+  --c-teal-600:#1B7479;
+  --c-teal-500:#1F8288;
+  --c-teal-400:#25A0A7;
+  --c-emerald:#007F64;
+  --c-mint-300:#B4E9D9;
+  --c-mint-200:#D3F0EA;
+  --c-mint-100:#DFFDFB;
+  --c-mint-50:#F0FEFE;
+  --c-copper:#8A5E3D;
+  --c-copper-soft:#F3E4D6;
+
+  /* Semánticos (claro) */
+  --bg:#FFFFFF;                 /* fondo de página */
+  --bg-soft:#F4FBFB;            /* fondo alterno, muy sutil */
+  --surface:#F0FEFE;            /* tarjetas */
+  --surface-2:#DFFDFB;          /* círculos de ícono, realces */
+  --surface-plain:#FFFFFF;      /* tarjetas neutras, campos */
+  --ink:#0A1E18;                /* texto principal */
+  --ink-2:#3B524E;              /* texto secundario */
+  --heading:#105658;            /* títulos de pantalla y de tarjeta */
+  --accent:#8A5E3D;             /* títulos de sección (cobre) */
+  --primary:#126367;            /* botón principal, íconos */
+  --primary-ink:#FFFFFF;
+  --primary-press:#0F4447;
+  --select:#007F64;             /* seleccionado, chips llenos, casillas */
+  --select-ink:#FFFFFF;
+  --link:#2D49A0;
+  --line:#C9DCDC;               /* divisores y bordes suaves */
+  --line-strong:#6F8A8B;        /* bordes de campos (3:1) */
+  --focus:#2D49A0;
+  --ok:#00694F;  --ok-bg:#DFF7EE;
+  --bad:#A3261D; --bad-bg:#FDECEA;
+  --warn:#7A4A00;--warn-bg:#FFF3D6;
+  --on-brand:#FFFFFF;           /* texto sobre el degradado de marca */
+  --on-brand-accent:#B4E9D9;    /* realce sobre el degradado de marca */
+  --brand-gradient:linear-gradient(180deg,#0D3336 0%,#126367 62%,#1F8288 100%);
+  --brand-flat:#126367;
+  --shadow-1:0 1px 2px rgba(13,51,54,.10),0 1px 3px rgba(13,51,54,.08);
+  --shadow-2:0 4px 14px rgba(13,51,54,.14);
+
+  /* Forma */
+  --r-sm:10px; --r-md:14px; --r-lg:18px; --r-xl:24px; --r-pill:999px;
+
+  /* Tipografía */
+  --font-head:"Montserrat",system-ui,-apple-system,"Segoe UI",Roboto,sans-serif;
+  --font-body:"Noto Sans",system-ui,-apple-system,"Segoe UI",Roboto,sans-serif;
+  --font-mono:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;
+}
+
+@media (prefers-color-scheme: dark){:root:not([data-theme="light"]){
+  --bg:#071A1C;
+  --bg-soft:#0A2123;
+  --surface:#0F2A2D;
+  --surface-2:#16393C;
+  --surface-plain:#0C2326;
+  --ink:#E6F4F3;
+  --ink-2:#A3BFBD;
+  --heading:#B4E9D9;
+  --accent:#E3B58C;
+  --primary:#1B7479;
+  --primary-ink:#FFFFFF;
+  --primary-press:#126367;
+  --select:#7ED9C6;
+  --select-ink:#06201F;
+  --link:#A9BCFF;
+  --line:#24474A;
+  --line-strong:#5E8386;
+  --focus:#A9BCFF;
+  --ok:#7FE0BE;  --ok-bg:#0C3329;
+  --bad:#FFB4A9; --bad-bg:#3A1512;
+  --warn:#FFD58A;--warn-bg:#3A2C0C;
+  --c-copper-soft:#3A2A1C;
+  --brand-gradient:linear-gradient(180deg,#06191B 0%,#0D3336 60%,#126367 100%);
+  --brand-flat:#0D3336;
+  --shadow-1:0 1px 2px rgba(0,0,0,.4);
+  --shadow-2:0 6px 18px rgba(0,0,0,.45);
+}}
+
+*{box-sizing:border-box}
+body{margin:0;background:var(--bg);color:var(--ink);font-family:var(--font-body);-webkit-text-size-adjust:100%}
+h1,h2,h3{font-family:var(--font-head);letter-spacing:-.01em}
+a{color:var(--link)}
+:focus-visible{outline:3px solid var(--focus);outline-offset:3px}
+
+/* Ícono del sprite: <svg class="ico" aria-hidden="true"><use href="/assets/icons.svg#i-home"/></svg> */
+.ico{width:1.25em;height:1.25em;fill:currentColor;flex:none;vertical-align:-.22em}
+
+/* Trama propia de Cuadra (cuadras de barrio vistas desde arriba) para fondos de marca. */
+.brand-pattern{
+  background-color:var(--brand-flat);
+  background-image:
+    url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='72' height='72' viewBox='0 0 72 72'%3E%3Cg fill='none' stroke='%23B4E9D9' stroke-opacity='.10' stroke-width='1.5'%3E%3Crect x='6' y='6' width='26' height='26' rx='6'/%3E%3Crect x='40' y='6' width='26' height='26' rx='6'/%3E%3Crect x='6' y='40' width='26' height='26' rx='6'/%3E%3Cpath d='M40 53h13a13 13 0 0 0 13-13'/%3E%3C/g%3E%3C/svg%3E"),
+    var(--brand-gradient);
+}

@@ -96,7 +96,17 @@ describe("isPublicPath", () => {
     for (const [p, m] of [
       ["/login", "GET"], ["/webhooks/pey", "POST"], ["/aprobar/x", "GET"], ["/api/proposal/x", "GET"],
       ["/api/approve/verify", "POST"], ["/api/auth/login", "POST"], ["/health", "GET"],
+      // Diseño compartido: la página de entrada y la de aprobación lo necesitan sin sesión.
+      ["/assets/cuadra.css", "GET"], ["/assets/icons.svg", "GET"], ["/assets/fonts/montserrat-latin-wght-normal.woff2", "GET"],
     ] as const) expect(isPublicPath(p, m), `${m} ${p}`).toBe(true);
+  });
+  it("lo que solo se parece a /assets/ no es público", () => {
+    expect(isPublicPath("/assetsx/a", "GET")).toBe(false);
+    expect(isPublicPath("/api/assets/x", "GET")).toBe(false);
+    // No sirve de atajo para llegar a otras páginas.
+    expect(isPublicPath("/assets/../index.html", "GET")).toBe(false);
+    expect(isPublicPath("/assets/%2e%2e/index.html", "GET")).toBe(false);
+    expect(isPublicPath("/assets/", "GET")).toBe(false);
   });
   it("POST a /api/proposal/x no es público", () => {
     expect(isPublicPath("/api/proposal/x", "POST")).toBe(false);

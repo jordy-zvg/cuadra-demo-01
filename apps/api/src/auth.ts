@@ -107,6 +107,9 @@ export function isPublicPath(path: string, method: string): boolean {
   if (path === "/health" || path === "/privacidad" || path.startsWith("/webhooks/")) return true;
   if (path === "/login" || path === "/portal" || path === "/sw.js" || path === "/manifest.webmanifest") return true;
   if (path === "/logo.svg" || path.startsWith("/icons/")) return true;
+  // Diseño compartido (hoja de estilos, tipografías e íconos): no contiene datos. Solo nombres
+  // simples, sin ".." ni caracteres codificados, para que no sirva de atajo a otras páginas.
+  if (/^\/assets\/[A-Za-z0-9_\-./]+$/.test(path) && !path.includes("..")) return true;
   if (path.startsWith("/api/auth/")) return true;
   if (path === "/llave-cdmx/autorizar") return true; // página simulada de Llave CDMX (demo)
   // Aprobación con passkey (enlace de un solo uso que llega por WhatsApp).
