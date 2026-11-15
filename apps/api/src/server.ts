@@ -106,7 +106,7 @@ export function buildServer(o: ServerOpts): FastifyInstance {
   };
   const noStore = (reply: FastifyReply) => reply.code(401).send({ error: "Entra a tu cuenta para continuar." });
 
-  registerPasskeyRoutes(app, { db: o.db, registry: o.registry, storeOf, ...o.passkey });
+  registerPasskeyRoutes(app, { db: o.db, registry: o.registry, storeOf, log: o.log, ...o.passkey });
 
   app.post("/api/chat", async (req, reply) => {
     const b = ChatBody.safeParse(json(req.body));

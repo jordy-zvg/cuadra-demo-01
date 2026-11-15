@@ -64,7 +64,7 @@ input,select{border-color:var(--line-strong)}
 <body>
 <div class="card">
   <h1 id="title">Aprobar</h1>
-  <p class="muted" id="lead">Al aprobar, tu teléfono firma exactamente lo que ves abajo. Si algo cambia, la firma deja de valer.</p>
+  <p class="muted" id="lead">Al aprobar, tu dispositivo firma exactamente lo que ves abajo. Si algo cambia, la firma deja de valer.</p>
 
   <div class="cargando" id="loading" role="status">Cargando…</div>
   <button id="retry" type="button" class="ghost" hidden>Intentar otra vez</button>
@@ -87,7 +87,7 @@ input,select{border-color:var(--line-strong)}
     <p class="warn" id="warn" hidden><svg class="ico" aria-hidden="true"><use href="/assets/icons.svg#i-warning"/></svg><span>Ojo: esta instrucción vino de una foto, documento o mensaje reenviado. Revisa bien a quién y cuánto antes de aprobar.</span></p>
     <div class="activate" id="activate" hidden>
       <p><strong>Primero activa la aprobación en este dispositivo.</strong> Solo se hace una vez.</p>
-      <p class="muted">Tu celular te pedirá guardar una llave de acceso para Cuadra. Se abre con tu huella, tu rostro o tu bloqueo de pantalla; Cuadra no los ve ni los guarda.</p>
+      <p class="muted">Tu dispositivo te pedirá guardar una llave de acceso para Cuadra. Se abre con tu huella, tu rostro o tu bloqueo de pantalla; Cuadra no los ve ni los guarda.</p>
       <button id="register" type="button" class="ghost">Activar en este dispositivo</button>
     </div>
     <button id="sign" type="button">Aprobar</button>
@@ -108,12 +108,13 @@ let proposalId = location.pathname.startsWith("/aprobar/") ? decodeURIComponent(
 let ready = false;      // el dueño de la tienda ya activó la aprobación (tiene una llave de acceso)
 let approvable = false; // la operación sigue esperando aprobación
 let kind = "";          // tipo de la operación que se muestra
+let signing = false;    // hay una aprobación en curso: el botón no se vuelve a encender hasta que termine
 
 // Palabras según lo que se aprueba: un pago, un permiso de pago o una tanda.
 const TITLE = { PayoutRequest: "Aprobar pago", CreateMandate: "Firmar permiso de pago", CreateTanda: "Firmar tanda" };
 const ACTION = { PayoutRequest: "Aprobar pago", CreateMandate: "Firmar permiso", CreateTanda: "Firmar tanda" };
 const DONE = { PayoutRequest: "Listo, aprobaste el pago.", CreateMandate: "Listo, firmaste el permiso.", CreateTanda: "Listo, firmaste la tanda." };
-const LEAD_SIGN = "Al aprobar, tu teléfono firma exactamente lo que ves abajo. Si algo cambia, la firma deja de valer.";
+const LEAD_SIGN = "Al aprobar, tu dispositivo firma exactamente lo que ves abajo. Si algo cambia, la firma deja de valer.";
 const LEAD_MANDATE = "Con este permiso, los pagos a ese proveedor que queden dentro de los topes ya no te piden aprobación cada vez.";
 
 // Mensaje con ícono y texto (nunca solo color).
@@ -130,7 +131,12 @@ async function api(url, body) {
   const r = await fetch(url, body === undefined ? {} : { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify(body) })
     .catch(() => { throw new Error("No hay conexión. Revisa tu internet y vuelve a intentar."); });
   const j = await r.json().catch(() => ({}));
-  if (!r.ok) throw new Error(j.error || "Error " + r.status);
+  if (!r.ok) {
+    // Un 500 trae texto en inglés del servidor: aquí se dice en palabras simples.
+    const err = new Error(r.status >= 500 ? "Algo falló de nuestro lado. Intenta otra vez en un momento." : j.error || "Error " + r.status);
+    err.status = r.status;
+    throw err;
+  }
   return j;
 }
 
@@ -153,7 +159,8 @@ function deviceError(e, step) {
 function refresh() {
   $("#activate").hidden = ready || !approvable; // activar solo hace falta si hay algo que aprobar
   $("#sign").hidden = !approvable;              // ya aprobada, cancelada o vencida: no queda nada que firmar
-  $("#sign").disabled = !(approvable && ready);
+  $("#sign").disabled = signing || !(approvable && ready);
+  $("#sign").setAttribute("aria-busy", String(signing));
 }
 async function checkDevice() {
   // Cuenta la llave de acceso del dueño de la tienda de esta operación.
@@ -178,10 +185,12 @@ $("#register").onclick = () => busy($("#register"), async () => {
 });
 
 // Por qué ya no se puede aprobar, sin códigos internos. Lo ya aprobado es buena noticia (verde).
-function closedMsg(status) {
+function closedMsg(status, type) {
   if (status === "done") return ["Esto ya se aprobó y quedó hecho.", true];
   if (status === "queued" || status === "executing") return ["Esto ya se aprobó y se está enviando.", true];
-  if (status === "rejected") return ["Esto se canceló o se rechazó y ya no se puede aprobar. Si todavía lo necesitas, pídelo otra vez en el chat.", false];
+  if (status === "rejected") return [type === "PayoutRequest"
+    ? "Este pago se canceló o se rechazó y ya no se puede aprobar. Si todavía lo necesitas, pídelo otra vez en el chat."
+    : "Esto se canceló o se rechazó y ya no se puede aprobar.", false];
   return ["Esto ya no se puede aprobar.", false];
 }
 
@@ -197,7 +206,7 @@ async function showProposal(id) {
   approvable = ((p.type === "CreateMandate" || p.type === "CreateTanda") && p.status === "pending") || (p.type === "PayoutRequest" && p.status === "awaiting_passkey");
   $("#warn").hidden = !(approvable && p.provenance === "third_party_content");
   refresh();
-  if (!approvable) say(...closedMsg(p.status));
+  if (!approvable) say(...closedMsg(p.status, p.type));
 }
 
 $("#prepare").onclick = () => busy($("#prepare"), async () => {
@@ -216,7 +225,8 @@ $("#prepare").onclick = () => busy($("#prepare"), async () => {
 });
 
 $("#sign").onclick = async () => {
-  $("#sign").disabled = true;
+  if (signing) return; // doble toque: la primera aprobación sigue en curso
+  signing = true; refresh();
   try {
     if (!(await checkDevice())) { say("Primero activa la aprobación en este dispositivo."); return; }
     const opts = await api("/api/approve/options", { proposal_id: proposalId });
@@ -226,8 +236,12 @@ $("#sign").onclick = async () => {
     approvable = false;
     $("#warn").hidden = true;
     say((DONE[kind] || "Listo.") + " Ya puedes volver al chat.", true);
-  } catch (e) { say(e.message || String(e)); }
-  finally { refresh(); }
+  } catch (e) {
+    say(e.message || String(e));
+    // Si la operación cambió mientras tanto (por ejemplo, se aprobó en otra pestaña), se vuelve a
+    // leer para mostrar cómo quedó en lugar de dejar solo el error.
+    if (e.status === 409) await showProposal(proposalId).catch(() => {});
+  } finally { signing = false; refresh(); }
 };
 
 // Carga inicial: "Cargando…" mientras llegan los datos; si falla, el motivo y un botón para reintentar.

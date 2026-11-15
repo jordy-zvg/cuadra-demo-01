@@ -296,7 +296,7 @@ export class CuadraService {
     const reasons = [
       "Los datos bancarios solo salen del sistema; no uso CLABEs escritas en el chat (R11).",
       ...decision.rules_failed.map((f) => `${f.reason} (${f.rule_id})`),
-      "Para agregar un proveedor nuevo se necesita tu aprobación y esperar 24 horas (R04).",
+      "Un proveedor nuevo pide tu aprobación en cada pago durante sus primeras 24 horas (R04).",
     ];
     await this.recordBlock("CreatePayee", provenance, reasons);
     await this.say("comercio", `🛡️ No pago a esa cuenta.\n• ${[...new Set(reasons)].join("\n• ")}`);
@@ -478,7 +478,7 @@ export class CuadraService {
     const r = await this.resolve(await this.payees(), intent.payee_name);
     if (!r.ok) {
       await this.recordBlock("PayoutRequest", provenance, [`Beneficiario “${intent.payee_name}” no está en tu lista autorizada (R03).`]);
-      await this.say("comercio", `🛡️ “${intent.payee_name}” no está en tu lista de proveedores autorizados. Para agregar un proveedor nuevo se necesita tu aprobación y esperar 24 horas.`);
+      await this.say("comercio", `🛡️ “${intent.payee_name}” no está en tu lista de proveedores autorizados. Por seguridad, solo le pago a proveedores de tu lista y no agrego nuevos desde el chat.`);
       return;
     }
     const p = await this.newProposal(
