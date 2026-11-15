@@ -1,14 +1,16 @@
 import { PeyClient, WhatsAppClient, verifyProposalAssertion } from "@cuadra/adapters";
-import { parseUdiValue } from "@cuadra/core";
+import { parseHourRange, parseUdiValue } from "@cuadra/core";
 import { AnthropicInterpreter, FallbackInterpreter, type Interpreter, RuleInterpreter } from "@cuadra/agents";
 import { connectPostgres, migratePostgres } from "@cuadra/db/node";
-import { schema, seedDemo } from "@cuadra/db";
+import { assignAccountStores, schema, seedDemo } from "@cuadra/db";
 import { eq } from "drizzle-orm";
 import { type ChargeGateway, PeyGateway, SimulatedGateway } from "./gateway.js";
 import { seedHistory } from "./seed-history.js";
 import { buildServer } from "./server.js";
-import { CuadraService } from "./service.js";
+import { createStoreRegistry } from "./app.js";
 import { WhatsAppChannel } from "./whatsapp.js";
+import { parsePortalReset, resetPortalAccounts } from "./portal-reset.js";
+import { parseMinIntervalMinutes } from "./reminder-config.js";
 import { parseReminderSchedule, startReminderScheduler } from "./scheduler.js";
 
 const env = (k: string) => process.env[k] || undefined;
@@ -28,6 +30,12 @@ async function main(): Promise<void> {
     ...(env("DEMO_CUSTOMER_PHONE") ? { lupePhone: env("DEMO_CUSTOMER_PHONE")! } : {}),
     ...(env("DEMO_OWNER_PHONE") ? { ownerPhone: env("DEMO_OWNER_PHONE")! } : {}),
   });
+  // Borrado de cuentas del portal pedido por el dueño (NIP olvidado). Ver portal-reset.ts.
+  const reset = parsePortalReset(process.env.PORTAL_RESET);
+  if (reset.invalid.length) log({ msg: "config_invalid", variable: "PORTAL_RESET", entries: reset.invalid });
+  if (reset.entries.length) {
+    for (const r of await resetPortalAccounts(db, reset.entries)) log({ msg: "portal_account_reset", ...r });
+  }
   const bankSim = env("BANK_SIM") !== "off";
   // Cuenta receptora del comercio registrada en pey (POST /bank-account, estado ACTIVE).
   if (env("PEY_BANK_ACCOUNT_ID")) {
@@ -52,50 +60,82 @@ async function main(): Promise<void> {
   const waPhoneId = env("WHATSAPP_PHONE_NUMBER_ID");
   const waSecret = env("WHATSAPP_APP_SECRET");
   const waVerify = env("WHATSAPP_VERIFY_TOKEN");
-  const whatsapp =
+  const waClient =
     waToken && waPhoneId && waSecret && waVerify
-      ? {
-          channel: new WhatsAppChannel({
-            db,
-            merchantId: demo.merchantId,
-            ownerId: demo.ownerId,
-            client: new WhatsAppClient({ token: waToken, phoneNumberId: waPhoneId, ...(env("WHATSAPP_GRAPH_VERSION") ? { version: env("WHATSAPP_GRAPH_VERSION")! } : {}) }),
-            log,
-          }),
-          appSecret: waSecret,
-          verifyToken: waVerify,
-        }
+      ? new WhatsAppClient({ token: waToken, phoneNumberId: waPhoneId, ...(env("WHATSAPP_GRAPH_VERSION") ? { version: env("WHATSAPP_GRAPH_VERSION")! } : {}) })
+      : null;
+  const whatsapp =
+    waClient && waSecret && waVerify
+      ? { channel: new WhatsAppChannel({ db, client: waClient, log }), appSecret: waSecret, verifyToken: waVerify }
       : undefined;
+  // Verificación del celular: con WhatsApp, cada persona manda desde su celular el código del portal.
+  // PHONE_VERIFICATION=off la apaga (solo para una emergencia en la demo: abre "Lo que debo" y las
+  // tiendas existentes a quien se registre con cualquier número).
+  const verificationMode: "whatsapp" | "off" = whatsapp && env("PHONE_VERIFICATION") !== "off" ? "whatsapp" : "off";
+  const waNumber =
+    env("WHATSAPP_NUMBER")?.replace(/\D/g, "") || (waClient ? await waClient.displayNumber().catch(() => null) : null) || null;
+  if (verificationMode === "off") log({ msg: "phone_verification_off", warning: "sin verificación del celular: cualquiera puede registrarse con cualquier número" });
+  else if (!waNumber) log({ msg: "whatsapp_number_unknown", hint: "define WHATSAPP_NUMBER para el enlace wa.me" });
 
-  const service = new CuadraService({
+  // Política de recordatorios: 72 h entre cobros al mismo cliente. Solo en desarrollo se baja
+  // (REMINDER_MIN_INTERVAL_MINUTES=0) para probar seguido; un valor inválido deja la política normal.
+  const interval = parseMinIntervalMinutes(process.env.REMINDER_MIN_INTERVAL_MINUTES);
+  const reminderMinIntervalMs = interval.ms;
+  if (interval.invalid) log({ msg: "config_invalid", variable: "REMINDER_MIN_INTERVAL_MINUTES" });
+  if (reminderMinIntervalMs !== undefined && !gateway.simulated) {
+    log({ msg: "reminder_interval_override", minutes: reminderMinIntervalMs / 60_000, warning: "solo para desarrollo; en producción debe quedar sin definir" });
+  }
+
+  // Horarios (solo demo): REMINDER_HOURS para cobros (normal 9-20) y OUTFLOW_HOURS para pagos a
+  // proveedor sin passkey (R10, normal 7-22). "0-24" = sin límite. El executor lee la misma OUTFLOW_HOURS.
+  const reminderHours = parseHourRange(env("REMINDER_HOURS"));
+  const outflowHours = parseHourRange(env("OUTFLOW_HOURS"));
+  if (env("REMINDER_HOURS") && !reminderHours) log({ msg: "config_invalid", variable: "REMINDER_HOURS" });
+  if (env("OUTFLOW_HOURS") && !outflowHours) log({ msg: "config_invalid", variable: "OUTFLOW_HOURS" });
+
+  // Una tienda por persona. Solo la demo (dueña de la cuenta receptora en pey) cobra en vivo; las
+  // tiendas nuevas cobran y pagan en simulado hasta que registren su propia cuenta.
+  await db.update(schema.merchants).set({ livePayments: !gateway.simulated }).where(eq(schema.merchants.id, demo.merchantId));
+  const moved = await assignAccountStores(db, new Date());
+  if (moved) log({ msg: "portal_accounts_moved_to_own_store", accounts: moved });
+  const registry = createStoreRegistry({
     db,
-    merchantId: demo.merchantId,
-    ownerId: demo.ownerId,
+    liveGateway: gateway,
     interpreters,
-    gateway,
     verify: (a) => verifyProposalAssertion({ ...a, config: { rpID, origins } }),
     now: () => new Date(),
     publicUrl,
     peyWebhookSecret: env("PEY_WEBHOOK_SECRET") ?? null,
     bankSim,
     udi: env("UDI_VALOR") ? parseUdiValue(env("UDI_VALOR")!) : null,
-    // Solo demo: REMINDER_MIN_INTERVAL_MINUTES=1 permite repetir el recordatorio al minuto (normal: 72 h).
-    ...(Number(env("REMINDER_MIN_INTERVAL_MINUTES")) > 0 ? { reminderMinIntervalMs: Number(env("REMINDER_MIN_INTERVAL_MINUTES")) * 60_000 } : {}),
+    // Al confirmar un fiado se avisa al cliente (WhatsApp + solicitud CoDi). AUTO_COBRO_FIADO=off lo apaga.
+    chargeOnFiado: env("AUTO_COBRO_FIADO") !== "off",
+    // Solo demo: REMINDER_HOURS="0-24" quita el horario de cobros (normal: 9-20).
+    ...(reminderHours ? { reminderHours } : {}),
+    // Solo demo: OUTFLOW_HOURS="0-24" quita el horario de R10 (normal: fuera de 7-22 pide passkey).
+    ...(outflowHours ? { outflowHours } : {}),
+    // Solo desarrollo/demo: REMINDER_MIN_INTERVAL_MINUTES=0 o 1 permite repetir el recordatorio (normal: 72 h).
+    ...(reminderMinIntervalMs !== undefined ? { reminderMinIntervalMs } : {}),
     log,
     ...(whatsapp ? { channels: [whatsapp.channel] } : {}),
   });
+  const demoStore = await registry.get(demo.merchantId);
+  if (!demoStore) throw new Error("La tienda de demo no tiene dueño");
+  const service = demoStore.service;
   const app = buildServer({
     db,
-    service,
-    merchantId: demo.merchantId,
-    gateway,
+    registry,
+    liveMerchantId: demo.merchantId,
+    liveGateway: gateway,
+    peyWebhookSecret: env("PEY_WEBHOOK_SECRET") ?? null,
     bankSim,
     demoPassword: env("DEMO_PASSWORD") ?? null,
     // Registro en el portal: si PORTAL_SHOP_CODE existe, pedirlo (lo da el dueño); si no, registro abierto.
     portalAuth: { shopCode: env("PORTAL_SHOP_CODE") ?? null, secureCookies: publicUrl?.startsWith("https://") ?? false,
       // Llave CDMX: solo modo demo (simulado) mientras no haya alta con la ADIP. LLAVE_CDMX=off lo quita.
-      llave: env("LLAVE_CDMX") === "off" ? "off" : "demo" },
-    passkey: { gateway, db, merchantId: demo.merchantId, ownerId: demo.ownerId, rpID, origins, now: () => new Date() },
+      llave: env("LLAVE_CDMX") === "off" ? "off" : "demo",
+      verification: { mode: verificationMode, waNumber } },
+    passkey: { rpID, origins, now: () => new Date() },
     log,
     ...(whatsapp ? { whatsapp } : {}),
   });
@@ -113,10 +153,11 @@ async function main(): Promise<void> {
   }
   const port = Number(env("PORT") ?? 3000);
   await app.listen({ port, host: "0.0.0.0" });
-  log({ msg: "api_started", port, migrations: applied, gateway: gateway.name, simulated: gateway.simulated, interpreter: interpreters[0]!.name, whatsapp: Boolean(whatsapp), reminders: schedule });
+  log({ msg: "api_started", port, migrations: applied, gateway: gateway.name, simulated: gateway.simulated, interpreter: interpreters[0]!.name, whatsapp: Boolean(whatsapp), phone_verification: verificationMode, reminders: schedule, reminder_interval_minutes: reminderMinIntervalMs === undefined ? 72 * 60 : reminderMinIntervalMs / 60_000, reminder_hours: reminderHours ?? [9, 20], outflow_hours: outflowHours ?? [7, 22] });
 }
 
 main().catch((e: unknown) => {
   log({ msg: "fatal", error: e instanceof Error ? e.message : String(e) });
   process.exit(1);
 });
+

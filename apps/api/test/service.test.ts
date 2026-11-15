@@ -162,6 +162,42 @@ describe("fiado y cobro con pey", () => {
   });
 });
 
+describe("clientes nuevos y montos con letra", () => {
+  it("fiado a un nombre desconocido: un Confirmar da de alta y anota el fiado", async () => {
+    const f = await setup();
+    await f.svc.handleMerchantMessage("El señor Joel se llevó cinco pesos");
+    expect((await f.msgs()).at(-1)!.body).toMatch(/No tengo a “Señor Joel”.*¿Lo doy de alta y le anoto \$5\.00/);
+    await f.svc.confirm(await f.lastAction());
+    const [joel] = await f.db.select().from(schema.customers).where(eq(schema.customers.name, "Señor Joel"));
+    expect(joel).toMatchObject({ phone: null, optIn: false });
+    expect(await ledgerBalance(f.db, M, "1200", joel!.id)).toBe(500n);
+    expect((await f.msgs()).at(-1)!.body).toMatch(/di de alta a Señor Joel.*Te debe \$5\.00.*QR para Señor Joel/);
+    // Un segundo clic no duplica ni al cliente ni el fiado.
+    await f.svc.confirm(await f.lastAction());
+    expect(await f.db.select().from(schema.customers).where(eq(schema.customers.name, "Señor Joel"))).toHaveLength(1);
+    expect(await ledgerBalance(f.db, M, "1200", joel!.id)).toBe(500n);
+  });
+
+  it("“Agrega a Rosa, 55…” da de alta con celular; si ya existe, lo dice", async () => {
+    const f = await setup();
+    await f.svc.handleMerchantMessage("Agrega a Rosa, 55 9876 5432");
+    expect((await f.msgs()).at(-1)!.body).toMatch(/Doy de alta a Rosa con celular 5598765432/);
+    await f.svc.confirm(await f.lastAction());
+    const [rosa] = await f.db.select().from(schema.customers).where(eq(schema.customers.name, "Rosa"));
+    expect(rosa!.phone).toBe("+525598765432");
+    await f.svc.handleMerchantMessage("Agrega a Doña Lupe");
+    expect((await f.msgs()).at(-1)!.body).toMatch(/Ya tengo a Doña Lupe/);
+  });
+
+  it("QR o cobro a un desconocido: ofrece darlo de alta con un botón", async () => {
+    const f = await setup();
+    await f.svc.handleMerchantMessage("QR para Pedro");
+    const m = (await f.msgs()).at(-1)!;
+    expect(m.body).toMatch(/No tengo a “Pedro”.*Agrega a Pedro/);
+    expect(m.actions![0]).toMatchObject({ kind: "say", text: "Agrega a Pedro" });
+  });
+});
+
 describe("QR en mostrador y un solo cobro abierto", () => {
   it("QR por el saldo; mientras esté abierto no se emite otro cobro; el pago lo cierra", async () => {
     const f = await setup();
@@ -174,10 +210,11 @@ describe("QR en mostrador y un solo cobro abierto", () => {
     expect(msg.actions?.[0]).toMatchObject({ kind: "qr", url: expect.stringMatching(/^data:image\/png;base64,/) });
 
     await f.svc.handleMerchantMessage("QR para Doña Lupe");
-    expect((await f.msgs()).at(-1)!.body).toMatch(/ya tiene un cobro abierto/);
+    expect((await f.msgs()).at(-1)!.body).toMatch(/ya tiene un QR abierto de \$185\.00 \(ref\. \d{7}\) que vence hoy a las 11:32/);
     await f.svc.handleMerchantMessage("Cóbrale a Doña Lupe");
-    await f.svc.confirm(await f.lastAction());
-    expect((await f.msgs()).at(-1)!.body).toMatch(/No mando/);
+    const last = (await f.msgs()).at(-1)!;
+    expect(last.body).toMatch(/ya tiene un QR abierto/);
+    expect(last.actions ?? []).toHaveLength(0); // no pide "Confirmar" para algo que no va a salir
     expect(gw.pushes).toHaveLength(0);
 
     const qrTx = [...gw.txs.keys()][0]!;
@@ -187,7 +224,7 @@ describe("QR en mostrador y un solo cobro abierto", () => {
     expect(await ledgerBalance(f.db, M, "1200", "c_lupe")).toBe(0n);
   });
 
-  it("reenvío: misma solicitud CoDi (misma ref y cobro); si paga las dos, lo de más queda a favor", async () => {
+  it("“Cóbrale” otra vez con la solicitud viva no manda otra: se reenvía solo cuando venció (decisión 14-nov)", async () => {
     const f = await setup();
     const gw = f.gw as FakePey;
     await f.svc.handleMerchantMessage("Doña Lupe se llevó $10");
@@ -195,21 +232,13 @@ describe("QR en mostrador y un solo cobro abierto", () => {
     await f.svc.handleMerchantMessage("Cóbrale a Doña Lupe");
     await f.svc.confirm(await f.lastAction());
     await f.svc.handleMerchantMessage("Cóbrale a Doña Lupe");
-    await f.svc.confirm(await f.lastAction());
-    expect((await f.msgs()).at(-1)!.body).toMatch(/reenvié.*misma ref/i);
-    expect(gw.pushes).toHaveLength(2);
-    expect(gw.pushes[1]).toMatchObject({ amount_cents: 1000n, num_ref: gw.pushes[0]!.num_ref, metadata: gw.pushes[0]!.metadata });
+    const last = (await f.msgs()).at(-1)!;
+    expect(last.body).toMatch(/ya tiene una solicitud CoDi abierta de \$10\.00/);
+    expect(last.body).toMatch(/cuando venza pídeme “vuélvele a mandar la notificación” y se la reenvío \(reenvío 1 de 3\)/);
+    expect(last.actions ?? []).toHaveLength(0);
+    expect(gw.pushes).toHaveLength(1);
     const charges = await f.db.select().from(schema.charges).where(eq(schema.charges.customerId, "c_lupe"));
     expect(charges.filter((c) => c.status === "open")).toHaveLength(1);
-
-    // Aprueba las dos solicitudes: la deuda queda en cero y el segundo pago, como saldo a favor.
-    for (const [i, tx] of ["01TX1", "01TX2"].entries()) {
-      gw.pay(tx);
-      const [raw, h] = webhook({ type: "codi.pn.payment_received", transactionId: tx, amount: 10 }, `msg_r${i}`);
-      await f.svc.handlePeyWebhook(raw, h);
-    }
-    expect(await ledgerBalance(f.db, M, "1200", "c_lupe")).toBe(0n);
-    expect(await ledgerBalance(f.db, M, "2100", "c_lupe")).toBe(1000n);
   });
 
   it("cobro a la cuenta receptora del comercio (bankAccountId)", async () => {
@@ -256,6 +285,24 @@ describe("guard desde el chat", () => {
     const [p] = await f.db.select().from(schema.proposals).where(eq(schema.proposals.type, "PayoutRequest"));
     expect(["awaiting_passkey", "rejected"]).toContain(p!.status);
     expect(p!.status).not.toBe("queued");
+  });
+
+  it("pago a proveedor de noche: R10 pide passkey; con OUTFLOW_HOURS=0-24 la hora ya no cuenta", async () => {
+    const night = new Date("2026-11-14T23:30:00-06:00");
+    const ruleIds = async (outflowHours?: readonly [number, number]) => {
+      const { db } = await createTestDb();
+      await seedDemo(db, NOW);
+      const svc = new CuadraService({
+        db, merchantId: M, ownerId: DEMO.ownerId, interpreters: [new RuleInterpreter()], gateway: new FakePey(), verify: async () => false,
+        now: () => night, publicUrl: null, peyWebhookSecret: SECRET, bankSim: false, udi: null, log: () => {},
+        ...(outflowHours ? { outflowHours } : {}),
+      });
+      await svc.handleMerchantMessage("Paga al de los refrescos $1,200");
+      const [p] = await db.select().from(schema.proposals).where(eq(schema.proposals.type, "PayoutRequest"));
+      return ((p!.decision as { rules_failed?: Array<{ rule_id: string }> } | null)?.rules_failed ?? []).map((r) => r.rule_id);
+    };
+    expect(await ruleIds()).toContain("R10");
+    expect(await ruleIds([0, 24])).not.toContain("R10");
   });
 
   it("fuera de alcance y mensajes ambiguos", async () => {

@@ -35,6 +35,24 @@ export function isWithinMxHours(d: Date, fromHour: number, toHour: number): bool
   return m >= fromHour * 60 && m < toHour * 60;
 }
 
+/** Horario [desde, hasta) en horas enteras de CDMX: 0 ≤ desde < hasta ≤ 24. */
+export function isValidHourRange(h: readonly [number, number]): boolean {
+  return Number.isInteger(h[0]) && Number.isInteger(h[1]) && h[0] >= 0 && h[1] <= 24 && h[0] < h[1];
+}
+
+/** true si el horario cubre el día completo ("0-24"): no hay restricción de hora. */
+export function isAllDay(h: readonly [number, number]): boolean {
+  return h[0] <= 0 && h[1] >= 24;
+}
+
+/** "8-22" o "0-24" → [desde, hasta]; null si falta o no es válido (entonces rige el horario normal). */
+export function parseHourRange(v: string | undefined): readonly [number, number] | null {
+  const m = /^\s*(\d{1,2})\s*-\s*(\d{1,2})\s*$/.exec(v ?? "");
+  if (!m) return null;
+  const h = [Number(m[1]), Number(m[2])] as const;
+  return isValidHourRange(h) ? h : null;
+}
+
 export const HOUR_MS = 60 * 60 * 1000;
 export const MINUTE_MS = 60 * 1000;
 
@@ -51,4 +69,21 @@ export function mxPeriodStart(now: Date, period: "day" | "week" | "month"): Date
     start = new Date(start.getTime() - dow * 24 * HOUR_MS);
   }
   return new Date(start.getTime() + 6 * HOUR_MS);
+}
+
+const hm = new Intl.DateTimeFormat("es-MX", { timeZone: TIME_ZONE, hour: "2-digit", minute: "2-digit", hourCycle: "h23" });
+const dayFmt = new Intl.DateTimeFormat("es-MX", { timeZone: TIME_ZONE, weekday: "long", day: "numeric", month: "long" });
+
+/** "16:11" en hora de CDMX. */
+export function formatMxTime(d: Date): string {
+  return hm.format(d);
+}
+
+/** "hoy a las 16:11", "mañana a las 9:00" o "el lunes 17 de noviembre a las 15:09" (hora de CDMX). */
+export function formatMxWhen(d: Date, now: Date): string {
+  const days = Math.round((Date.parse(mxDateKey(d)) - Date.parse(mxDateKey(now))) / (24 * HOUR_MS));
+  const p: Record<string, string> = {};
+  for (const x of dayFmt.formatToParts(d)) p[x.type] = x.value;
+  const day = days === 0 ? "hoy" : days === 1 ? "mañana" : `el ${p.weekday} ${p.day} de ${p.month}`;
+  return `${day} a las ${formatMxTime(d)}`;
 }

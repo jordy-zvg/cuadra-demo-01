@@ -1,10 +1,11 @@
 /**
- * Executor en modo demo: sondea Postgres (sin Redis) y usa la cuenta operativa SIMULADA.
- * Sigue siendo el único proceso que ejecuta salidas: revalida todo con executeOutflow.
+ * Executor en modo demo: sondea Postgres (sin Redis) y usa la cuenta operativa SIMULADA de cada
+ * tienda. Sigue siendo el único proceso que ejecuta salidas: revalida todo con executeOutflow.
+ * Atiende a todas las tiendas (una por persona); cada salida usa la cuenta de su propia tienda.
  */
 import { type AssertionVerifier, DbBankSimProvider, applyProviderEvent, bankSimBalance, runReconciliation, schema } from "@cuadra/db";
 import { connectPostgres } from "@cuadra/db/node";
-import { formatMXN } from "@cuadra/core";
+import { formatMXN, parseHourRange } from "@cuadra/core";
 import { and, asc, eq } from "drizzle-orm";
 import { verifyProposalAssertion } from "@cuadra/adapters";
 import { executeOutflow } from "./execute.js";
@@ -17,53 +18,69 @@ function log(r: Record<string, unknown>): void {
 async function main(): Promise<void> {
   const url = env("DATABASE_URL");
   if (!url) throw new Error("Falta DATABASE_URL");
-  const merchantId = env("DEMO_MERCHANT_ID") ?? "m_esquina";
   const { db } = await connectPostgres(url);
-  const provider = new DbBankSimProvider(db, merchantId);
+  const providers = new Map<string, DbBankSimProvider>();
+  const providerOf = (merchantId: string) => {
+    let p = providers.get(merchantId);
+    if (!p) providers.set(merchantId, (p = new DbBankSimProvider(db, merchantId)));
+    return p;
+  };
   const publicUrl = env("PUBLIC_URL")?.replace(/\/$/, "");
   const rpID = env("WEBAUTHN_RP_ID") ?? (publicUrl ? new URL(publicUrl).hostname : "localhost");
   const origins = (env("WEBAUTHN_ORIGINS") ?? publicUrl ?? "http://localhost:3000").split(",");
   const settleMs = Number(env("SIM_SETTLE_MS") ?? 4000);
-  const deps = {
+  // Solo demo: OUTFLOW_HOURS="0-24" quita el horario de R10 (normal: fuera de 7-22 pide passkey).
+  // Debe ser la misma que en la API: si no coinciden, el executor detiene lo que la API dejó pasar.
+  const outflowHours = parseHourRange(env("OUTFLOW_HOURS"));
+  if (env("OUTFLOW_HOURS") && !outflowHours) log({ msg: "config_invalid", variable: "OUTFLOW_HOURS" });
+  const deps = (merchantId: string) => ({
     db,
-    provider,
+    provider: providerOf(merchantId),
     verify: ((a) => verifyProposalAssertion({ ...a, config: { rpID, origins } })) satisfies AssertionVerifier,
     now: () => new Date(),
     log,
-  };
-  const say = (body: string) =>
+    ...(outflowHours ? { outflowHours } : {}),
+  });
+  const say = (merchantId: string, body: string) =>
     db.insert(schema.messages).values({ merchantId, thread: "comercio", direction: "out", body });
 
   let lastRecon = 0;
-  log({ msg: "executor_poll_started", merchant_id: merchantId, provider: "bank_sim" });
+  log({ msg: "executor_poll_started", provider: "bank_sim", scope: "todas las tiendas", outflow_hours: outflowHours ?? [7, 22] });
   for (;;) {
     try {
+      const merchantIds = (await db.select({ id: schema.merchants.id }).from(schema.merchants)).map((m) => m.id);
       if (Date.now() - lastRecon > 30_000) {
-        const r = await runReconciliation(db, merchantId, await bankSimBalance(db, merchantId), new Date());
+        for (const merchantId of merchantIds) {
+          const r = await runReconciliation(db, merchantId, await bankSimBalance(db, merchantId), new Date());
+          if (!r.ok) log({ msg: "reconciliation_mismatch", merchant_id: merchantId, difference: r.difference.toString() });
+        }
         lastRecon = Date.now();
-        if (!r.ok) log({ msg: "reconciliation_mismatch", merchant_id: merchantId, difference: r.difference.toString() });
       }
       const queued = await db
-        .select({ id: schema.proposals.id })
+        .select({ id: schema.proposals.id, merchantId: schema.proposals.merchantId })
         .from(schema.proposals)
-        .where(and(eq(schema.proposals.merchantId, merchantId), eq(schema.proposals.status, "queued")))
+        .where(eq(schema.proposals.status, "queued"))
         .orderBy(asc(schema.proposals.createdAt))
         .limit(5);
       for (const q of queued) {
-        const r = await executeOutflow({ proposal_id: q.id }, deps);
-        if (r.status === "sent") await say("🏦 SPEI enviado (cuenta simulada). Esperando confirmación del banco…");
-        else if (r.status === "failed") await say(`⚠️ El pago no salió: ${r.reason}. Se reversó el asiento.`);
+        const merchantId = q.merchantId;
+        const say1 = (body: string) => say(merchantId, body);
+        const r = await executeOutflow({ proposal_id: q.id }, deps(merchantId));
+        if (r.status === "sent") await say1("🏦 SPEI enviado (cuenta simulada). Esperando confirmación del banco…");
+        else if (r.status === "failed") await say1(`⚠️ El pago no salió: ${r.reason}. Se reversó el asiento.`);
         else if (r.status === "rejected" || r.status === "awaiting_passkey") {
           const reasons = "rules_failed" in r.decision ? r.decision.rules_failed.map((f) => `${f.reason} (${f.rule_id})`) : [String(r.decision.integrity_error)];
-          await say(`🛡️ El ejecutor revalidó y detuvo el pago:\n• ${reasons.join("\n• ")}`);
+          await say1(`🛡️ El ejecutor revalidó y detuvo el pago:\n• ${reasons.join("\n• ")}`);
         }
       }
-      for (const ref of await provider.settleDue(new Date(), settleMs)) {
-        const out = await applyProviderEvent(db, "mock", merchantId, { type: "transfer.confirmed", event_id: `sim:${ref}`, provider_ref: ref });
-        if (out.status === "transfer_confirmed") {
-          const [t] = await db.select().from(schema.transfers).where(eq(schema.transfers.id, out.transfer_id));
-          const [p] = t ? await db.select().from(schema.payees).where(eq(schema.payees.id, t.payeeId)) : [];
-          if (t) await say(`🧾 Recibo: ${formatMXN(t.amountCents)} pagados a ${p?.alias ?? "proveedor"} (SPEI simulado, ref. ${ref.slice(-8)}).`);
+      for (const merchantId of merchantIds) {
+        for (const ref of await providerOf(merchantId).settleDue(new Date(), settleMs)) {
+          const out = await applyProviderEvent(db, "mock", merchantId, { type: "transfer.confirmed", event_id: `sim:${ref}`, provider_ref: ref });
+          if (out.status === "transfer_confirmed") {
+            const [t] = await db.select().from(schema.transfers).where(eq(schema.transfers.id, out.transfer_id));
+            const [p] = t ? await db.select().from(schema.payees).where(eq(schema.payees.id, t.payeeId)) : [];
+            if (t) await say(merchantId, `🧾 Recibo: ${formatMXN(t.amountCents)} pagados a ${p?.alias ?? "proveedor"} (SPEI simulado, ref. ${ref.slice(-8)}).`);
+          }
         }
       }
     } catch (e) {

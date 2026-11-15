@@ -3,6 +3,7 @@ import type { TemplateRef } from "./whatsapp-templates.js";
 import type { PeyTransaction } from "@cuadra/adapters";
 import { formatMXN, maskClabe, potCents, recipientOf } from "@cuadra/core";
 import {
+  CHARGE_EXPIRY_GRACE_MS,
   type AssertionVerifier,
   type Db,
   type MessageAction,
@@ -143,6 +144,7 @@ export class TandaFlow {
         num_ref: String(randomInt(1_000_000, 10_000_000)),
         metadata: { cuadra_tanda_charge_id: chargeId },
         bank_account_id: recipient.bankAccountId!,
+        ttl_s: TANDA_PN_TTL_S,
       });
       await attachTandaProviderCharge(this.d.db, chargeId, this.d.gateway.name, r.provider_charge_id);
     } catch (e) {
@@ -178,7 +180,8 @@ export class TandaFlow {
     }
     const members = await tandaMembersOf(this.d.db, t.id);
     const recipient = members[st.recipient - 1]!;
-    const cutoff = new Date(this.d.now().getTime() - TANDA_PN_TTL_S * 1000);
+    // Vencida en pey más el margen de reloj: antes de eso, reenviar podría cobrar doble.
+    const cutoff = new Date(this.d.now().getTime() - TANDA_PN_TTL_S * 1000 - CHARGE_EXPIRY_GRACE_MS);
     let sent = 0;
     let waiting = 0;
     for (const pos of st.pending) {

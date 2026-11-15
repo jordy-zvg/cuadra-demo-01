@@ -13,7 +13,12 @@ export interface PeyConfig {
   apiKey: string;
   baseUrl?: string;
   fetch?: typeof fetch;
+  /** Tiempo máximo por llamada (ms). Sin esto, una conexión colgada podía bloquear minutos. */
+  timeoutMs?: number;
 }
+
+/** Default por llamada a pey. Un POST que vence así tiene resultado desconocido: quien llama decide. */
+export const PEY_TIMEOUT_MS = 20_000;
 
 export class PeyApiError extends Error {
   constructor(
@@ -135,6 +140,7 @@ export class PeyClient {
         ...(body === undefined ? {} : { "content-type": "application/json" }),
       },
       ...(body === undefined ? {} : { body: JSON.stringify(body) }),
+      signal: AbortSignal.timeout(this.cfg.timeoutMs ?? PEY_TIMEOUT_MS),
     });
     const json: unknown = await res.json().catch(() => null);
     if (!res.ok) {

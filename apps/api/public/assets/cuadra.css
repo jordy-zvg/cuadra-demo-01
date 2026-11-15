@@ -1,0 +1,313 @@
+/*
+ * Cuadra · sistema de diseño compartido (tokens, tipografía y componentes base).
+ *
+ * El lenguaje visual toma como referencia la App CDMX 2026 (verde azulado profundo, superficies
+ * menta, títulos cobre, botones de píldora, íconos en círculo) para que Cuadra se sienta familiar a
+ * quien ya usa los sistemas de la ciudad. Cuadra es un proyecto independiente: no usa escudos,
+ * emblemas ni personajes oficiales.
+ *
+ * Todas las combinaciones de texto cumplen contraste AA (4.5:1) en claro y en oscuro.
+ */
+
+@font-face{
+  font-family:"Montserrat";font-style:normal;font-weight:100 900;font-display:swap;
+  src:url("/assets/fonts/montserrat-latin-wght-normal.woff2") format("woff2");
+}
+@font-face{
+  font-family:"Noto Sans";font-style:normal;font-weight:100 900;font-display:swap;
+  src:url("/assets/fonts/noto-sans-latin-wght-normal.woff2") format("woff2");
+}
+
+:root{
+  color-scheme:light dark;
+
+  /* Marca: verde azulado (de más profundo a más claro) */
+  --c-deep:#0D3336;
+  --c-teal-900:#0F4447;
+  --c-teal-800:#105658;
+  --c-teal-700:#126367;
+  --c-teal-600:#1B7479;
+  --c-teal-500:#1F8288;
+  --c-teal-400:#25A0A7;
+  --c-emerald:#007F64;
+  --c-mint-300:#B4E9D9;
+  --c-mint-200:#D3F0EA;
+  --c-mint-100:#DFFDFB;
+  --c-mint-50:#F0FEFE;
+  --c-copper:#8A5E3D;
+  --c-copper-soft:#F3E4D6;
+
+  /* Semánticos (claro) */
+  --bg:#FFFFFF;                 /* fondo de página */
+  --bg-soft:#F4FBFB;            /* fondo alterno, muy sutil */
+  --surface:#F0FEFE;            /* tarjetas */
+  --surface-2:#DFFDFB;          /* círculos de ícono, realces */
+  --surface-plain:#FFFFFF;      /* tarjetas neutras, campos */
+  --ink:#0A1E18;                /* texto principal */
+  --ink-2:#3B524E;              /* texto secundario */
+  --heading:#105658;            /* títulos de pantalla y de tarjeta */
+  --accent:#8A5E3D;             /* títulos de sección (cobre) */
+  --primary:#126367;            /* botón principal, íconos */
+  --primary-ink:#FFFFFF;
+  --primary-press:#0F4447;
+  --select:#007F64;             /* seleccionado, chips llenos, casillas */
+  --select-ink:#FFFFFF;
+  --link:#2D49A0;
+  --line:#C9DCDC;               /* divisores y bordes suaves */
+  --line-strong:#6F8A8B;        /* bordes de campos (3:1) */
+  --focus:#2D49A0;
+  --ok:#00694F;  --ok-bg:#DFF7EE;
+  --bad:#A3261D; --bad-bg:#FDECEA;
+  --warn:#7A4A00;--warn-bg:#FFF3D6;
+  --on-brand:#FFFFFF;           /* texto sobre el degradado de marca */
+  --on-brand-accent:#B4E9D9;    /* realce sobre el degradado de marca */
+  --brand-gradient:linear-gradient(180deg,#0D3336 0%,#126367 62%,#1F8288 100%);
+  --brand-flat:#126367;
+  --shadow-1:0 1px 2px rgba(13,51,54,.10),0 1px 3px rgba(13,51,54,.08);
+  --shadow-2:0 4px 14px rgba(13,51,54,.14);
+
+  /* Forma */
+  --r-sm:10px; --r-md:14px; --r-lg:18px; --r-xl:24px; --r-pill:999px;
+
+  /* Tipografía */
+  --font-head:"Montserrat",system-ui,-apple-system,"Segoe UI",Roboto,sans-serif;
+  --font-body:"Noto Sans",system-ui,-apple-system,"Segoe UI",Roboto,sans-serif;
+  --font-mono:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;
+}
+
+@media (prefers-color-scheme: dark){:root:not([data-theme="light"]){
+  --bg:#071A1C;
+  --bg-soft:#0A2123;
+  --surface:#0F2A2D;
+  --surface-2:#16393C;
+  --surface-plain:#0C2326;
+  --ink:#E6F4F3;
+  --ink-2:#A3BFBD;
+  --heading:#B4E9D9;
+  --accent:#E3B58C;
+  --primary:#1B7479;
+  --primary-ink:#FFFFFF;
+  --primary-press:#126367;
+  --select:#7ED9C6;
+  --select-ink:#06201F;
+  --link:#A9BCFF;
+  --line:#24474A;
+  --line-strong:#5E8386;
+  --focus:#A9BCFF;
+  --ok:#7FE0BE;  --ok-bg:#0C3329;
+  --bad:#FFB4A9; --bad-bg:#3A1512;
+  --warn:#FFD58A;--warn-bg:#3A2C0C;
+  --c-copper-soft:#3A2A1C;
+  --brand-gradient:linear-gradient(180deg,#06191B 0%,#0D3336 60%,#126367 100%);
+  --brand-flat:#0D3336;
+  --shadow-1:0 1px 2px rgba(0,0,0,.4);
+  --shadow-2:0 6px 18px rgba(0,0,0,.45);
+}}
+
+*{box-sizing:border-box}
+body{margin:0;background:var(--bg);color:var(--ink);font-family:var(--font-body);-webkit-text-size-adjust:100%}
+h1,h2,h3{font-family:var(--font-head);letter-spacing:-.01em}
+a{color:var(--link)}
+:focus-visible{outline:3px solid var(--focus);outline-offset:3px}
+
+/* Ícono del sprite: <svg class="ico" aria-hidden="true"><use href="/assets/icons.svg#i-home"/></svg> */
+.ico{width:1.25em;height:1.25em;fill:currentColor;flex:none;vertical-align:-.22em}
+
+/* Trama propia de Cuadra (cuadras de barrio vistas desde arriba) para fondos de marca. */
+.brand-pattern{
+  background-color:var(--brand-flat);
+  background-image:
+    url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='72' height='72' viewBox='0 0 72 72'%3E%3Cg fill='none' stroke='%23B4E9D9' stroke-opacity='.10' stroke-width='1.5'%3E%3Crect x='6' y='6' width='26' height='26' rx='6'/%3E%3Crect x='40' y='6' width='26' height='26' rx='6'/%3E%3Crect x='6' y='40' width='26' height='26' rx='6'/%3E%3Cpath d='M40 53h13a13 13 0 0 0 13-13'/%3E%3C/g%3E%3C/svg%3E"),
+    var(--brand-gradient);
+}
+
+/* =====================================================================================
+ * Componentes compartidos (portal y consola).
+ * Estructura de la referencia: banda de marca arriba, hoja blanca con borde superior redondo,
+ * círculos menta con ícono sólido, títulos de sección cobre, botones de píldora, tarjetas menta.
+ * Los tamaños van en em/rem para que "Letra grande" los escale.
+ * ===================================================================================== */
+
+:root{
+  --glyph:#126367;              /* ícono sólido dentro del círculo menta */
+  --glyph-bg:#DFFDFB;           /* círculo menta */
+  --glyph-bg-hover:#C9F4EE;
+  --card-line:#D2ECE9;          /* borde suave de tarjetas menta */
+  --chip-line:#6F8A8B;          /* borde de chips y botones delineados (3:1) */
+  --bubble-me:#D3F0EA;          /* globo propio en el chat */
+  --key-bg:#FFFFFF;
+  --hero-ink:#105658;           /* cifra principal */
+  --band:linear-gradient(180deg,#0D3336 0,#105658 200px,#176C70 420px,#1F8288 640px);
+  --pattern:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='72' height='72' viewBox='0 0 72 72'%3E%3Cg fill='none' stroke='%23B4E9D9' stroke-opacity='.075' stroke-width='1.5'%3E%3Crect x='6' y='6' width='26' height='26' rx='6'/%3E%3Crect x='40' y='6' width='26' height='26' rx='6'/%3E%3Crect x='6' y='40' width='26' height='26' rx='6'/%3E%3Cpath d='M40 53h13a13 13 0 0 0 13-13'/%3E%3C/g%3E%3C/svg%3E");
+  --pattern-ink:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='72' height='72' viewBox='0 0 72 72'%3E%3Cg fill='none' stroke='%23126367' stroke-opacity='.06' stroke-width='1.5'%3E%3Crect x='6' y='6' width='26' height='26' rx='6'/%3E%3Crect x='40' y='6' width='26' height='26' rx='6'/%3E%3Crect x='6' y='40' width='26' height='26' rx='6'/%3E%3Cpath d='M40 53h13a13 13 0 0 0 13-13'/%3E%3C/g%3E%3C/svg%3E");
+  --on-brand-soft:rgba(255,255,255,.14);
+  --on-brand-line:rgba(255,255,255,.78);
+  --sheet-r:28px;
+}
+@media (prefers-color-scheme: dark){:root:not([data-theme="light"]){
+  --glyph:#B4E9D9;
+  --glyph-bg:#16393C;
+  --glyph-bg-hover:#1D4649;
+  --card-line:#24474A;
+  --chip-line:#5E8386;
+  --bubble-me:#14423E;
+  --key-bg:#0F2A2D;
+  --hero-ink:#B4E9D9;
+  --band:linear-gradient(180deg,#0B2B2E 0,#0F4447 200px,#115357 420px,#126367 640px);
+  --pattern-ink:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='72' height='72' viewBox='0 0 72 72'%3E%3Cg fill='none' stroke='%23B4E9D9' stroke-opacity='.045' stroke-width='1.5'%3E%3Crect x='6' y='6' width='26' height='26' rx='6'/%3E%3Crect x='40' y='6' width='26' height='26' rx='6'/%3E%3Crect x='6' y='40' width='26' height='26' rx='6'/%3E%3Cpath d='M40 53h13a13 13 0 0 0 13-13'/%3E%3C/g%3E%3C/svg%3E");
+}}
+
+/* Íconos del sprite: nunca reciben el clic (el clic es del botón). */
+.ico{pointer-events:none}
+
+/* ---------- Banda de marca y hoja ---------- */
+.band{
+  color:var(--on-brand);
+  background-color:var(--c-deep);
+  background-image:var(--pattern),var(--band);
+  background-size:72px 72px,100% 100%;
+}
+.band :focus-visible,.on-band:focus-visible{outline-color:#FFFFFF}
+.sheet{background:var(--bg);border-radius:var(--sheet-r) var(--sheet-r) 0 0;position:relative}
+
+/* ---------- Títulos ---------- */
+.screen-title{font-family:var(--font-head);font-weight:600;color:var(--heading);line-height:1.2;letter-spacing:-.01em}
+.sec-title{font-family:var(--font-head);font-weight:600;color:var(--accent);line-height:1.25;letter-spacing:-.005em}
+.eyebrow{font-family:var(--font-head);font-weight:700;text-transform:uppercase;letter-spacing:.12em;font-size:.78em;color:var(--ink)}
+
+/* ---------- Botón de píldora ---------- */
+.btn{
+  display:inline-flex;align-items:center;justify-content:center;gap:.5em;
+  padding:.55em 1.3em;border-radius:var(--r-pill);border:2px solid transparent;
+  background:var(--primary);color:var(--primary-ink);
+  font-family:var(--font-body);font-size:inherit;font-weight:700;line-height:1.2;text-align:center;text-decoration:none;
+  cursor:pointer;-webkit-tap-highlight-color:transparent;
+  transition:background-color .15s ease,border-color .15s ease,transform .1s ease;
+}
+.btn:hover{background:var(--primary-press)}
+.btn:active{transform:translateY(1px)}
+.btn:disabled,.btn[aria-disabled="true"]{opacity:.45;cursor:default;transform:none}
+.btn .ico{width:1.25em;height:1.25em}
+.btn--ok{background:var(--select);color:var(--select-ink)}
+.btn--ok:hover{background:var(--select);filter:brightness(.92)}
+.btn--outline{background:var(--surface-plain);color:var(--ink);border-color:var(--chip-line);border-width:1.5px}
+.btn--outline:hover{background:var(--surface);border-color:var(--primary)}
+.btn--outline .ico{color:var(--glyph)}
+.btn--on-band{background:transparent;color:#FFFFFF;border-color:var(--on-brand-line);border-width:1.5px}
+.btn--on-band:hover{background:var(--on-brand-soft)}
+.btn--block{display:flex;width:100%}
+
+/* Botón redondo de ícono (teal sólido). */
+.icon-btn{
+  display:inline-flex;align-items:center;justify-content:center;flex:none;
+  width:2.75em;height:2.75em;border-radius:50%;border:0;padding:0;
+  background:var(--primary);color:var(--primary-ink);cursor:pointer;
+}
+.icon-btn .ico{width:1.35em;height:1.35em}
+
+/* ---------- Chips ---------- */
+.chip{
+  display:inline-flex;align-items:center;gap:.4em;
+  padding:.35em .8em;border-radius:var(--r-sm);
+  border:1px solid var(--chip-line);background:var(--surface-plain);color:var(--ink);
+  font:inherit;line-height:1.25;text-align:left;cursor:pointer;
+}
+.chip:hover{border-color:var(--primary);background:var(--surface)}
+.chip--fill{background:var(--select);color:var(--select-ink);border-color:transparent}
+.chip--mint{background:var(--glyph-bg);color:var(--heading);border-color:transparent;font-weight:600}
+
+/* ---------- Ícono en círculo menta ---------- */
+.ic-circle{
+  display:inline-flex;align-items:center;justify-content:center;flex:none;
+  width:2.5em;height:2.5em;border-radius:50%;
+  background:var(--glyph-bg);color:var(--glyph);
+}
+.ic-circle .ico{width:56%;height:56%}
+.ic-circle--solid{background:var(--primary);color:var(--primary-ink)}
+
+/* ---------- Tarjetas ---------- */
+.card{background:var(--surface);border:1px solid var(--card-line);border-radius:var(--r-lg);box-shadow:var(--shadow-1)}
+.card--pattern{background-image:var(--pattern-ink);background-size:72px 72px}
+
+/* Avisos (tarjeta menta con ícono) */
+.notice{
+  display:flex;align-items:flex-start;gap:.75em;
+  background:var(--surface);border:1px solid var(--card-line);border-radius:var(--r-md);
+  padding:.8em 1em;color:var(--ink);
+}
+.notice > .ico{width:1.4em;height:1.4em;color:var(--glyph);margin-top:.05em}
+.notice--bad{background:var(--bad-bg);border-color:transparent;color:var(--bad)}
+.notice--bad > .ico{color:var(--bad)}
+.notice--warn{background:var(--warn-bg);border-color:transparent;color:var(--warn)}
+.notice--warn > .ico{color:var(--warn)}
+.notice--ok{background:var(--ok-bg);border-color:transparent;color:var(--ok)}
+.notice--ok > .ico{color:var(--ok)}
+
+/* ---------- Estados: siempre ícono + texto, nunca solo color ---------- */
+.st{
+  display:inline-flex;align-items:center;gap:.3em;
+  padding:.12em .6em .12em .45em;border-radius:var(--r-pill);
+  font-weight:600;font-size:.92em;line-height:1.35;white-space:nowrap;
+  background:var(--glyph-bg);color:var(--ink-2);
+}
+.st .ico{width:1.1em;height:1.1em}
+.st--ok{background:var(--ok-bg);color:var(--ok)}
+.st--bad{background:var(--bad-bg);color:var(--bad)}
+.st--warn{background:var(--warn-bg);color:var(--warn)}
+
+/* ---------- Cuadrícula de servicios (círculo menta + etiqueta abajo) ---------- */
+/* Flex en vez de grid para que una última fila incompleta quede centrada. */
+.svc-grid{display:flex;flex-wrap:wrap;justify-content:center;gap:.9em .4em}
+.svc-grid > *{flex:0 0 calc((100% - .8em) / 3);min-width:0}
+.svc{
+  display:flex;flex-direction:column;align-items:center;justify-content:flex-start;gap:.45em;
+  padding:.35em .15em .5em;border:0;border-radius:var(--r-lg);background:transparent;
+  color:var(--ink);font-family:var(--font-body);font-weight:600;line-height:1.2;text-align:center;
+  cursor:pointer;-webkit-tap-highlight-color:transparent;
+}
+.svc .ic-circle{width:3.6em;height:3.6em;transition:background-color .15s ease,transform .1s ease}
+.svc .ic-circle .ico{width:52%;height:52%}
+.svc:hover .ic-circle{background:var(--glyph-bg-hover)}
+.svc:active .ic-circle{transform:scale(.96)}
+
+/* ---------- Filas de lista (ícono en círculo, texto, cifra) ---------- */
+.row-list{display:flex;flex-direction:column}
+.row-list > *{display:flex;align-items:center;gap:.8em;padding:.6em 0;border-bottom:1px solid var(--line)}
+.row-list > :last-child{border-bottom:0}
+
+/* ---------- Tablas densas ---------- */
+.tbl{width:100%;border-collapse:collapse;font-variant-numeric:tabular-nums}
+.tbl th,.tbl td{text-align:left;padding:.4em .5em;border-bottom:1px solid var(--line);vertical-align:middle}
+.tbl th{color:var(--ink-2);font-weight:600;font-size:.86em}
+.tbl tr:last-child td{border-bottom:0}
+.tbl .n{text-align:right;white-space:nowrap}
+
+/* Asa de hoja inferior (bottom sheet) */
+.handle{display:block;width:40px;height:4px;border-radius:2px;background:var(--line-strong);opacity:.5;margin:0 auto}
+
+/* Lectores de pantalla */
+.sr-only{position:absolute;width:1px;height:1px;overflow:hidden;clip:rect(0 0 0 0);white-space:nowrap}
+
+/* Cifras de dinero */
+.money{font-variant-numeric:tabular-nums;font-feature-settings:"tnum" 1}
+
+@media (prefers-reduced-motion: reduce){
+  .btn,.svc .ic-circle{transition:none}
+  .btn:active,.svc:active .ic-circle{transform:none}
+}
+
+/* ---------- Cargando y avisos de conexión (todas las pantallas) ---------- */
+/* Pantalla o bloque "Cargando…": círculo que gira y texto (el texto se lee aunque no haya animación). */
+.cargando{display:flex;flex-direction:column;align-items:center;justify-content:center;gap:.8em;padding:2.5em 1em;color:var(--ink-2);text-align:center}
+.cargando::before{content:"";width:2.6em;height:2.6em;border-radius:50%;border:4px solid var(--glyph-bg);border-top-color:var(--glyph);animation:cargando-giro 1s linear infinite}
+@keyframes cargando-giro{to{transform:rotate(360deg)}}
+/* Barra fija abajo: sin internet o sin respuesta del servidor (la pone /assets/red.js). */
+.netbar,.toast{position:fixed;left:50%;bottom:max(16px, env(safe-area-inset-bottom));transform:translateX(-50%);z-index:1000;
+  display:flex;align-items:center;gap:.6em;width:max-content;max-width:calc(100% - 32px);padding:.7em 1.1em;border-radius:var(--r-md);
+  font-family:var(--font-body);font-size:15px;font-weight:600;line-height:1.35;box-shadow:var(--shadow-2)}
+.netbar{background:var(--warn-bg);color:var(--warn);border:1px solid currentColor}
+.toast{background:var(--bad-bg);color:var(--bad);border:1px solid currentColor}
+.toast.ok{background:var(--ok-bg);color:var(--ok)}
+.netbar .ico,.toast .ico{width:1.3em;height:1.3em}
+.netbar[hidden],.toast[hidden],.cargando[hidden]{display:none}
+@media (prefers-reduced-motion: reduce){.cargando::before{animation-duration:3s}}

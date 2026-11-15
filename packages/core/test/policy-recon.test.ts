@@ -3,19 +3,47 @@ import {
   type Mandate,
   type MatchContext,
   Proposal,
+  REMINDER_MAX_RESENDS,
+  type ResendInput,
   canonicalJson,
   checkBalance,
   evaluateReminder,
+  evaluateResend,
+  formatMxTime,
+  formatMxWhen,
+  isAllDay,
   isMandateActive,
+  isValidHourRange,
   isWithinMxHours,
   mandateCovers,
   matchDeposit,
   mxDateKey,
+  parseHourRange,
   proposalHash,
 } from "../src/index.js";
 
 // CDMX = UTC-6 todo el año.
 const at = (hhmm: string, day = "2026-11-14") => new Date(`${day}T${hhmm}:00-06:00`);
+
+describe("parseHourRange (REMINDER_HOURS / OUTFLOW_HOURS)", () => {
+  it("lee desde-hasta; 0-24 es el día completo", () => {
+    expect(parseHourRange("0-24")).toEqual([0, 24]);
+    expect(parseHourRange(" 8 - 22 ")).toEqual([8, 22]);
+    expect(isAllDay([0, 24])).toBe(true);
+    expect(isAllDay([1, 24])).toBe(false);
+    expect(isAllDay([0, 23])).toBe(false);
+  });
+  it("isValidHourRange: horas enteras y 0 ≤ desde < hasta ≤ 24", () => {
+    expect(isValidHourRange([0, 24])).toBe(true);
+    expect(isValidHourRange([7, 22])).toBe(true);
+    for (const h of [[7.5, 22], [7, 22.5], [22, 7], [5, 5], [-1, 24], [0, 25], [Number.NaN, 22], [0, Number.POSITIVE_INFINITY]] as const) {
+      expect(isValidHourRange(h), String(h)).toBe(false);
+    }
+  });
+  it("lo que no es un horario válido no cuenta (rige el horario normal)", () => {
+    for (const v of [undefined, "", "24-0", "7-7", "0-25", "a-b", "7", "-1-5", "7-22-1", "07:00-22:00"]) expect(parseHourRange(v)).toBeNull();
+  });
+});
 
 describe("time", () => {
   it("usa hora de CDMX", () => {
@@ -24,6 +52,14 @@ describe("time", () => {
     expect(isWithinMxHours(at("22:00"), 7, 22)).toBe(false);
     expect(isWithinMxHours(at("06:59"), 7, 22)).toBe(false);
     expect(mxDateKey(new Date("2026-11-15T03:00:00Z"))).toBe("2026-11-14");
+  });
+  it("formatea horas y días en hora de CDMX", () => {
+    expect(formatMxTime(at("16:11"))).toBe("16:11");
+    expect(formatMxWhen(at("16:11"), at("15:09"))).toBe("hoy a las 16:11");
+    expect(formatMxWhen(at("09:05", "2026-11-15"), at("15:09"))).toBe("mañana a las 09:05");
+    expect(formatMxWhen(at("15:09", "2026-11-17"), at("15:09"))).toMatch(/^el martes 17 de noviembre a las 15:09$/);
+    // 23:30 en CDMX ya es el día siguiente en UTC: sigue siendo "hoy".
+    expect(formatMxWhen(at("23:30"), at("10:00"))).toBe("hoy a las 23:30");
   });
 });
 
@@ -61,8 +97,58 @@ describe("recordatorios", () => {
     expect(ids({ now: at("08:59") })).toEqual(["P04"]);
     expect(ids({ now: at("20:00") })).toEqual(["P04"]);
   });
+  it("P04 con horario configurable; 0-24 = sin límite (demo)", () => {
+    const night = at("23:30");
+    expect(ids({ now: night })).toEqual(["P04"]);
+    const rules = (hours: readonly [number, number]) => evaluateReminder({ ...ok, now: night, hours }).rules_failed.map((f) => f.rule_id);
+    expect(rules([0, 24])).toEqual([]);
+    expect(rules([8, 22])).toEqual(["P04"]);
+    expect(evaluateReminder({ ...ok, now: night, hours: [8, 22] }).rules_failed[0]!.reason).toMatch(/entre 8:00 y 22:00/);
+  });
   it("P05 opt-in", () => expect(ids({ opt_in: false })).toEqual(["P05"]));
   it("P06 plantilla", () => expect(ids({ template_id: "amenaza" })).toEqual(["P06"]));
+  it("P03 configurable solo para desarrollo: 0 no limita", () => {
+    expect(evaluateReminder({ ...ok, last_reminder_at: at("09:59"), min_interval_ms: 0 }).allow).toBe(true);
+  });
+});
+
+describe("reenvío de una solicitud CoDi vencida", () => {
+  const base = {
+    now: at("10:00"), ledger_balance: 8000n, amount: 8000n, opt_in: true,
+    template_id: "cobro_amable", approved_template_ids: ["cobro_amable"],
+  };
+  const blocked = evaluateReminder({ ...base, last_reminder_at: at("09:00") }); // solo P03
+  const expired = { status: "expired" as const, channel: "codi_pn" as const };
+  const rs = (d: ReturnType<typeof evaluateReminder>, i: Partial<ResendInput>) =>
+    evaluateResend(d, { last_charge: expired, resends_in_cycle: 0, ...i }).rules_failed.map((f) => f.rule_id);
+
+  it("se permite si solo falla P03 y la solicitud anterior venció sin pago", () => {
+    expect(blocked.rules_failed.map((f) => f.rule_id)).toEqual(["P03"]);
+    expect(evaluateResend(blocked, { last_charge: expired, resends_in_cycle: 0 }).allow).toBe(true);
+    expect(evaluateResend(blocked, { last_charge: expired, resends_in_cycle: REMINDER_MAX_RESENDS - 1 }).allow).toBe(true);
+  });
+  it("P07: nunca con una solicitud viva, pagada, cancelada o por QR", () => {
+    expect(rs(blocked, { last_charge: { status: "open", channel: "codi_pn" } })).toEqual(["P07"]);
+    expect(rs(blocked, { last_charge: { status: "paid", channel: "codi_pn" } })).toEqual(["P07"]);
+    expect(rs(blocked, { last_charge: { status: "cancelled", channel: "codi_pn" } })).toEqual(["P07"]);
+    expect(rs(blocked, { last_charge: { status: "expired", channel: "codi_qr" } })).toEqual(["P07"]);
+    expect(rs(blocked, { last_charge: { status: "expired", channel: null } })).toEqual(["P07"]);
+    expect(rs(blocked, { last_charge: null })).toEqual(["P07"]);
+  });
+  it("P08: máximo de reenvíos por recordatorio", () => {
+    expect(rs(blocked, { resends_in_cycle: REMINDER_MAX_RESENDS })).toEqual(["P08"]);
+  });
+  it("las demás reglas siguen aplicando (horario, opt-in, saldo)", () => {
+    const night = evaluateReminder({ ...base, now: at("20:30"), last_reminder_at: at("19:00") });
+    expect(rs(night, {})).toEqual(["P04"]);
+    const noOptIn = evaluateReminder({ ...base, opt_in: false, last_reminder_at: at("09:00") });
+    expect(rs(noOptIn, {})).toEqual(["P05"]);
+    const paidOff = evaluateReminder({ ...base, ledger_balance: 0n, amount: 0n, last_reminder_at: at("09:00") });
+    expect(rs(paidOff, {})).toEqual(["P01"]);
+  });
+  it("sin P03 no hay reenvío: procede un recordatorio normal", () => {
+    expect(rs(evaluateReminder({ ...base, last_reminder_at: null }), {})).toEqual(["P07"]);
+  });
 });
 
 describe("mandatos", () => {

@@ -18,16 +18,16 @@ import {
   verifyRegistrationResponse,
 } from "@simplewebauthn/server";
 import { and, eq } from "drizzle-orm";
-import type { FastifyInstance } from "fastify";
+import type { FastifyInstance, FastifyReply, FastifyRequest } from "fastify";
 import { z } from "zod";
-import type { ChargeGateway } from "./gateway.js";
+import type { Store, StoreRegistry } from "./stores.js";
 
 export interface PasskeyOpts {
-  /** Para registrar las cuentas receptoras de los integrantes de una tanda. */
-  gateway: Pick<ChargeGateway, "registerAccount">;
   db: Db;
-  merchantId: string;
-  ownerId: string;
+  /** Tiendas: cada propuesta se firma con la passkey del dueño de SU tienda. */
+  registry: StoreRegistry;
+  /** Tienda de la sesión (null sin sesión). */
+  storeOf: (req: FastifyRequest) => Promise<Store | null>;
   rpID: string;
   origins: string[];
   now: () => Date;
@@ -56,15 +56,16 @@ export function registerPasskeyRoutes(app: FastifyInstance, o: PasskeyOpts): voi
   const regChallenges = new Map<string, { challenge: string; at: number }>();
   const json = (raw: unknown) => JSON.parse(typeof raw === "string" && raw ? raw : "{}") as unknown;
 
+  /** Propuesta por id con su tienda: la firma siempre es del dueño de la tienda de la propuesta. */
   const loadProposal = async (id: string) => {
-    const [row] = await o.db
-      .select()
-      .from(schema.proposals)
-      .where(and(eq(schema.proposals.id, id), eq(schema.proposals.merchantId, o.merchantId)));
-    return row ?? null;
+    const [row] = await o.db.select().from(schema.proposals).where(eq(schema.proposals.id, id));
+    if (!row) return null;
+    const store = await o.registry.get(row.merchantId);
+    return store ? { row, store } : null;
   };
-  const credentials = () =>
-    o.db.select().from(schema.passkeyCredentials).where(eq(schema.passkeyCredentials.merchantUserId, o.ownerId));
+  const credentials = (ownerId: string) =>
+    o.db.select().from(schema.passkeyCredentials).where(eq(schema.passkeyCredentials.merchantUserId, ownerId));
+  const noSession = (reply: FastifyReply) => reply.code(401).send({ error: "Entra a tu cuenta para continuar." });
 
   app.get("/aprobar/:id", (_req, reply) => reply.sendFile("aprobar.html"));
   app.get("/mandato", (_req, reply) => reply.sendFile("aprobar.html"));
@@ -77,11 +78,13 @@ export function registerPasskeyRoutes(app: FastifyInstance, o: PasskeyOpts): voi
     members: z.array(z.object({ name: z.string().min(1).max(80), phone: z.string(), clabe: z.string() })).min(2).max(20),
   });
   app.post("/api/tanda/propose", async (req, reply) => {
+    const st = await o.storeOf(req);
+    if (!st) return noSession(reply);
     const b = TandaBody.safeParse(json(req.body));
     if (!b.success) return reply.code(400).send({ error: "Datos de la tanda incompletos" });
     const parsed = CreateTanda.safeParse({
       type: "CreateTanda",
-      merchant_id: o.merchantId,
+      merchant_id: st.merchantId,
       provenance: "user_direct",
       name: b.data.name.trim(),
       contribution_cents: Math.round(b.data.contribution_pesos * 100),
@@ -90,40 +93,53 @@ export function registerPasskeyRoutes(app: FastifyInstance, o: PasskeyOpts): voi
     });
     if (!parsed.success) return reply.code(400).send({ error: parsed.error.issues.map((i) => i.message).join("; ") });
     const id = `pr_${randomUUID().replace(/-/g, "").slice(0, 16)}`;
-    await saveProposal(o.db, { id, actorId: o.ownerId, proposal: parsed.data });
+    await saveProposal(o.db, { id, actorId: st.ownerId, proposal: parsed.data });
     return { id };
   });
 
-  app.get("/api/payees", async () =>
-    (await o.db.select().from(schema.payees).where(eq(schema.payees.merchantId, o.merchantId))).map((p) => ({
+  app.get("/api/payees", async (req, reply) => {
+    const st = await o.storeOf(req);
+    if (!st) return noSession(reply);
+    return (await o.db.select().from(schema.payees).where(eq(schema.payees.merchantId, st.merchantId))).map((p) => ({
       id: p.id,
       alias: p.alias,
       clabe_last4: p.clabe.slice(-4),
-    })),
-  );
+    }));
+  });
 
-  app.get("/api/passkey/status", async () => ({ registered: (await credentials()).length > 0, rp_id: o.rpID }));
+  // Pública (la página de aprobación la usa desde el enlace de WhatsApp): con ?proposal=<id>
+  // responde por el dueño de la tienda de esa propuesta; si no, por la tienda de la sesión.
+  app.get("/api/passkey/status", async (req) => {
+    const pid = (req.query as { proposal?: unknown }).proposal;
+    const owner =
+      typeof pid === "string" && pid.length <= 64 ? (await loadProposal(pid))?.store.ownerId : (await o.storeOf(req))?.ownerId;
+    return { registered: owner ? (await credentials(owner)).length > 0 : false, rp_id: o.rpID };
+  });
 
-  app.post("/api/passkey/register/options", async () => {
-    const [owner] = await o.db.select().from(schema.merchantUsers).where(eq(schema.merchantUsers.id, o.ownerId));
-    const existing = await credentials();
+  app.post("/api/passkey/register/options", async (req, reply) => {
+    const st = await o.storeOf(req);
+    if (!st) return noSession(reply);
+    const [owner] = await o.db.select().from(schema.merchantUsers).where(eq(schema.merchantUsers.id, st.ownerId));
+    const existing = await credentials(st.ownerId);
     const opts = await generateRegistrationOptions({
       rpName: "Cuadra",
       rpID: o.rpID,
-      userName: owner?.phone ?? o.ownerId,
+      userName: owner?.phone ?? st.ownerId,
       userDisplayName: "Comercio",
-      userID: new TextEncoder().encode(o.ownerId),
+      userID: new TextEncoder().encode(st.ownerId),
       attestationType: "none",
       authenticatorSelection: { residentKey: "preferred", userVerification: "required" },
       excludeCredentials: existing.map((c) => ({ id: c.id })),
     });
-    regChallenges.set(o.ownerId, { challenge: opts.challenge, at: Date.now() });
+    regChallenges.set(st.ownerId, { challenge: opts.challenge, at: Date.now() });
     return opts;
   });
 
   app.post("/api/passkey/register/verify", async (req, reply) => {
-    const pending = regChallenges.get(o.ownerId);
-    regChallenges.delete(o.ownerId);
+    const st = await o.storeOf(req);
+    if (!st) return noSession(reply);
+    const pending = regChallenges.get(st.ownerId);
+    regChallenges.delete(st.ownerId);
     if (!pending || Date.now() - pending.at > CHALLENGE_TTL_MS) return reply.code(400).send({ error: "Reto vencido; intenta de nuevo." });
     try {
       const v = await verifyRegistrationResponse({
@@ -137,7 +153,7 @@ export function registerPasskeyRoutes(app: FastifyInstance, o: PasskeyOpts): voi
       const c = v.registrationInfo.credential;
       await o.db
         .insert(schema.passkeyCredentials)
-        .values({ id: c.id, merchantUserId: o.ownerId, publicKey: c.publicKey, counter: c.counter, transports: c.transports ?? [] })
+        .values({ id: c.id, merchantUserId: st.ownerId, publicKey: c.publicKey, counter: c.counter, transports: c.transports ?? [] })
         .onConflictDoNothing();
       return { ok: true };
     } catch (e) {
@@ -153,12 +169,20 @@ export function registerPasskeyRoutes(app: FastifyInstance, o: PasskeyOpts): voi
     valid_days: z.number().int().min(1).max(365),
   });
   app.post("/api/mandate/propose", async (req, reply) => {
+    const st = await o.storeOf(req);
+    if (!st) return noSession(reply);
     const b = MandateBody.safeParse(json(req.body));
     if (!b.success) return reply.code(400).send({ error: "Datos del mandato inválidos" });
+    // Solo proveedores de tu tienda.
+    const [payee] = await o.db
+      .select({ id: schema.payees.id })
+      .from(schema.payees)
+      .where(and(eq(schema.payees.id, b.data.payee_id), eq(schema.payees.merchantId, st.merchantId)));
+    if (!payee) return reply.code(404).send({ error: "Ese proveedor no está en tu lista." });
     const toCents = (n: number) => Math.round(n * 100);
     const proposal = CreateMandate.parse({
       type: "CreateMandate",
-      merchant_id: o.merchantId,
+      merchant_id: st.merchantId,
       provenance: "user_direct",
       payee_id: b.data.payee_id,
       purpose: "proveedor",
@@ -168,13 +192,14 @@ export function registerPasskeyRoutes(app: FastifyInstance, o: PasskeyOpts): voi
       valid_days: b.data.valid_days,
     });
     const id = `pr_${randomUUID().replace(/-/g, "").slice(0, 16)}`;
-    await saveProposal(o.db, { id, actorId: o.ownerId, proposal });
+    await saveProposal(o.db, { id, actorId: st.ownerId, proposal });
     return { id };
   });
 
   app.get("/api/proposal/:id", async (req, reply) => {
-    const row = await loadProposal((req.params as { id: string }).id);
-    if (!row) return reply.code(404).send({ error: "No existe" });
+    const found = await loadProposal(String((req.params as { id: string }).id).slice(0, 64));
+    if (!found) return reply.code(404).send({ error: "No existe" });
+    const { row } = found;
     const p = Proposal.parse(row.payload);
     return { id: row.id, type: row.type, status: row.status, hash: row.proposalHash, provenance: row.provenance, summary: await describe(o.db, p), decision: row.decision };
   });
@@ -186,9 +211,10 @@ export function registerPasskeyRoutes(app: FastifyInstance, o: PasskeyOpts): voi
   app.post("/api/approve/options", async (req, reply) => {
     const b = ApproveBody.safeParse(json(req.body));
     if (!b.success) return reply.code(400).send({ error: "inválido" });
-    const row = await loadProposal(b.data.proposal_id);
-    if (!row || !approvable(row.status, row.type)) return reply.code(409).send({ error: "Esta propuesta ya no se puede aprobar." });
-    const creds = await credentials();
+    const found = await loadProposal(b.data.proposal_id);
+    if (!found || !approvable(found.row.status, found.row.type)) return reply.code(409).send({ error: "Esta propuesta ya no se puede aprobar." });
+    const { row, store } = found;
+    const creds = await credentials(store.ownerId);
     if (creds.length === 0) return reply.code(409).send({ error: "Primero registra tu passkey." });
     // El challenge son los bytes del hash de la propuesta: la firma queda ligada a ella.
     return generateAuthenticationOptions({
@@ -203,12 +229,14 @@ export function registerPasskeyRoutes(app: FastifyInstance, o: PasskeyOpts): voi
   app.post("/api/approve/verify", async (req, reply) => {
     const b = VerifyBody.safeParse(json(req.body));
     if (!b.success) return reply.code(400).send({ error: "inválido" });
-    const row = await loadProposal(b.data.proposal_id);
-    if (!row || !approvable(row.status, row.type)) return reply.code(409).send({ error: "Esta propuesta ya no se puede aprobar." });
+    const found = await loadProposal(b.data.proposal_id);
+    if (!found || !approvable(found.row.status, found.row.type)) return reply.code(409).send({ error: "Esta propuesta ya no se puede aprobar." });
+    const { row, store } = found;
+    // Solo firma la passkey del dueño de la tienda de esta propuesta.
     const [cred] = await o.db
       .select()
       .from(schema.passkeyCredentials)
-      .where(and(eq(schema.passkeyCredentials.id, b.data.response.id), eq(schema.passkeyCredentials.merchantUserId, o.ownerId)));
+      .where(and(eq(schema.passkeyCredentials.id, b.data.response.id), eq(schema.passkeyCredentials.merchantUserId, store.ownerId)));
     if (!cred) return reply.code(400).send({ error: "Passkey desconocida." });
     const ok = await verifyProposalAssertion({
       assertion: b.data.response,
@@ -228,7 +256,7 @@ export function registerPasskeyRoutes(app: FastifyInstance, o: PasskeyOpts): voi
     const p = Proposal.parse(row.payload);
     const verify: AssertionVerifier = (a) => verifyProposalAssertion({ ...a, config: { rpID: o.rpID, origins: o.origins } });
     const say = (body: string) =>
-      o.db.insert(schema.messages).values({ merchantId: o.merchantId, thread: "comercio", direction: "out", body, createdAt: now });
+      o.db.insert(schema.messages).values({ merchantId: store.merchantId, thread: "comercio", direction: "out", body, createdAt: now });
 
     if (p.type === "CreateTanda") {
       const tandaId = `td_${row.id}`;
@@ -237,7 +265,7 @@ export function registerPasskeyRoutes(app: FastifyInstance, o: PasskeyOpts): voi
       let pending = 0;
       for (const [i, m] of p.members.entries()) {
         try {
-          const acc = await o.gateway.registerAccount({ clabe: m.clabe, name: m.name, alias: `${p.name} · ${m.name}` });
+          const acc = await store.gateway.registerAccount({ clabe: m.clabe, name: m.name, alias: `${p.name} · ${m.name}` });
           await setMemberBankAccount(o.db, tandaId, i + 1, acc.id, acc.status);
           if (acc.status !== "ACTIVE") pending++;
         } catch {

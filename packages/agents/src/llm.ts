@@ -9,16 +9,20 @@ import { betaZodOutputFormat } from "@anthropic-ai/sdk/helpers/beta/zod";
 import { parsePesos } from "@cuadra/core";
 import * as z from "zod/v4";
 import { type Intent, type Interpreter } from "./intent.js";
+import { normalizeAmountWords } from "./numbers.js";
 
 export const LlmExtraction = z.object({
   kind: z.enum([
     "add_credit",
+    "charge_service",
     "register_cash_payment",
     "send_reminder",
+    "resend_reminder",
     "charge_qr",
     "payout",
     "query_balance",
     "query_limit",
+    "create_customer",
     "start_tanda_round",
     "query_tanda",
     "tanda_reminder",
@@ -31,6 +35,8 @@ export const LlmExtraction = z.object({
   amount_as_written: z.string().nullable(),
   concept: z.string().nullable(),
   question: z.string().nullable(),
+  /** Celular tal como lo escribió el comercio (solo para create_customer). */
+  phone_as_written: z.string().nullable(),
 });
 export type LlmExtraction = z.infer<typeof LlmExtraction>;
 
@@ -39,12 +45,15 @@ Tu única tarea es extraer UNA intención estructurada del mensaje del comercio.
 
 Intenciones:
 - add_credit: el comercio le fió algo a un cliente ("Doña Lupe se llevó $185", "anótale 80 a Beto").
+- charge_service: quiere cobrar ahora un servicio, trabajo o venta con monto ("cóbrale a Rosa $350 por la reparación", "cóbrale 120 a Beto de la consulta"). Pon en concept qué se cobra.
 - register_cash_payment: un cliente le pagó en efectivo.
 - send_reminder: quiere cobrarle o recordarle a un cliente ("cóbrale a Lupe").
+- resend_reminder: quiere volver a mandar una solicitud de cobro que ya mandó ("vuélvele a mandar la notificación", "reenvíale el cobro a Beto"). customer_name es opcional: null si no lo dice.
 - charge_qr: quiere un QR para que el cliente pague ahí mismo ("QR para Lupe", "cóbrale con QR a Beto").
 - payout: quiere pagarle a un proveedor ("paga al de los refrescos $1,200").
 - query_balance: pregunta cuánto le deben (customer_name opcional).
 - query_limit: pregunta cuánto le queda del tope mensual de su cuenta (Nivel 2 Bis).
+- create_customer: quiere dar de alta un cliente nuevo ("agrega a Joel, 55 1234 5678"); pon el celular en phone_as_written si lo dio.
 - start_tanda_round: quiere arrancar o cobrar la siguiente ronda de la tanda.
 - query_tanda: pregunta cómo va la tanda o quién falta de pagar.
 - tanda_reminder: quiere recordarle a quienes no han aportado a la tanda.
@@ -93,7 +102,8 @@ export function toIntent(x: LlmExtraction): Intent {
   const cents = (): number | null => {
     if (!x.amount_as_written) return null;
     try {
-      const c = parsePesos(x.amount_as_written.replace(/\s*(pesos|varos|mxn)\s*$/i, ""));
+      // "cinco pesos" → "$5" (código determinista); "$1,250.50" queda igual.
+      const c = parsePesos(normalizeAmountWords(x.amount_as_written.trim()).replace(/\s*(pesos|varos|mxn)\s*$/i, ""));
       return c > 0n && c <= 100_000_000n ? Number(c) : null;
     } catch {
       return null;
@@ -103,6 +113,12 @@ export function toIntent(x: LlmExtraction): Intent {
   const unclear = (q?: string): Intent => (q ? { kind: "unclear", question: q.slice(0, 200) } : { kind: "unclear" });
 
   switch (x.kind) {
+    case "charge_service": {
+      const n = name(x.customer_name);
+      const a = cents();
+      if (!n || a === null) return unclear("¿A quién le cobro y cuánto?");
+      return { kind: "add_credit", customer_name: n, amount_cents: a, charge_now: true, ...(x.concept ? { concept: x.concept.slice(0, 140) } : {}) };
+    }
     case "add_credit":
     case "register_cash_payment": {
       const n = name(x.customer_name);
@@ -111,6 +127,10 @@ export function toIntent(x: LlmExtraction): Intent {
       return x.kind === "add_credit"
         ? { kind: "add_credit", customer_name: n, amount_cents: a, ...(x.concept ? { concept: x.concept.slice(0, 140) } : {}) }
         : { kind: "register_cash_payment", customer_name: n, amount_cents: a };
+    }
+    case "resend_reminder": {
+      const n = name(x.customer_name);
+      return n ? { kind: "resend_reminder", customer_name: n } : { kind: "resend_reminder" };
     }
     case "send_reminder":
     case "charge_qr": {
@@ -126,6 +146,12 @@ export function toIntent(x: LlmExtraction): Intent {
     case "query_balance": {
       const n = name(x.customer_name);
       return n ? { kind: "query_balance", customer_name: n } : { kind: "query_balance" };
+    }
+    case "create_customer": {
+      const n = name(x.customer_name);
+      if (!n) return unclear("¿Cómo se llama el cliente?");
+      const d = (x.phone_as_written ?? "").replace(/\D/g, "");
+      return { kind: "create_customer", customer_name: n, ...(d.length >= 10 ? { phone: d.slice(-10) } : {}) };
     }
     case "query_limit":
     case "start_tanda_round":

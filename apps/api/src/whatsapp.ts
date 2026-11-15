@@ -8,19 +8,29 @@ import {
   type WhatsAppInbound,
   WHATSAPP_WINDOW_CLOSED,
   WhatsAppApiError,
-  phone10,
 } from "@cuadra/adapters";
-import { type Db, schema } from "@cuadra/db";
-import { type OutboundChannel, type OutboundMessage, resolveThreadPhone } from "./channel.js";
+import { type Db, schema, storeOfPhone, storeOwner } from "@cuadra/db";
+import { verifyPhoneByWhatsApp } from "./auth.js";
+import type { OutboundChannel, OutboundMessage } from "./channel.js";
 import type { CuadraService } from "./service.js";
 import { TEMPLATE_LANGUAGE } from "./whatsapp-templates.js";
 
+/**
+ * Celular (10 dígitos) de quien escribe por WhatsApp. Meta siempre manda el número con código de
+ * país: solo se aceptan celulares de México (52 o 521 y 10 dígitos). Nunca "los últimos 10 dígitos":
+ * un número de otro país que termine igual que uno de aquí no puede hacerse pasar por él.
+ */
+export function senderPhone10(from: string): string | null {
+  const m = /^52(?:1)?([2-9]\d{9})$/.exec(from.replace(/\D/g, ""));
+  return m ? m[1]! : null;
+}
+
 export interface WhatsAppChannelDeps {
   db: Db;
-  merchantId: string;
-  ownerId: string;
   client: Pick<WhatsAppClient, "sendText" | "sendButtons" | "sendTemplate" | "uploadMedia" | "sendImage">;
   log: (r: Record<string, unknown>) => void;
+  /** Reloj (por defecto, la hora real). */
+  now?: () => Date;
 }
 
 const QR_DATA_URL = /^data:image\/png;base64,([A-Za-z0-9+/=]+)$/;
@@ -73,9 +83,12 @@ export class WhatsAppChannel implements OutboundChannel {
     }
   }
 
-  /** Procesa mensajes entrantes ya verificados por firma. Idempotente por id de mensaje de Meta. */
-  async handleInbound(msgs: WhatsAppInbound[], service: CuadraService): Promise<void> {
-    const owner = await resolveThreadPhone(this.d.db, this.d.merchantId, this.d.ownerId, "comercio");
+  /**
+   * Procesa mensajes entrantes ya verificados por firma. Idempotente por id de mensaje de Meta.
+   * Cada mensaje va a la tienda cuyo dueño tiene ese celular (una persona = un celular). `route`
+   * da el servicio de esa tienda; si se pasa un servicio, solo se atienden mensajes de su dueño.
+   */
+  async handleInbound(msgs: WhatsAppInbound[], route: CuadraService | ((merchantId: string) => Promise<CuadraService | null>)): Promise<void> {
     for (const m of msgs) {
       const fresh = await this.d.db
         .insert(schema.webhookEvents)
@@ -84,7 +97,28 @@ export class WhatsAppChannel implements OutboundChannel {
         .returning({ id: schema.webhookEvents.eventId });
       if (fresh.length === 0) continue;
 
-      if (!owner || phone10(m.from) !== owner) {
+      const from = senderPhone10(m.from);
+      // Código de verificación del portal: el mensaje llega desde el celular que se quiere verificar.
+      if (from && m.kind === "text") {
+        const v = await verifyPhoneByWhatsApp(this.d.db, from, m.text, this.d.now?.() ?? new Date());
+        if (v) {
+          this.d.log({ msg: "phone_verified_by_whatsapp", phone_last4: from.slice(-4) });
+          await this.send({
+            merchantId: "",
+            thread: "comercio",
+            phone10: from,
+            body: `✅ Listo, ${v.name.split(/\s+/)[0]}: tu celular quedó verificado. Regresa a Cuadra para seguir.`,
+            actions: [],
+          }).catch((e: unknown) => this.d.log({ msg: "whatsapp_send_failed", error: e instanceof Error ? e.message : String(e) }));
+          continue;
+        }
+      }
+      const store = from ? await storeOfPhone(this.d.db, from) : null;
+      // Solo da instrucciones por WhatsApp el dueño que ya verificó su celular (con el código del portal).
+      const owner = store ? await storeOwner(this.d.db, store.merchantId) : null;
+      const service =
+        !store || !owner?.phoneVerified ? null : typeof route === "function" ? await route(store.merchantId) : route.merchantId === store.merchantId ? route : null;
+      if (!from || !store || !service) {
         // ponytail: clientes que responden (opt-in "SÍ") van en el componente #14; hoy solo se registra.
         this.d.log({ msg: "whatsapp_ignored_sender", message_id: m.id });
         continue;
@@ -102,9 +136,9 @@ export class WhatsAppChannel implements OutboundChannel {
         else if (sep > 0 && arg && action === "say") await service.handleMerchantMessage(arg, "user_direct");
       } else {
         await this.send({
-          merchantId: this.d.merchantId,
+          merchantId: store.merchantId,
           thread: "comercio",
-          phone10: owner,
+          phone10: from,
           body: "Por ahora solo leo mensajes de texto. Escríbeme, por ejemplo: “Doña Lupe se llevó $185”.",
           actions: [],
         });

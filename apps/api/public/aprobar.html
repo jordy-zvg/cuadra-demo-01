@@ -4,17 +4,19 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Aprobar con passkey</title>
+<link rel="stylesheet" href="/assets/cuadra.css">
+<script src="/assets/red.js" defer></script>
+<link rel="icon" href="/logo.svg" type="image/svg+xml">
 <style>
-:root{--bg:#f4f1ea;--panel:#fffdf8;--ink:#1d1b16;--muted:#6b665c;--line:#e4ded2;--brand:#0f6b4f;--brand-ink:#fff;--ok:#0f6b4f;--ok-bg:#e1f3ea;--bad:#a1271b;--bad-bg:#fde8e5;--chip:#efe9dd}
-@media (prefers-color-scheme: dark){:root{--bg:#141412;--panel:#1d1c19;--ink:#efeae0;--muted:#a39d91;--line:#33302a;--brand:#3cc492;--brand-ink:#08130e;--ok:#59d7a6;--ok-bg:#143326;--bad:#ff8a7d;--bad-bg:#3d1a16;--chip:#2a2824}}
+:root{--panel:var(--surface-plain);--muted:var(--ink-2);--brand:var(--primary);--brand-ink:var(--primary-ink);--chip:var(--glyph-bg)}
 *{box-sizing:border-box}
-body{margin:0;background:var(--bg);color:var(--ink);font:16px/1.45 system-ui,-apple-system,Segoe UI,Roboto,sans-serif;display:flex;justify-content:center;padding:24px 16px}
+body{margin:0;background:var(--bg);color:var(--ink);font:16px/1.45 var(--font-body);display:flex;justify-content:center;padding:24px 16px}
 .card{background:var(--panel);border:1px solid var(--line);border-radius:16px;padding:20px;max-width:440px;width:100%}
 h1{font-size:20px;margin:0 0 4px}
 p{margin:8px 0}
 .muted{color:var(--muted);font-size:13px}
 .what{background:var(--chip);border-radius:12px;padding:12px;margin:14px 0;font-weight:600}
-.hash{font-family:ui-monospace,Menlo,monospace;font-size:11.5px;word-break:break-all;color:var(--muted)}
+.hash{font-family:ui-monospace,Menlo,monospace;font-size:12.5px;word-break:break-all;color:var(--muted)}
 label{display:block;font-size:13px;color:var(--muted);margin-top:10px}
 input,select{width:100%;font:inherit;padding:9px 10px;border-radius:10px;border:1px solid var(--line);background:var(--bg);color:var(--ink);margin-top:4px}
 .row{display:grid;grid-template-columns:1fr 1fr;gap:10px}
@@ -24,12 +26,35 @@ button:disabled{opacity:.5}
 .msg{border-radius:10px;padding:10px;margin-top:12px;display:none}
 .msg.ok{display:block;background:var(--ok-bg);color:var(--ok)}
 .msg.bad{display:block;background:var(--bad-bg);color:var(--bad)}
+.msg{align-items:flex-start;gap:8px}
+.msg.ok,.msg.bad{display:flex}
+.msg .ico{width:20px;height:20px;flex:none;margin-top:1px}
+/* Táctil: botones y campos de al menos 44 px, sin espera de doble toque. */
+button,input,select{min-height:44px;touch-action:manipulation}
+button:disabled{cursor:default}
+/* Celular muy angosto: los topes y el periodo se apilan en vez de apretarse. */
+@media (max-width:379px){.row{grid-template-columns:1fr;gap:0}}
+/* Tableta y laptop: la tarjeta de firma se queda enfocada pero con más aire. */
+@media (min-width:700px){body{padding-top:48px}.card{max-width:480px;padding:28px}}
+
+/* Familia Cuadra: tokens y letra vienen de /assets/cuadra.css */
+body{background:var(--bg-soft)}
+h1{color:var(--heading);font-weight:600}
+h2{font-family:var(--font-head);font-weight:600}
+button{border-radius:999px;font-weight:700}
+button.ghost{background:var(--surface-plain);border:1px solid var(--chip-line);font-weight:600}
+button.x{border-radius:8px;border:0}
+input,select{border-color:var(--line-strong)}
+.card,main{box-shadow:var(--shadow-1)}
 </style>
 </head>
 <body>
 <div class="card">
   <h1 id="title">Aprobar con passkey</h1>
   <p class="muted">Tu huella o rostro firma exactamente lo que ves abajo. Si algo cambia, la firma deja de valer.</p>
+
+  <div class="cargando" id="loading" role="status">Cargando…</div>
+  <button id="retry" type="button" class="ghost" hidden>Intentar otra vez</button>
 
   <div id="mandate-form" hidden>
     <label>Proveedor<select id="payee"></select></label>
@@ -51,7 +76,7 @@ button:disabled{opacity:.5}
   </div>
 
   <button id="register" type="button" class="ghost" hidden>Registrar mi passkey en este dispositivo</button>
-  <div id="out" class="msg"></div>
+  <div id="out" class="msg" role="status" aria-live="polite"></div>
 </div>
 <script src="https://unpkg.com/@simplewebauthn/browser@13.3.0/dist/bundle/index.umd.min.js"></script>
 <script>
@@ -59,20 +84,30 @@ const { startRegistration, startAuthentication } = SimpleWebAuthnBrowser;
 const $ = (s) => document.querySelector(s);
 let proposalId = location.pathname.startsWith("/aprobar/") ? decodeURIComponent(location.pathname.split("/")[2]) : null;
 
-const say = (t, ok) => { const o = $("#out"); o.textContent = t; o.className = "msg " + (ok ? "ok" : "bad"); };
+// Mensaje con ícono y texto (nunca solo color).
+const say = (t, ok) => {
+  const o = $("#out");
+  o.innerHTML = `<svg class="ico" aria-hidden="true"><use href="/assets/icons.svg#i-${ok ? "check_circle" : "error"}"/></svg><span></span>`;
+  o.querySelector("span").textContent = t;
+  o.className = "msg " + (ok ? "ok" : "bad");
+};
+// Desactiva el botón mientras trabaja para que no se mande dos veces.
+async function busy(btn, fn) { btn.disabled = true; try { await fn(); } finally { btn.disabled = false; } }
 async function api(url, body) {
-  const r = await fetch(url, body === undefined ? {} : { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify(body) });
+  const r = await fetch(url, body === undefined ? {} : { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify(body) })
+    .catch(() => { throw new Error("No hay conexión. Revisa tu internet y vuelve a intentar."); });
   const j = await r.json().catch(() => ({}));
   if (!r.ok) throw new Error(j.error || "Error " + r.status);
   return j;
 }
 
 async function ensurePasskey() {
-  const s = await api("/api/passkey/status");
+  // La passkey que cuenta es la del dueño de la tienda de esta propuesta.
+  const s = await api("/api/passkey/status" + (proposalId ? "?proposal=" + encodeURIComponent(proposalId) : ""));
   $("#register").hidden = s.registered;
   return s.registered;
 }
-$("#register").onclick = async () => {
+$("#register").onclick = () => busy($("#register"), async () => {
   try {
     const opts = await api("/api/passkey/register/options", {});
     const resp = await startRegistration({ optionsJSON: opts });
@@ -80,7 +115,7 @@ $("#register").onclick = async () => {
     say("Passkey registrada. Ya puedes firmar.", true);
     $("#register").hidden = true;
   } catch (e) { say(e.message || String(e)); }
-};
+});
 
 async function showProposal(id) {
   const p = await api("/api/proposal/" + encodeURIComponent(id));
@@ -93,7 +128,7 @@ async function showProposal(id) {
   if (!okStatus) { $("#sign").disabled = true; say("Esta propuesta ya no se puede aprobar (estado: " + p.status + ")."); }
 }
 
-$("#prepare").onclick = async () => {
+$("#prepare").onclick = () => busy($("#prepare"), async () => {
   try {
     const r = await api("/api/mandate/propose", {
       payee_id: $("#payee").value,
@@ -106,7 +141,7 @@ $("#prepare").onclick = async () => {
     $("#mandate-form").hidden = true;
     await showProposal(proposalId);
   } catch (e) { say(e.message); }
-};
+});
 
 $("#sign").onclick = async () => {
   $("#sign").disabled = true;
@@ -115,18 +150,31 @@ $("#sign").onclick = async () => {
     const opts = await api("/api/approve/options", { proposal_id: proposalId });
     const resp = await startAuthentication({ optionsJSON: opts });
     const r = await api("/api/approve/verify", { proposal_id: proposalId, response: resp });
-    say("✅ Firmado. " + r.summary + " Ya puedes volver al chat.", true);
+    say("Firmado. " + r.summary + " Ya puedes volver al chat.", true);
   } catch (e) { say(e.message || String(e)); $("#sign").disabled = false; }
 };
 
-(async () => {
-  await ensurePasskey();
-  if (proposalId) { await showProposal(proposalId).catch((e) => say(e.message)); return; }
-  const payees = await api("/api/payees");
-  $("#payee").innerHTML = payees.map((p) => `<option value="${p.id}">${p.alias} (CLABE ••••${p.clabe_last4})</option>`).join("");
-  $("#title").textContent = "Nuevo mandato";
-  $("#mandate-form").hidden = false;
-})();
+// Carga inicial: "Cargando…" mientras llegan los datos; si falla, el motivo y un botón para reintentar.
+async function boot() {
+  $("#loading").hidden = false; $("#retry").hidden = true; $("#out").className = "msg";
+  try {
+    await ensurePasskey();
+    if (proposalId) await showProposal(proposalId);
+    else {
+      const payees = await api("/api/payees");
+      const esc = (v) => String(v ?? "").replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
+      $("#payee").innerHTML = payees.map((p) => `<option value="${esc(p.id)}">${esc(p.alias)} (CLABE ••••${esc(p.clabe_last4)})</option>`).join("");
+      $("#title").textContent = "Nuevo mandato";
+      if (!payees.length) say("Todavía no tienes proveedores autorizados. Agrégalos desde el chat de Cuadra.");
+      $("#mandate-form").hidden = !payees.length;
+    }
+  } catch (e) {
+    say(e.message || "No se pudo cargar.");
+    $("#retry").hidden = false;
+  } finally { $("#loading").hidden = true; }
+}
+$("#retry").onclick = boot;
+boot();
 </script>
 </body>
 </html>

@@ -4,20 +4,20 @@ import { createTestDb } from "@cuadra/db/testing";
 import { describe, expect, it } from "vitest";
 import { SimulatedGateway } from "../src/gateway.js";
 import { buildServer } from "../src/server.js";
-import { CuadraService } from "../src/service.js";
+import { createStoreRegistry } from "../src/app.js";
 
 async function app(demoPassword: string | null) {
   const { db } = await createTestDb();
   await seedDemo(db);
   const gateway = new SimulatedGateway(db);
-  const service = new CuadraService({
-    db, merchantId: DEMO.merchantId, ownerId: DEMO.ownerId, interpreters: [new RuleInterpreter()], gateway,
-    verify: async () => false, now: () => new Date(), publicUrl: null, peyWebhookSecret: null, bankSim: false, udi: null, log: () => {},
+  const registry = createStoreRegistry({
+    db, liveGateway: gateway, interpreters: [new RuleInterpreter()], verify: async () => false, now: () => new Date(), publicUrl: null,
+    peyWebhookSecret: null, bankSim: false, udi: null, log: () => {},
   });
   return buildServer({
-    db, service, merchantId: DEMO.merchantId, gateway, bankSim: false, demoPassword, log: () => {},
+    db, registry, liveMerchantId: DEMO.merchantId, liveGateway: gateway, peyWebhookSecret: null, bankSim: false, demoPassword, log: () => {},
     portalAuth: { shopCode: null, secureCookies: false },
-    passkey: { gateway, db, merchantId: DEMO.merchantId, ownerId: DEMO.ownerId, rpID: "localhost", origins: ["http://localhost"], now: () => new Date() },
+    passkey: { rpID: "localhost", origins: ["http://localhost"], now: () => new Date() },
   });
 }
 const registrar = async (a: Awaited<ReturnType<typeof app>>, headers: Record<string, string> = {}) => {

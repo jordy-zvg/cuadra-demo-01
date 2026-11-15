@@ -26,10 +26,22 @@ const base = { merchant_id: id, provenance: Provenance };
 export const OutflowPurpose = z.enum(["proveedor", "tanda", "devolucion"]);
 export type OutflowPurpose = z.infer<typeof OutflowPurpose>;
 
-export const AddCredit = z.object({ ...base, type: z.literal("AddCredit"), customer_id: id, amount_cents: CentavosSchema, concept: text });
+/** charge_now: cobro por servicio; al confirmar se anota y se manda la solicitud CoDi enseguida. */
+export const AddCredit = z.object({ ...base, type: z.literal("AddCredit"), customer_id: id, amount_cents: CentavosSchema, concept: text, charge_now: z.literal(true).optional() });
 export const RegisterCashPayment = z.object({ ...base, type: z.literal("RegisterCashPayment"), customer_id: id, amount_cents: CentavosSchema });
 export const SendReminder = z.object({ ...base, type: z.literal("SendReminder"), customer_id: id });
-export const CreateCustomer = z.object({ ...base, type: z.literal("CreateCustomer"), name: text, phone: z.string().regex(/^\+?\d{10,15}$/) });
+/**
+ * Alta de cliente. El celular es opcional (sin él solo se le cobra con QR en mostrador). Si el alta
+ * viene de un fiado a un nombre desconocido, credit_cents lleva ese fiado y se anota al confirmar.
+ */
+export const CreateCustomer = z.object({
+  ...base,
+  type: z.literal("CreateCustomer"),
+  name: text,
+  phone: z.string().regex(/^\+?\d{10,15}$/).optional(),
+  credit_cents: CentavosSchema.optional(),
+  credit_concept: text.optional(),
+});
 /** La CLABE no viaja en la propuesta: se captura por código y se guarda como borrador en DB. */
 export const CreatePayee = z.object({ ...base, type: z.literal("CreatePayee"), payee_draft_id: id, alias: text });
 export const PayoutRequest = z.object({ ...base, type: z.literal("PayoutRequest"), payee_id: id, amount_cents: CentavosSchema, concept: text });

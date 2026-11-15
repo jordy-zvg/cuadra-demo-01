@@ -51,6 +51,22 @@ describe("executor: camino feliz con mandato", () => {
   });
 });
 
+describe("executor: horario de salidas (R10)", () => {
+  it("de noche pide passkey; con OUTFLOW_HOURS=0-24 (misma que la API) envía con el mandato", async () => {
+    const f = await setup();
+    await f.mandate();
+    f.setNow(new Date("2026-11-14T23:00:00-06:00"));
+    const night = await f.payout(50_000);
+    const r1 = await executeOutflow({ proposal_id: night.id }, f.deps);
+    expect(r1.status).toBe("awaiting_passkey");
+    expect(f.provider.calls).toHaveLength(0);
+    const p = await f.payout(60_000);
+    const r2 = await executeOutflow({ proposal_id: p.id }, { ...f.deps, outflowHours: [0, 24] });
+    expect(r2.status).toBe("sent");
+    expect(f.provider.calls).toHaveLength(1);
+  });
+});
+
 describe("executor: aprobación con passkey", () => {
   it("sin mandato ni aprobación → awaiting_passkey y el proveedor no se toca", async () => {
     const f = await setup();

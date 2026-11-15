@@ -8,18 +8,26 @@ import {
 import { type Intent, type Interpreter, interpretWithConsensus, normalizeName } from "@cuadra/agents";
 import {
   type Centavos,
+  HOUR_MS,
   Proposal,
+  REMINDER_MAX_RESENDS,
+  REMINDER_MIN_INTERVAL_HOURS,
+  type PolicyFailure,
+  type ReminderDecision,
   evaluateCreatePayee,
   evaluateOutflow,
   evaluateReminder,
+  evaluateResend,
   fiado,
   formatMXN,
+  formatMxWhen,
   mxPeriodStart,
   n2bisStatus,
   type UdiMicro,
 } from "@cuadra/core";
 import {
   type AssertionVerifier,
+  CHARGE_EXPIRY_GRACE_MS,
   type Db,
   type MessageAction,
   attachProviderCharge,
@@ -38,7 +46,7 @@ import {
   schema,
   setProposalStatus,
 } from "@cuadra/db";
-import { and, desc, eq, isNull, ne, or } from "drizzle-orm";
+import { and, count, desc, eq, gte, isNotNull, isNull, ne, or } from "drizzle-orm";
 import { type ChargeGateway, PN_TTL_S, QR_TTL_S } from "./gateway.js";
 import { type OutboundChannel, resolveThreadPhone } from "./channel.js";
 import { type ReconResult, reconcileWithProvider } from "./provider-reconciliation.js";
@@ -47,6 +55,41 @@ import type { TemplateRef } from "./whatsapp-templates.js";
 
 /** Debe coincidir con la plantilla aprobada en Meta (whatsapp-templates.ts). */
 export const REMINDER_TEMPLATE = "cuadra_cobro_fiado";
+
+/** Una propuesta de cobro se confirma dentro de este plazo; después se vuelve a pedir. */
+const PROPOSAL_TTL_MS = 10 * 60_000;
+/** Solicitudes al celular que se revisan con pey antes de mandar otra (cubre vigencia + conciliación). */
+const RECENT_PROVIDER_CHECK_MS = 60 * 60_000;
+
+type ReminderOutcome = "sent" | "skipped" | "unknown" | "failed";
+
+/** Lo que se sabe de una ejecución en curso, para decir la verdad si falla a medio camino. */
+interface ExecState {
+  chargeId: string | null;
+  pushAttempted: boolean;
+  expiresAt: Date | null;
+  name: string;
+}
+
+/** Una ejecución "executing" sin terminar después de esto se dio por perdida (p. ej. reinicio). */
+const STUCK_EXECUTION_MS = 2 * 60_000;
+
+/** Lo que se le propuso al comercio; al confirmar debe seguir igual. */
+interface PlannedReminder {
+  mode: "new" | "resend";
+  amount: string;
+  at: string;
+}
+
+/** Hacia arriba al minuto: si se muestra "16:11", a las 16:11 ya se puede. */
+function ceilToMinute(d: Date): Date {
+  return new Date(Math.ceil(d.getTime() / 60_000) * 60_000);
+}
+
+/** Resultado de planReminder: qué se puede mandar hoy al cliente, o por qué no. */
+type ReminderPlan =
+  | { ok: true; name: string; mode: "new" | "resend"; amount: Centavos; phone: string | null; resendOf: string | null; resendNumber: number }
+  | { ok: false; name: string; message: string; decision: Record<string, unknown> };
 
 export interface ServiceDeps {
   db: Db;
@@ -67,6 +110,12 @@ export interface ServiceDeps {
   reminderMinIntervalMs?: number;
   /** Canales que además entregan los mensajes (WhatsApp, SMS). El chat web lee de la base. */
   channels?: OutboundChannel[];
+  /** Horario de cobros [desde, hasta) en CDMX; sin valor: 9 a 20. [0, 24] = sin límite (REMINDER_HOURS, solo demo). */
+  reminderHours?: readonly [number, number];
+  /** Horario de pagos sin passkey (R10) en CDMX; sin valor: 7 a 22. [0, 24] = sin límite (OUTFLOW_HOURS, solo demo). */
+  outflowHours?: readonly [number, number];
+  /** Al confirmar un fiado, mandar enseguida el aviso por WhatsApp y la solicitud CoDi (AUTO_COBRO_FIADO). */
+  chargeOnFiado?: boolean;
   log: (r: Record<string, unknown>) => void;
 }
 
@@ -77,6 +126,13 @@ const CLABE_IN_TEXT = /\b\d{18}\b/;
 
 export class CuadraService {
   readonly tanda: TandaFlow;
+  /** Cobros al mismo cliente (solicitudes CoDi y QR): de uno en uno. */
+  private readonly chargeLocks = new Map<string, Promise<void>>();
+  /** Tienda a la que pertenece este servicio. */
+  get merchantId(): string {
+    return this.d.merchantId;
+  }
+
   constructor(private readonly d: ServiceDeps) {
     this.tanda = new TandaFlow({
       db: d.db,
@@ -216,6 +272,19 @@ export class CuadraService {
     return out;
   }
 
+  /** Nombre que no está en los clientes: opciones parecidas o dar de alta. */
+  private async unknownCustomer(name: string, options: Array<{ name: string }>): Promise<void> {
+    if (options.length) {
+      await this.say("comercio", `¿Cuál? ${options.map((o) => o.name).join(", ")}`);
+      return;
+    }
+    const n = displayName(name);
+    await this.say("comercio", `No tengo a “${n}” en tus clientes. Para darlo de alta escribe: “Agrega a ${n}, 55 1234 5678”.`, [
+      { kind: "say", label: `Dar de alta a ${n}`, text: `Agrega a ${n}` },
+      ...(await this.suggestions()).slice(0, 2),
+    ]);
+  }
+
   private async blockBankDataFromChat(provenance: Provenance): Promise<void> {
     const decision = evaluateCreatePayee({
       provenance,
@@ -250,7 +319,7 @@ export class CuadraService {
       case "unclear":
         await this.say(
           "comercio",
-          intent.question ?? "No te entendí. Elige una opción o escribe, por ejemplo: “Doña Lupe se llevó $185”.",
+          intent.question ?? "No te entendí. Elige una opción o escribe, por ejemplo: “Doña Lupe se llevó $185” o “Vuélvele a mandar la notificación”.",
           await this.suggestions(),
         );
         return;
@@ -269,6 +338,25 @@ export class CuadraService {
       case "query_tanda":
         await this.say("comercio", await this.tanda.describe());
         return;
+      case "create_customer": {
+        const name = displayName(intent.customer_name);
+        const r = await this.resolve(await this.customers(), name);
+        if (r.ok) {
+          await this.say("comercio", `Ya tengo a ${r.row.name} en tus clientes.`);
+          return;
+        }
+        const p = await this.newProposal(
+          { type: "CreateCustomer", name, ...(intent.phone ? { phone: `+52${intent.phone}` } : {}) },
+          provenance,
+        );
+        await this.say(
+          "comercio",
+          `Doy de alta a ${name}${intent.phone ? ` con celular ${intent.phone}` : " (sin celular: solo podrás cobrarle con QR)"}. ¿Confirmas?`,
+          confirmButtons(p.id),
+          p.id,
+        );
+        return;
+      }
       case "query_limit": {
         const s = await this.n2bis();
         await this.say("comercio", s ? s.message : "No tengo configurado el valor de la UDI para calcular tu tope Nivel 2 Bis.");
@@ -277,34 +365,67 @@ export class CuadraService {
       case "charge_qr": {
         const r = await this.resolve(await this.customers(), intent.customer_name);
         if (!r.ok) {
-          await this.say("comercio", r.options.length ? `¿Cuál? ${r.options.map((o) => o.name).join(", ")}` : `No tengo a “${intent.customer_name}” en tus clientes.`);
+          await this.unknownCustomer(intent.customer_name, r.options);
           return;
         }
-        await this.chargeWithQr(r.row.id);
+        await this.serialized(r.row.id, () => this.chargeWithQr(r.row.id));
         return;
       }
       case "add_credit":
-      case "send_reminder": {
+      case "send_reminder":
+      case "resend_reminder": {
+        if (!intent.customer_name) {
+          // "Vuélvele a mandar la notificación": el cliente de la última solicitud CoDi.
+          const last = await this.lastPushedCustomer();
+          if (!last) {
+            await this.say("comercio", "¿A quién le reenvío el cobro? Por ejemplo: “Reenvíale el cobro a Doña Lupe”.");
+            return;
+          }
+          await this.proposeReminder(last, provenance);
+          return;
+        }
         const r = await this.resolve(await this.customers(), intent.customer_name);
+        if (!r.ok && r.options.length === 0 && intent.kind === "add_credit") {
+          // Cliente nuevo: se ofrece darlo de alta y anotarle el fiado con un solo "Confirmar".
+          const name = displayName(intent.customer_name);
+          const p = await this.newProposal(
+            { type: "CreateCustomer", name, credit_cents: intent.amount_cents, credit_concept: intent.concept ?? "Fiado" },
+            provenance,
+          );
+          await this.say(
+            "comercio",
+            `No tengo a “${name}” en tus clientes. ¿Lo doy de alta y le anoto ${formatMXN(BigInt(intent.amount_cents))} de fiado?`,
+            confirmButtons(p.id),
+            p.id,
+          );
+          return;
+        }
         if (!r.ok) {
-          await this.say("comercio", r.options.length ? `¿Cuál? ${r.options.map((o) => o.name).join(", ")}` : `No tengo a “${intent.customer_name}” en tus clientes.`);
+          await this.unknownCustomer(intent.customer_name, r.options);
           return;
         }
         if (intent.kind === "add_credit") {
+          const amount = formatMXN(BigInt(intent.amount_cents));
           const p = await this.newProposal(
-            { type: "AddCredit", customer_id: r.row.id, amount_cents: intent.amount_cents, concept: intent.concept ?? "Fiado" },
+            {
+              type: "AddCredit",
+              customer_id: r.row.id,
+              amount_cents: intent.amount_cents,
+              concept: intent.concept ?? (intent.charge_now ? "Cobro" : "Fiado"),
+              ...(intent.charge_now ? { charge_now: true } : {}),
+            },
             provenance,
           );
-          await this.say("comercio", `Anoto ${formatMXN(BigInt(intent.amount_cents))} de fiado a ${r.row.name}. ¿Confirmas?`, confirmButtons(p.id), p.id);
+          await this.say(
+            "comercio",
+            intent.charge_now
+              ? `Le cobro a ${r.row.name} ${amount}${intent.concept ? ` por ${intent.concept}` : ""}: lo anoto y le mando la solicitud CoDi a su banco. ¿Confirmas?`
+              : `Anoto ${amount} de fiado a ${r.row.name}. ¿Confirmas?`,
+            confirmButtons(p.id),
+            p.id,
+          );
         } else {
-          const bal = await ledgerBalance(this.d.db, this.d.merchantId, "1200", r.row.id);
-          // Sin saldo no hay nada que confirmar: no se ofrece un cobro de $0.00.
-          if (bal <= 0n) {
-            await this.say("comercio", `${r.row.name} no te debe nada, así que no hay cobro que mandar. Si se llevó algo, dime “${r.row.name} se llevó $…”.`);
-            return;
-          }
-          const p = await this.newProposal({ type: "SendReminder", customer_id: r.row.id }, provenance);
-          await this.say("comercio", `Le mando a ${r.row.name} su cobro de ${formatMXN(bal)} por CoDi. ¿Confirmas?`, confirmButtons(p.id), p.id);
+          await this.proposeReminder(r.row, provenance);
         }
         return;
       }
@@ -346,7 +467,7 @@ export class CuadraService {
       { type: "PayoutRequest", payee_id: r.row.id, amount_cents: intent.amount_cents, concept: intent.concept ?? `Pago a ${r.row.alias}` },
       provenance,
     );
-    const ctx = await loadOutflowContext(this.d.db, p.id, this.d.now(), this.d.verify);
+    const ctx = await loadOutflowContext(this.d.db, p.id, this.d.now(), this.d.verify, this.d.outflowHours ? { outflowHours: this.d.outflowHours } : {});
     const decision = evaluateOutflow(ctx.input);
     const amount = formatMXN(BigInt(intent.amount_cents));
     if (decision.decision === "allow") {
@@ -381,7 +502,27 @@ export class CuadraService {
       .select()
       .from(schema.proposals)
       .where(and(eq(schema.proposals.id, proposalId), eq(schema.proposals.merchantId, this.d.merchantId)));
-    if (!p || p.status !== "pending") return;
+    if (!p) return;
+    if (p.status === "executing") {
+      if (Date.now() - p.updatedAt.getTime() < STUCK_EXECUTION_MS) {
+        await this.say("comercio", "Ese cobro se está procesando; en un momento te digo cómo quedó.");
+        return;
+      }
+      // Quedó a medias (p. ej. se reinició el servidor): se cierra y se dice qué pudo pasar.
+      const [closed] = await this.d.db
+        .update(schema.proposals)
+        .set({ status: "rejected", decision: { interrupted: true }, updatedAt: new Date() })
+        .where(and(eq(schema.proposals.id, p.id), eq(schema.proposals.status, "executing")))
+        .returning({ id: schema.proposals.id });
+      if (closed) {
+        await this.say(
+          "comercio",
+          "Ese cobro quedó a medias (se interrumpió mientras lo enviaba). Si era una solicitud al celular, puede que le haya llegado: revisa el panel y pídemelo de nuevo si hace falta.",
+        );
+      }
+      return;
+    }
+    if (p.status !== "pending") return;
     const parsed = Proposal.parse(p.payload);
     if (parsed.type === "AddCredit") {
       await postEntries(this.d.db, [
@@ -397,6 +538,42 @@ export class CuadraService {
       const [c] = await this.d.db.select().from(schema.customers).where(eq(schema.customers.id, parsed.customer_id));
       const bal = await ledgerBalance(this.d.db, this.d.merchantId, "1200", parsed.customer_id);
       await this.say("comercio", `📒 Listo. ${c?.name} te debe ${formatMXN(bal)}.`);
+      if (parsed.charge_now || this.d.chargeOnFiado) await this.chargeAfterFiado(parsed.customer_id, parsed.provenance);
+      return;
+    }
+    if (parsed.type === "CreateCustomer") {
+      const existing = await this.resolve(await this.customers(), parsed.name);
+      const customerId = existing.ok ? existing.row.id : id("c");
+      if (!existing.ok) {
+        await this.d.db.insert(schema.customers).values({
+          id: customerId,
+          merchantId: this.d.merchantId,
+          name: parsed.name,
+          phone: parsed.phone ?? null,
+          // El cliente acepta mensajes por su cuenta (componente #14); hasta entonces no hay recordatorios.
+          optIn: false,
+          createdAt: this.d.now(),
+        });
+      }
+      if (parsed.credit_cents) {
+        await postEntries(this.d.db, [
+          fiado({
+            merchant_id: this.d.merchantId,
+            idempotency_key: `proposal:${p.id}:fiado`,
+            amount: parsed.credit_cents,
+            customer_id: customerId,
+            memo: parsed.credit_concept ?? "Fiado",
+          }),
+        ]);
+      }
+      await setProposalStatus(this.d.db, p.id, "done", { customer_id: customerId });
+      const bal = await ledgerBalance(this.d.db, this.d.merchantId, "1200", customerId);
+      await this.say(
+        "comercio",
+        `👤 Listo, di de alta a ${parsed.name}.` +
+          (parsed.credit_cents ? ` 📒 Te debe ${formatMXN(bal)}.` : "") +
+          (parsed.phone ? "" : ` Sin celular, cóbrale con “QR para ${parsed.name}”.`),
+      );
       return;
     }
     if (parsed.type === "SendReminder") {
@@ -406,10 +583,21 @@ export class CuadraService {
   }
 
   async cancel(proposalId: string): Promise<void> {
-    const [p] = await this.d.db.select().from(schema.proposals).where(eq(schema.proposals.id, proposalId));
-    if (!p || p.status !== "pending" || p.merchantId !== this.d.merchantId) return;
-    await setProposalStatus(this.d.db, p.id, "rejected", { cancelled_by_user: true });
-    await this.say("comercio", "Cancelado. No anoté nada.");
+    // Solo se cancela lo que sigue pendiente (compare-and-set): si ya se está ejecutando, se dice.
+    const [done] = await this.d.db
+      .update(schema.proposals)
+      .set({ status: "rejected", decision: { cancelled_by_user: true }, updatedAt: new Date() })
+      .where(and(eq(schema.proposals.id, proposalId), eq(schema.proposals.merchantId, this.d.merchantId), eq(schema.proposals.status, "pending")))
+      .returning({ id: schema.proposals.id });
+    if (done) {
+      await this.say("comercio", "Cancelado. No anoté nada.");
+      return;
+    }
+    const [p] = await this.d.db
+      .select({ status: schema.proposals.status })
+      .from(schema.proposals)
+      .where(and(eq(schema.proposals.id, proposalId), eq(schema.proposals.merchantId, this.d.merchantId)));
+    if (p?.status === "executing") await this.say("comercio", "Ya no se puede cancelar: ese cobro se está enviando.");
   }
 
   /**
@@ -417,145 +605,393 @@ export class CuadraService {
    * cliente con saldo y opt-in. La política (72 h, horario, opt-in, un cobro abierto) se aplica igual
    * que en el chat; los que no pasan se omiten en silencio y al final va un solo resumen al comercio.
    */
-  async runScheduledReminders(): Promise<{ sent: number; skipped: number }> {
+  async runScheduledReminders(): Promise<{ sent: number; skipped: number; unknown?: number; failed?: number }> {
     const rows = await this.d.db
       .select({ id: schema.customers.id })
       .from(schema.customers)
       .where(and(eq(schema.customers.merchantId, this.d.merchantId), eq(schema.customers.optIn, true)));
     let sent = 0;
     let skipped = 0;
+    let unknown = 0;
+    let failed = 0;
     for (const r of rows) {
       if ((await ledgerBalance(this.d.db, this.d.merchantId, "1200", r.id)) <= 0n) continue;
       const p = await this.newProposal({ type: "SendReminder", customer_id: r.id }, "user_direct");
-      if (await this.sendReminder(p.id, r.id, { scheduled: true })) sent++;
+      const o = await this.sendReminder(p.id, r.id, { scheduled: true });
+      if (o === "sent") sent++;
+      else if (o === "unknown") unknown++;
+      else if (o === "failed") failed++;
       else skipped++;
     }
-    if (sent + skipped > 0) {
-      await this.say(
-        "comercio",
-        `🔔 Recordatorios programados: mandé ${sent} cobro${sent === 1 ? "" : "s"}` +
-          (skipped ? `; ${skipped} no salieron (cobro abierto, recordatorio en las últimas 72 h o fuera de horario).` : "."),
-      );
+    if (sent + skipped + unknown + failed > 0) {
+      const parts = [`mandé ${sent} cobro${sent === 1 ? "" : "s"}`];
+      if (skipped) {
+        parts.push(`${skipped} no salieron (cobro abierto, recordatorio reciente o fuera de horario)`);
+      }
+      if (unknown) parts.push(`con ${unknown} pey no respondió y puede que sí les haya llegado (te avisé arriba)`);
+      if (failed) parts.push(`${failed} fallaron por un error; inténtalo desde el chat`);
+      await this.say("comercio", `🔔 Recordatorios programados: ${parts.join("; ")}.`);
     }
-    return { sent, skipped };
+    return { sent, skipped, ...(unknown ? { unknown } : {}), ...(failed ? { failed } : {}) };
   }
 
-  /** true si el recordatorio salió. Con scheduled, los rechazos no se le avisan uno por uno al comercio. */
-  /** Vuelve a mandar al banco del cliente la solicitud CoDi de un cobro que sigue abierto. */
-  private async resendPush(
-    proposalId: string,
-    c: typeof schema.customers.$inferSelect,
-    open: typeof schema.charges.$inferSelect,
-    now: Date,
-  ): Promise<boolean> {
-    const amount = formatMXN(open.amountCents!);
-    const phone = await customerPhone10(this.d.db, c.id);
-    const [merchant] = await this.d.db.select().from(schema.merchants).where(eq(schema.merchants.id, this.d.merchantId));
-    if (!phone) {
-      await setProposalStatus(this.d.db, proposalId, "rejected", { resend_of: open.id, reason: "sin celular" });
-      await this.say("comercio", `${c.name} no tiene un celular válido para CoDi. Cóbrale con “QR para ${c.name}”.`);
-      return false;
+  /**
+   * Cobro automático al anotar un fiado: el cliente recibe el aviso por WhatsApp y la solicitud CoDi
+   * en su banco. Es el mismo camino que "Cóbrale a…" → Confirmar, con todas sus reglas (permiso de
+   * mensajes, horario, espera entre recordatorios, un solo cobro abierto); si alguna lo impide, se le
+   * dice al comercio por qué y el fiado queda anotado igual.
+   */
+  private async chargeAfterFiado(customerId: string, provenance: Provenance): Promise<void> {
+    const plan = await this.planReminder(customerId);
+    if (!plan.ok) {
+      await this.say("comercio", `ℹ️ No le avisé a su banco todavía. ${plan.message}`);
+      return;
     }
-    try {
-      const pn = await this.d.gateway.requestPayment({
-        amount_cents: open.amountCents!,
-        phone10: phone,
-        concept: `Fiado ${merchant?.name ?? ""}`.slice(0, 40),
-        num_ref: open.reference,
-        metadata: { cuadra_charge_id: open.id },
-        ...(merchant?.peyBankAccountId ? { bank_account_id: merchant.peyBankAccountId } : {}),
-      });
-      await attachProviderCharge(this.d.db, open.id, {
-        provider: this.d.gateway.name,
-        providerChargeId: pn.provider_charge_id,
-        channel: "codi_pn",
-        expiresAt: new Date(now.getTime() + PN_TTL_S * 1000),
-      });
-      await setProposalStatus(this.d.db, proposalId, "done", { resend_of: open.id });
-      this.d.log({ msg: "pey_pn_resent", merchant_id: this.d.merchantId, proposal_id: proposalId, charge_id: open.id, transaction_id: pn.provider_charge_id });
-      await this.say(
-        "comercio",
-        `🔁 Le reenvié a ${c.name} la solicitud CoDi de ${amount} (misma ref. ${open.reference}, no es un cobro nuevo). ` +
-          `Si llegara a aprobar las dos, lo de más le queda como saldo a favor. Te aviso cuando pague.`,
-      );
-      return true;
-    } catch (e) {
-      const failure = e instanceof Error ? e.message : String(e);
-      this.d.log({ msg: "pey_pn_resend_failed", merchant_id: this.d.merchantId, proposal_id: proposalId, charge_id: open.id, error: failure });
-      await setProposalStatus(this.d.db, proposalId, "rejected", { resend_of: open.id, push_failed: failure });
-      await this.say("comercio", `⚠️ No pude reenviar la solicitud CoDi a ${c.name}: ${failure}. Puedes cobrarle con “QR para ${c.name}”.`);
-      return false;
-    }
+    // Lo que el comercio confirmó (el fiado) ya implica avisar; se guarda el plan como en proposeReminder.
+    const p = await this.newProposal({ type: "SendReminder", customer_id: customerId }, provenance);
+    const planned: PlannedReminder = { mode: plan.mode, amount: plan.amount.toString(), at: this.d.now().toISOString() };
+    await setProposalStatus(this.d.db, p.id, "pending", { planned });
+    await this.sendReminder(p.id, customerId);
   }
 
-  private async sendReminder(proposalId: string, customerId: string, opts: { scheduled?: boolean } = {}): Promise<boolean> {
-    const now = this.d.now();
+  /**
+   * Decide si hoy se le puede cobrar al cliente por su celular, y cómo (código, no LLM). Se evalúa
+   * al proponer (para no pedir "Confirmar" en vano) y otra vez al ejecutar.
+   * - "new": recordatorio normal (mensaje + solicitud CoDi), si pasa la política de recordatorios.
+   * - "resend": solo la solicitud CoDi, si lo único que lo impide es P03 y la anterior venció sin
+   *   pago (evaluateResend). Nunca hay dos solicitudes vivas: así no puede pagar doble.
+   */
+  private async planReminder(customerId: string, opts: { scheduled?: boolean } = {}, at?: Date): Promise<ReminderPlan> {
+    // Una sola hora por ejecución: lo que estaba vivo al consultar a pey sigue vivo al decidir.
+    const now = at ?? this.d.now();
     const [c] = await this.d.db.select().from(schema.customers).where(eq(schema.customers.id, customerId));
-    if (!c) return false;
+    if (!c) return { ok: false, name: "", message: "No encontré a ese cliente.", decision: { reason: "customer_not_found" } };
     const balance = await ledgerBalance(this.d.db, this.d.merchantId, "1200", customerId);
-    // Recordatorio previo = cobro que sí le llegó al cliente por este canal: no cuentan los QR
-    // de mostrador, los cancelados ni los simulados cuando el cobro es real (y viceversa).
-    const [last] = await this.d.db
-      .select({ at: schema.charges.createdAt })
+    if (balance <= 0n) {
+      return {
+        ok: false,
+        name: c.name,
+        message: `${c.name} no te debe nada, así que no hay cobro que mandar. Si se llevó algo, dime “${c.name} se llevó $…”.`,
+        decision: { rules_failed: [{ rule_id: "P01", reason: "El cliente no tiene saldo pendiente." }] },
+      };
+    }
+    // Marca como vencidos los cobros que ya vencieron; uno vivo impide otra solicitud (pagaría doble).
+    const open = await this.openCharge(customerId, now);
+    // Recordatorios previos = cobros que sí le llegaron al cliente por este canal: no cuentan los QR
+    // de mostrador, los cancelados (la solicitud no salió) ni los simulados cuando el cobro es real.
+    const delivered = and(
+      eq(schema.charges.customerId, customerId),
+      ne(schema.charges.status, "cancelled"),
+      or(isNull(schema.charges.channel), ne(schema.charges.channel, "codi_qr")),
+      or(isNull(schema.charges.provider), eq(schema.charges.provider, this.d.gateway.name)),
+    );
+    const [lastReminder] = await this.d.db
+      .select()
       .from(schema.charges)
-      .where(
-        and(
-          eq(schema.charges.customerId, customerId),
-          ne(schema.charges.status, "cancelled"),
-          or(isNull(schema.charges.channel), ne(schema.charges.channel, "codi_qr")),
-          or(isNull(schema.charges.provider), eq(schema.charges.provider, this.d.gateway.name)),
-        ),
-      )
+      .where(and(delivered, isNull(schema.charges.resendOf)))
       .orderBy(desc(schema.charges.createdAt))
       .limit(1);
+    const intervalMs = this.d.reminderMinIntervalMs ?? REMINDER_MIN_INTERVAL_HOURS * HOUR_MS;
     const policy = evaluateReminder({
       now,
       ledger_balance: balance,
       amount: balance,
-      last_reminder_at: last?.at ?? null,
+      last_reminder_at: lastReminder?.createdAt ?? null,
+      min_interval_ms: intervalMs,
+      ...(this.d.reminderHours ? { hours: this.d.reminderHours } : {}),
       opt_in: c.optIn,
       template_id: REMINDER_TEMPLATE,
       approved_template_ids: [REMINDER_TEMPLATE],
-      ...(this.d.reminderMinIntervalMs ? { min_interval_ms: this.d.reminderMinIntervalMs } : {}),
     });
-    const open = await this.openCharge(customerId);
-    // Reenvío: si el banco del cliente no mostró la solicitud, el comercio puede volver a mandarla.
-    // Es el mismo cobro (misma referencia y monto), no uno nuevo; si el cliente aprobara las dos, el
-    // segundo pago se concilia contra el mismo cobro y lo de más queda como saldo a favor (2100).
-    // La espera entre recordatorios (P03) no aplica a un reenvío; horario y opt-in sí.
-    if (
-      open &&
-      !opts.scheduled &&
-      open.channel === "codi_pn" &&
-      open.provider === this.d.gateway.name &&
-      open.amountCents === balance &&
-      policy.rules_failed.every((f) => f.rule_id === "P03")
-    ) {
-      return this.resendPush(proposalId, c, open, now);
+    const phone = await customerPhone10(this.d.db, customerId);
+    if (policy.allow && !open) return { ok: true, name: c.name, mode: "new", amount: balance, phone, resendOf: null, resendNumber: 0 };
+
+    const resendsOf = async (reminderId: string): Promise<number> => {
+      const [{ n } = { n: 0 }] = await this.d.db
+        .select({ n: count() })
+        .from(schema.charges)
+        .where(and(eq(schema.charges.resendOf, reminderId), ne(schema.charges.status, "cancelled")));
+      return n;
+    };
+    const onlyP03 = policy.rules_failed.length === 1 && policy.rules_failed[0]!.rule_id === "P03";
+    const nextReminder = lastReminder ? ceilToMinute(new Date(lastReminder.createdAt.getTime() + intervalMs)) : null;
+    const describe = (failed: PolicyFailure[]) =>
+      failed.map((f) => (f.rule_id === "P03" && nextReminder ? `${f.reason} El siguiente se puede ${formatMxWhen(nextReminder, now)}.` : f.reason));
+
+    if (open) {
+      // Con un cobro vivo no sale otro (ni QR): primero se paga o vence. Se dice qué sigue después.
+      const openMsg = this.openChargeMessage(c.name, open, now);
+      const decision = { ...policy, open_charge: open.id };
+      if (open.channel === "codi_pn" && phone && !opts.scheduled) {
+        if (policy.allow) return { ok: false, name: c.name, message: `${openMsg} Si no la paga, cuando venza puedes volver a cobrarle.`, decision };
+        if (onlyP03 && lastReminder) {
+          const n = await resendsOf(lastReminder.id);
+          if (n < REMINDER_MAX_RESENDS) {
+            return {
+              ok: false,
+              name: c.name,
+              message: `${openMsg} Si no la paga, cuando venza pídeme “vuélvele a mandar la notificación” y se la reenvío (reenvío ${n + 1} de ${REMINDER_MAX_RESENDS}).`,
+              decision,
+            };
+          }
+        }
+      }
+      const reasons = describe(policy.rules_failed);
+      return { ok: false, name: c.name, message: reasons.length ? `${openMsg}\nAdemás:\n• ${reasons.join("\n• ")}` : openMsg, decision };
     }
-    if (policy.allow && open) {
-      await setProposalStatus(this.d.db, proposalId, "rejected", { open_charge: open.id });
-      if (!opts.scheduled) await this.say("comercio", `${c.name} ya tiene un cobro abierto (ref. ${open.reference}). No mando otro para que no pague doble.`);
-      return false;
+
+    let failed = policy.rules_failed;
+    let resend: ReminderDecision | null = null;
+    if (!opts.scheduled && lastReminder && failed.some((f) => f.rule_id === "P03")) {
+      const [lastCharge] = await this.d.db.select().from(schema.charges).where(delivered).orderBy(desc(schema.charges.createdAt)).limit(1);
+      const n = await resendsOf(lastReminder.id);
+      resend = evaluateResend(policy, {
+        last_charge: lastCharge ? { status: lastCharge.status, channel: lastCharge.channel } : null,
+        resends_in_cycle: n,
+      });
+      if (resend.allow && phone) {
+        return { ok: true, name: c.name, mode: "resend", amount: balance, phone, resendOf: lastReminder.id, resendNumber: n + 1 };
+      }
+      // Se explica por qué no se puede reenviar, sin repetir las reglas que ya fallaron.
+      const extra = resend.rules_failed.filter((f) => f.rule_id === "P07" || f.rule_id === "P08");
+      if (resend.allow && !phone) extra.push({ rule_id: "P07", reason: "No tiene un celular válido para CoDi." });
+      failed = [...failed, ...extra];
     }
-    if (!policy.allow) {
-      await setProposalStatus(this.d.db, proposalId, "rejected", policy);
-      if (!opts.scheduled) await this.say("comercio", `No mando el cobro:\n• ${policy.rules_failed.map((f) => f.reason).join("\n• ")}`);
-      return false;
+    return {
+      ok: false,
+      name: c.name,
+      message: `No mando el cobro a ${c.name}:\n• ${describe(failed).join("\n• ")}\nSi está en la tienda, cóbrale con “QR para ${c.name}”.`,
+      decision: { ...policy, ...(resend ? { resend } : {}) },
+    };
+  }
+
+  /** "Doña Lupe ya tiene una solicitud abierta… vence a las 16:11". */
+  private openChargeMessage(name: string, open: typeof schema.charges.$inferSelect, now: Date): string {
+    const what = open.channel === "codi_pn" ? "una solicitud CoDi abierta" : open.channel === "codi_qr" ? "un QR abierto" : "un cobro abierto";
+    const amount = open.amountCents !== null ? ` de ${formatMXN(open.amountCents)}` : "";
+    const until = open.expiresAt ? ` que vence ${formatMxWhen(ceilToMinute(new Date(open.expiresAt.getTime() + CHARGE_EXPIRY_GRACE_MS)), now)}` : "";
+    return `${name} ya tiene ${what}${amount} (ref. ${open.reference})${until}. Espera a que la pague o a que venza para no cobrarle doble.`;
+  }
+
+  /** Propone el cobro al celular: si la política no lo permite, lo dice de una vez, sin pedir "Confirmar". */
+  private async proposeReminder(customer: { id: string; name: string }, provenance: Provenance): Promise<void> {
+    const plan = await this.planReminder(customer.id);
+    const p = await this.newProposal({ type: "SendReminder", customer_id: customer.id }, provenance);
+    if (!plan.ok) {
+      await setProposalStatus(this.d.db, p.id, "rejected", plan.decision);
+      await this.say("comercio", plan.message);
+      return;
     }
+    // Lo que se le muestra al comercio es lo que se ejecuta: si al confirmar cambió, se vuelve a pedir.
+    const planned: PlannedReminder = { mode: plan.mode, amount: plan.amount.toString(), at: this.d.now().toISOString() };
+    await setProposalStatus(this.d.db, p.id, "pending", { planned });
+    const amount = formatMXN(plan.amount);
+    await this.say(
+      "comercio",
+      plan.mode === "resend"
+        ? `La solicitud anterior a ${customer.name} venció sin pago. Le reenvío la solicitud CoDi de ${amount} a su celular, sin otro mensaje (reenvío ${plan.resendNumber} de ${REMINDER_MAX_RESENDS}). ¿Confirmas?`
+        : plan.phone
+          ? `Le mando a ${customer.name} su cobro de ${amount} por CoDi. ¿Confirmas?`
+          : `${customer.name} no tiene un celular válido para CoDi. Le dejo el recordatorio de ${amount} con una referencia para que te pague por transferencia. ¿Confirmas?`,
+      confirmButtons(p.id),
+      p.id,
+    );
+  }
+
+  /** Cliente de la última solicitud CoDi al celular ("vuélvele a mandar la notificación"). */
+  private async lastPushedCustomer(): Promise<{ id: string; name: string } | null> {
+    const [row] = await this.d.db
+      .select({ id: schema.customers.id, name: schema.customers.name })
+      .from(schema.charges)
+      .innerJoin(schema.customers, eq(schema.customers.id, schema.charges.customerId))
+      .where(
+        and(
+          eq(schema.charges.merchantId, this.d.merchantId),
+          eq(schema.charges.channel, "codi_pn"),
+          ne(schema.charges.status, "cancelled"),
+          eq(schema.charges.provider, this.d.gateway.name),
+        ),
+      )
+      .orderBy(desc(schema.charges.createdAt))
+      .limit(1);
+    return row ?? null;
+  }
+
+  /**
+   * Los cobros a un mismo cliente (solicitudes CoDi y QR) se ejecutan de uno en uno (un solo proceso
+   * de API): dos confirmaciones simultáneas no pueden dejar dos solicitudes vivas. Clientes distintos
+   * no se esperan entre sí.
+   */
+  private serialized<T>(customerId: string, fn: () => Promise<T>): Promise<T> {
+    const prev = this.chargeLocks.get(customerId) ?? Promise.resolve();
+    const run = prev.then(fn, fn);
+    const tail = run.then(
+      () => undefined,
+      () => undefined,
+    );
+    this.chargeLocks.set(customerId, tail);
+    void tail.then(() => {
+      if (this.chargeLocks.get(customerId) === tail) this.chargeLocks.delete(customerId);
+    });
+    return run;
+  }
+
+  /**
+   * Antes de otra solicitud o un QR: pregunta a pey por las solicitudes al celular recientes que
+   * Cuadra dio por vencidas con su reloj. Si alguna ya se pagó (webhook perdido o tardío), se
+   * registra ahí mismo. Si pey no responde, no se manda nada: podría estar pagada (fail closed).
+   */
+  private async settleRecentWithProvider(customerId: string, at: Date): Promise<{ ok: true } | { ok: false; error: string }> {
+    if (this.d.gateway.simulated) return { ok: true };
+    await this.openCharge(customerId, at); // marca como vencidas las que ya pasaron su vigencia
+    const since = new Date(at.getTime() - RECENT_PROVIDER_CHECK_MS);
+    const rows = await this.d.db
+      .select()
+      .from(schema.charges)
+      .where(
+        and(
+          eq(schema.charges.customerId, customerId),
+          eq(schema.charges.status, "expired"),
+          eq(schema.charges.channel, "codi_pn"),
+          eq(schema.charges.provider, this.d.gateway.name),
+          isNotNull(schema.charges.providerChargeId),
+          gte(schema.charges.createdAt, since),
+        ),
+      );
+    for (const r of rows) {
+      let tx: PeyTransaction;
+      try {
+        tx = await this.d.gateway.getTransaction(r.providerChargeId!);
+      } catch (e) {
+        return { ok: false, error: e instanceof Error ? e.message : String(e) };
+      }
+      if (tx.status === "PAID") await this.applyPayment(tx);
+    }
+    return { ok: true };
+  }
+
+  /**
+   * "sent": salió. "skipped": la política o el estado no lo permitieron (con scheduled no se avisa uno
+   * por uno). "unknown": pudo haber salido (pey no respondió). "failed": no salió por un error.
+   */
+  private sendReminder(proposalId: string, customerId: string, opts: { scheduled?: boolean } = {}): Promise<ReminderOutcome> {
+    return this.serialized(customerId, () => this.sendReminderNow(proposalId, customerId, opts));
+  }
+
+  private async sendReminderNow(proposalId: string, customerId: string, opts: { scheduled?: boolean }): Promise<ReminderOutcome> {
+    // Una propuesta se ejecuta una sola vez aunque llegue "Confirmar" dos veces.
+    const [claimed] = await this.d.db
+      .update(schema.proposals)
+      .set({ status: "executing", updatedAt: new Date() })
+      .where(and(eq(schema.proposals.id, proposalId), eq(schema.proposals.status, "pending")))
+      .returning({ id: schema.proposals.id, decision: schema.proposals.decision });
+    if (!claimed) return "skipped";
+
+    // Estado del cobro para limpiar si algo falla a medio camino.
+    const st: ExecState = { chargeId: null, pushAttempted: false, expiresAt: null, name: "" };
+    try {
+      return await this.executeReminder(proposalId, customerId, opts, claimed.decision as { planned?: PlannedReminder } | null, st);
+    } catch (e) {
+      const error = e instanceof Error ? e.message : String(e);
+      this.d.log({ msg: "reminder_failed", merchant_id: this.d.merchantId, proposal_id: proposalId, error, push_attempted: st.pushAttempted });
+      if (st.chargeId && !st.pushAttempted) {
+        // La solicitud nunca se pidió: el cobro no existe para el cliente y se cancela.
+        await this.d.db.update(schema.charges).set({ status: "cancelled" }).where(eq(schema.charges.id, st.chargeId)).catch(() => undefined);
+        await setProposalStatus(this.d.db, proposalId, "rejected", { error }).catch(() => undefined);
+        if (!opts.scheduled) await this.say("comercio", `⚠️ No pude completar el cobro: ${error}. Intenta de nuevo.`).catch(() => undefined);
+        return "failed";
+      }
+      if (st.chargeId) {
+        // Ya se le pidió a pey: pudo haber salido. El cobro ya está marcado como solicitud y bloquea
+        // otra hasta que venza; se dice la verdad, aun en los recordatorios programados.
+        await setProposalStatus(this.d.db, proposalId, "done", { charge_id: st.chargeId, push: "unknown", error }).catch(() => undefined);
+        const until = st.expiresAt ? ` hasta que venza (${formatMxWhen(ceilToMinute(new Date(st.expiresAt.getTime() + CHARGE_EXPIRY_GRACE_MS)), this.d.now())})` : "";
+        await this.say(
+          "comercio",
+          `⚠️ Algo falló después de pedirle la solicitud a pey (${error}). Puede que le haya llegado a ${st.name}: para no cobrarle doble, no mando otra${until}.`,
+        ).catch(() => undefined);
+        return "unknown";
+      }
+      await setProposalStatus(this.d.db, proposalId, "rejected", { error }).catch(() => undefined);
+      if (!opts.scheduled) await this.say("comercio", `⚠️ No pude completar el cobro: ${error}. Intenta de nuevo.`).catch(() => undefined);
+      return "failed";
+    }
+  }
+
+  private async executeReminder(
+    proposalId: string,
+    customerId: string,
+    opts: { scheduled?: boolean },
+    decision: { planned?: PlannedReminder } | null,
+    st: ExecState,
+  ): Promise<ReminderOutcome> {
+    const reject = async (message: string, why: Record<string, unknown>): Promise<ReminderOutcome> => {
+      await setProposalStatus(this.d.db, proposalId, "rejected", why);
+      if (!opts.scheduled) await this.say("comercio", message);
+      return "skipped";
+    };
+    const at = this.d.now();
+    const planned = decision?.planned ?? null;
+    // Lo que el comercio confirma desde el chat siempre trae lo que se le propuso; sin eso (p. ej. un
+    // botón de antes de esta versión) no se sabe qué aprobó, así que se vuelve a pedir.
+    if (!opts.scheduled && !planned) {
+      return reject("Esa propuesta ya no aplica. Pídemelo de nuevo y te digo cómo queda.", { stale_proposal: true });
+    }
+    if (planned && at.getTime() - Date.parse(planned.at) > PROPOSAL_TTL_MS) {
+      return reject("Esa propuesta ya venció (dura 10 min). Pídemelo de nuevo y te digo cómo queda.", { expired_proposal: true, planned });
+    }
+    // Un pago que pey ya tenía y Cuadra no (webhook perdido) se registra antes de decidir.
+    const settled = await this.settleRecentWithProvider(customerId, at);
+    if (!settled.ok) {
+      const [c] = await this.d.db.select({ name: schema.customers.name }).from(schema.customers).where(eq(schema.customers.id, customerId));
+      return reject(
+        `⚠️ No pude confirmar con pey si ${c?.name ?? "el cliente"} ya pagó la solicitud anterior (${settled.error}). Para no cobrarle doble, no mando otra: intenta en unos minutos.`,
+        { provider_check_failed: settled.error },
+      );
+    }
+    const plan = await this.planReminder(customerId, opts, at);
+    if (!plan.ok) return reject(plan.message, plan.decision);
+    if (planned && (planned.mode !== plan.mode || planned.amount !== plan.amount.toString())) {
+      const now = plan.mode === "resend" ? `reenviarle la solicitud de ${formatMXN(plan.amount)}` : `mandarle un cobro de ${formatMXN(plan.amount)}`;
+      return reject(`Algo cambió desde que te lo propuse: ahora tocaría ${now} a ${plan.name}. Pídemelo de nuevo para confirmarlo.`, {
+        plan_changed: true,
+        planned,
+        now: { mode: plan.mode, amount: plan.amount.toString() },
+      });
+    }
+
+    const now = this.d.now();
+    const { phone, amount: balance, name } = plan;
+    st.name = name;
     const chargeId = id("ch");
     const reference = await newChargeReference(this.d.db, this.d.merchantId);
-    await insertCharge(this.d.db, { id: chargeId, merchantId: this.d.merchantId, customerId, reference, amountCents: balance, now });
-    const phone = await customerPhone10(this.d.db, customerId);
+    const expiresAt = new Date(now.getTime() + PN_TTL_S * 1000);
+    // Con celular, el cobro nace marcado como solicitud CoDi (proveedor, canal, 6 min): si algo falla
+    // después de llamar a pey, igual bloquea otra solicitud o un QR hasta que venza.
+    await insertCharge(this.d.db, {
+      id: chargeId,
+      merchantId: this.d.merchantId,
+      customerId,
+      reference,
+      amountCents: balance,
+      now,
+      resendOf: plan.resendOf,
+      ...(phone ? { via: { provider: this.d.gateway.name, channel: "codi_pn" as const, expiresAt } } : {}),
+    });
+    st.chargeId = chargeId;
+    if (phone) st.expiresAt = expiresAt;
     const [merchant] = await this.d.db.select().from(schema.merchants).where(eq(schema.merchants.id, this.d.merchantId));
     const concept = `Fiado ${merchant?.name ?? ""}`.slice(0, 40);
+    const amount = formatMXN(balance);
 
-    let pushed = false;
+    // Resultado de la solicitud: "sent" (pey la aceptó), "rejected" (pey la rechazó, 4xx: no existe),
+    // "unknown" (red, 5xx o tiempo agotado: pudo haberse creado y el cliente pagarla).
+    let outcome: "none" | "sent" | "rejected" | "unknown" = "none";
     let codiId: string | null = null;
     let failure: string | null = null;
-    // pey respondió con un error 4xx: rechazó la solicitud (p. ej. celular sin CoDi). Si no, fue la red o pey.
-    let rejectedByProvider = false;
     if (phone) {
+      st.pushAttempted = true;
+      let providerChargeId: string | null = null;
       try {
         const pn = await this.d.gateway.requestPayment({
           amount_cents: balance,
@@ -563,84 +999,124 @@ export class CuadraService {
           concept,
           num_ref: reference,
           metadata: { cuadra_charge_id: chargeId },
+          ttl_s: PN_TTL_S,
           ...(merchant?.peyBankAccountId ? { bank_account_id: merchant.peyBankAccountId } : {}),
         });
-        await attachProviderCharge(this.d.db, chargeId, {
-          provider: this.d.gateway.name,
-          providerChargeId: pn.provider_charge_id,
-          channel: "codi_pn",
-          expiresAt: new Date(now.getTime() + PN_TTL_S * 1000),
-        });
-        pushed = true;
+        outcome = "sent";
+        providerChargeId = pn.provider_charge_id;
         codiId = pn.codi_id ?? null;
-        this.d.log({
-          msg: "pey_pn_sent",
-          merchant_id: this.d.merchantId,
-          proposal_id: proposalId,
-          charge_id: chargeId,
-          transaction_id: pn.provider_charge_id,
-          codi_id: codiId,
-        });
       } catch (e) {
         failure = e instanceof Error ? e.message : String(e);
-        rejectedByProvider = e instanceof PeyApiError && e.status < 500;
+        outcome = e instanceof PeyApiError && e.status < 500 ? "rejected" : "unknown";
         // Principio 12: se reporta lo que respondió pey (sin secretos) para poder escalarlo.
         this.d.log({
           msg: "pey_pn_failed",
           merchant_id: this.d.merchantId,
           proposal_id: proposalId,
           charge_id: chargeId,
+          outcome,
           error: failure,
           ...(e instanceof PeyApiError ? { status: e.status, type: e.type, request_id: e.requestId } : {}),
         });
       }
-    }
-    const amount = formatMXN(balance);
-    if (phone && !pushed) {
-      // La solicitud no salió (p. ej. el celular no está registrado en CoDi): el cobro se cancela
-      // para que no bloquee otro intento ni cuente como recordatorio, y al cliente no se le manda nada.
-      await this.d.db.update(schema.charges).set({ status: "cancelled" }).where(eq(schema.charges.id, chargeId));
-      await setProposalStatus(this.d.db, proposalId, "rejected", { charge_id: chargeId, push_failed: failure });
-      if (!opts.scheduled) {
-        await this.say(
-          "comercio",
-          `⚠️ No salió la solicitud CoDi de ${amount} a ${c.name}${failure ? `: ${failure}` : ""}. No le mandé nada. ` +
-            (rejectedByProvider
-              ? `Revisa que su celular esté registrado en CoDi en la app de su banco, o cóbrale con “QR para ${c.name}”.`
-              : `pey no respondió bien en este momento: intenta en unos minutos o cóbrale con “QR para ${c.name}”.`),
-        );
+      if (outcome === "sent") {
+        this.d.log({
+          msg: "pey_pn_sent",
+          merchant_id: this.d.merchantId,
+          proposal_id: proposalId,
+          charge_id: chargeId,
+          transaction_id: providerChargeId,
+          codi_id: codiId,
+          ...(plan.resendOf ? { resend_of: plan.resendOf, resend_number: plan.resendNumber } : {}),
+        });
       }
-      return false;
+      if (outcome === "sent" && providerChargeId) {
+        // El cobro ya está marcado como solicitud; aquí solo se guarda el id de pey (con un reintento).
+        // Si aun así falla, el cobro sigue abierto hasta que venza y el pago se reconoce por la metadata.
+        const id = providerChargeId;
+        const attach = async (): Promise<void> => {
+          await attachProviderCharge(this.d.db, chargeId, { provider: this.d.gateway.name, providerChargeId: id, channel: "codi_pn", expiresAt });
+        };
+        await attach().catch(async (e: unknown) => {
+          this.d.log({ msg: "attach_charge_failed", charge_id: chargeId, error: e instanceof Error ? e.message : String(e) });
+          await attach();
+        });
+      }
     }
-    await setProposalStatus(this.d.db, proposalId, "done", { charge_id: chargeId, pushed, ...(codiId ? { codi_id: codiId } : {}) });
-    const actions: MessageAction[] =
-      pushed && this.d.gateway.simulated ? [{ kind: "pay", label: `Aprobar pago de ${amount} (banco simulado)`, url: `/api/sim/pay/${chargeId}` }] : [];
+
+    if (outcome === "rejected") {
+      // pey rechazó la solicitud (p. ej. el celular no está registrado en CoDi): no existe, así que
+      // el cobro se cancela, no cuenta como recordatorio y al cliente no se le manda nada.
+      await this.d.db.update(schema.charges).set({ status: "cancelled" }).where(eq(schema.charges.id, chargeId));
+      await reject(
+        `⚠️ No salió la solicitud CoDi de ${amount} a ${name}${failure ? `: ${failure}` : ""}. No le mandé nada. ` +
+          `Revisa que su celular esté registrado en CoDi en la app de su banco, o cóbrale con “QR para ${name}”.`,
+        { charge_id: chargeId, push_failed: failure },
+      );
+      return "failed";
+    }
+    if (outcome === "unknown") {
+      await setProposalStatus(this.d.db, proposalId, "done", { charge_id: chargeId, push: "unknown", error: failure });
+      // Se avisa aunque sea un recordatorio programado: puede haber una solicitud viva en su celular.
+      const lastResend = plan.mode === "resend" && plan.resendNumber >= REMINDER_MAX_RESENDS;
+      await this.say(
+        "comercio",
+        `⚠️ pey no respondió bien${failure ? ` (${failure})` : ""}. Puede que la solicitud de ${amount} sí le haya llegado a ${name}: ` +
+          `para no cobrarle doble, no mando otra hasta que venza (${formatMxWhen(ceilToMinute(new Date(expiresAt.getTime() + CHARGE_EXPIRY_GRACE_MS)), now)}). ` +
+          (lastResend
+            ? `Ya fue el último reenvío: después cóbrale con “QR para ${name}”.`
+            : `Después pídeme “vuélvele a mandar la notificación” o cóbrale con “QR para ${name}”.`),
+      );
+      return "unknown";
+    }
+
+    const pushed = outcome === "sent";
+    await setProposalStatus(this.d.db, proposalId, "done", {
+      charge_id: chargeId,
+      pushed,
+      ...(codiId ? { codi_id: codiId } : {}),
+      ...(plan.resendOf ? { resend_of: plan.resendOf, resend_number: plan.resendNumber } : {}),
+    });
+    const sim = this.d.gateway.simulated;
+    const simPay: MessageAction[] = pushed && sim ? [{ kind: "pay", label: `Aprobar pago de ${amount} (banco simulado)`, url: `/api/sim/pay/${chargeId}` }] : [];
+    const validity = `vigente ${PN_TTL_S / 60} min`;
+
+    if (plan.mode === "resend") {
+      // Reenvío: solo la solicitud CoDi; al cliente no le llega otro mensaje.
+      await this.say(
+        "comercio",
+        `🔁 Le reenvié a ${name} la solicitud CoDi de ${amount}${sim ? " (simulado)" : ""} (${validity}, reenvío ${plan.resendNumber} de ${REMINDER_MAX_RESENDS}). ` +
+          `Le llega como notificación de la app de su banco. Te aviso cuando pague.`,
+        simPay,
+      );
+      return "sent";
+    }
     await this.say(
-      c.id,
-      `Hola ${c.name} 👋 Te saludamos de ${merchant?.name}. Tu cuenta va en ${amount}.\n` +
+      customerId,
+      `Hola ${name} 👋 Te saludamos de ${merchant?.name}. Tu cuenta va en ${amount}.\n` +
         (pushed
           ? `Te mandamos la solicitud de cobro a tu celular: la abres en la app de tu banco y la apruebas, sin capturar CLABE ni pagar comisión. Ref. ${reference}.\n`
           : `Ref. ${reference}.\n`) +
         "Si hoy no se puede, no pasa nada: dinos cuándo te queda bien. ¡Gracias por tu confianza!",
-      actions,
+      simPay,
       undefined,
-      { name: "cuadra_cobro_fiado", params: [c.name, merchant?.name ?? "tu tienda", amount, reference] },
+      { name: "cuadra_cobro_fiado", params: [name, merchant?.name ?? "tu tienda", amount, reference] },
     );
     await this.say(
       "comercio",
       pushed
-        ? this.d.gateway.simulated
-          ? `📨 Cobro de ${amount} enviado a ${c.name} por CoDi (simulado). Te aviso cuando pague.`
-          : `📨 pey aceptó la solicitud CoDi de ${amount} para ${c.name} (vigente ${PN_TTL_S / 60} min). ` +
+        ? sim
+          ? `📨 Cobro de ${amount} enviado a ${name} por CoDi (simulado). Te aviso cuando pague.`
+          : `📨 pey aceptó la solicitud CoDi de ${amount} para ${name} (${validity}). ` +
             `Le llega como notificación de la app de su banco si su celular está registrado en CoDi. Te aviso cuando pague.`
-        : `⚠️ ${c.name} no tiene un celular válido para CoDi. Le dejé el recordatorio con la referencia ${reference}; si está en la tienda, cóbrale con “QR para ${c.name}”.`,
+        : `⚠️ ${name} no tiene un celular válido para CoDi. Le dejé el recordatorio con la referencia ${reference}; si está en la tienda, cóbrale con “QR para ${name}”.`,
     );
-    return true;
+    return "sent";
   }
 
   /** Cobro vigente del cliente; los vencidos en el proveedor ya no bloquean uno nuevo. */
-  private async openCharge(customerId: string) {
-    return openChargeFor(this.d.db, customerId, this.d.now());
+  private async openCharge(customerId: string, at?: Date, opts: { payableOnly?: boolean } = {}) {
+    return openChargeFor(this.d.db, customerId, at ?? this.d.now(), opts);
   }
 
   /** Cobro en mostrador: QR CoDi por el saldo exacto, que el cliente escanea con su banco. */
@@ -648,20 +1124,38 @@ export class CuadraService {
     const now = this.d.now();
     const [c] = await this.d.db.select().from(schema.customers).where(eq(schema.customers.id, customerId));
     if (!c) return;
+    const settled = await this.settleRecentWithProvider(customerId, now);
+    if (!settled.ok) {
+      await this.say(
+        "comercio",
+        `⚠️ No pude confirmar con pey si ${c.name} ya pagó la solicitud anterior (${settled.error}). Para no cobrarle doble, no genero el QR: intenta en unos minutos.`,
+      );
+      return;
+    }
     const balance = await ledgerBalance(this.d.db, this.d.merchantId, "1200", customerId);
     if (balance <= 0n) {
       await this.say("comercio", `${c.name} no te debe nada.`);
       return;
     }
-    const open = await this.openCharge(customerId);
+    // Un recordatorio solo con referencia no es una solicitud que se apruebe en el banco: no impide el
+    // QR y se conserva (sigue contando para la política y para identificar una transferencia).
+    const open = await this.openCharge(customerId, now, { payableOnly: true });
     if (open) {
-      await this.say("comercio", `${c.name} ya tiene un cobro abierto (ref. ${open.reference}). Espera a que se pague para no cobrar doble.`);
+      await this.say("comercio", this.openChargeMessage(c.name, open, now));
       return;
     }
     const [merchant] = await this.d.db.select().from(schema.merchants).where(eq(schema.merchants.id, this.d.merchantId));
     const chargeId = id("ch");
     const reference = await newChargeReference(this.d.db, this.d.merchantId);
-    await insertCharge(this.d.db, { id: chargeId, merchantId: this.d.merchantId, customerId, reference, amountCents: balance, now });
+    await insertCharge(this.d.db, {
+      id: chargeId,
+      merchantId: this.d.merchantId,
+      customerId,
+      reference,
+      amountCents: balance,
+      now,
+      via: { provider: this.d.gateway.name, channel: "codi_qr", expiresAt: new Date(now.getTime() + QR_TTL_S * 1000) },
+    });
     try {
       const qr = await this.d.gateway.createQr({
         amount_cents: balance,
@@ -683,6 +1177,7 @@ export class CuadraService {
       if (this.d.gateway.simulated) actions.push({ kind: "pay", label: `${c.name} escanea y paga (simulado)`, url: `/api/sim/pay/${chargeId}` });
       await this.say("comercio", `📱 Que ${c.name} escanee este QR con la app de su banco: ${amount}, ref. ${reference}. Vale ${QR_TTL_S / 60} min.`, actions);
     } catch (e) {
+      // Un QR que no se le mostró a nadie no se puede pagar: se cancela.
       await this.d.db.update(schema.charges).set({ status: "cancelled" }).where(eq(schema.charges.id, chargeId));
       await this.say("comercio", `⚠️ No pude generar el QR: ${e instanceof Error ? e.message : String(e)}`);
     }
@@ -822,6 +1317,8 @@ function describeIntent(i: Intent): string {
       return `anotar ${m(i.amount_cents)} a ${i.customer_name}`;
     case "send_reminder":
       return `cobrarle a ${i.customer_name}`;
+    case "resend_reminder":
+      return i.customer_name ? `reenviarle el cobro a ${i.customer_name}` : "reenviar el último cobro";
     case "payout":
       return `pagar ${m(i.amount_cents)} a ${i.payee_name}`;
     case "query_balance":
@@ -831,4 +1328,10 @@ function describeIntent(i: Intent): string {
     default:
       return "";
   }
+}
+
+/** "el señor joel" → "Señor Joel": sin artículo al inicio y con mayúsculas si vino todo en minúsculas. */
+function displayName(raw: string): string {
+  const n = raw.trim().replace(/^(?:el|la|al|a)\s+/i, "").replace(/\s+/g, " ").slice(0, 80);
+  return n === n.toLowerCase() ? n.replace(/(^|\s)(\p{L})/gu, (_m, s: string, c: string) => s + c.toUpperCase()) : n.charAt(0).toUpperCase() + n.slice(1);
 }
