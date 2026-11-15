@@ -5,6 +5,8 @@ import { migrate } from "./client.js";
 import * as schema from "./schema.js";
 
 let template: Promise<PGlite> | null = null;
+/** Bases creadas y aún abiertas (sin la plantilla). Cada una ocupa ~250 MB de memoria WASM. */
+const open = new Set<PGlite>();
 
 async function migratedTemplate(): Promise<PGlite> {
   const pg = new PGlite();
@@ -19,6 +21,18 @@ async function migratedTemplate(): Promise<PGlite> {
 export async function createTestDb(): Promise<{ db: Db; pg: PGlite }> {
   template ??= migratedTemplate();
   const pg = (await (await template).clone()) as PGlite;
+  open.add(pg);
   const db = drizzle(pg, { schema }) as unknown as Db;
   return { db, pg };
+}
+
+/**
+ * Cierra las bases que creó createTestDb (la plantilla se queda para clonar más). Las pruebas lo
+ * llaman después de cada test (test/setup.ts): sin esto cada base se queda en memoria y un archivo
+ * con muchas pruebas llega a varios GB, lo que tumba la máquina de CI.
+ */
+export async function closeTestDbs(): Promise<void> {
+  const all = [...open];
+  open.clear();
+  await Promise.allSettled(all.map((pg) => pg.close()));
 }

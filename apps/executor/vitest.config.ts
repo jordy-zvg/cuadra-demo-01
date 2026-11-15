@@ -1,9 +1,9 @@
 import { defineConfig } from "vitest/config";
 
 // Cada archivo crea su base en memoria (PGlite) y corre todas las migraciones: con muchos archivos en
-// paralelo la primera prueba puede tardar m·s de un minuto en m·quinas lentas. Margen amplio para que
+// paralelo la primera prueba puede tardar m√°s de un minuto en m√°quinas lentas. Margen amplio para que
 // la lentitud no se confunda con un error.
 
 export default defineConfig({
-  test: { include: ["test/**/*.test.ts"], testTimeout: 180_000, hookTimeout: 180_000 },
+  test: { include: ["test/**/*.test.ts"], setupFiles: ["test/setup.ts"], testTimeout: 180_000, hookTimeout: 180_000 },
 });
