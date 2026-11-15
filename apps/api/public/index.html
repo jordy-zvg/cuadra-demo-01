@@ -8,6 +8,7 @@
 <meta name="theme-color" content="#0B2B2E" media="(prefers-color-scheme: dark)">
 <link rel="icon" href="/logo.svg" type="image/svg+xml">
 <link rel="stylesheet" href="/assets/cuadra.css">
+<script src="/assets/red.js" defer></script>
 <style>
 /* Consola de demostración: chat del comercio, teléfono del cliente y panel en vivo.
    Misma familia que el portal (banda verde azulada, hoja blanca, tarjetas menta), en versión densa. */
@@ -90,6 +91,8 @@ td.n,th.n{text-align:right;white-space:nowrap}
 .flash{animation:fl 1.2s ease-out}
 @keyframes fl{from{background:var(--ok-bg)}to{background:transparent}}
 @media (prefers-reduced-motion: reduce){.flash{animation:none}}
+/* Mientras llega el primer estado, una capa "Cargando…" tapa los paneles vacíos. */
+.boot{position:absolute;inset:0;z-index:5;background:var(--bg);border-radius:22px 22px 0 0;font-size:16px}
 /* Celular y pantallas angostas (al final para ganarle a las reglas base) */
 @media (max-width:600px){
   main{padding:12px 10px}
@@ -141,6 +144,7 @@ button,.chip,select,a.btn{touch-action:manipulation}
   </nav>
 </header>
 <main>
+  <div class="cargando boot" id="boot" role="status">Cargando la consola…</div>
   <section class="col">
     <h2><span class="ttl"><span class="ic-circle"><svg class="ico" aria-hidden="true"><use href="/assets/icons.svg#i-forum"/></svg></span><span class="tt">WhatsApp del comercio</span></span> <span class="badge">chat web simulado</span></h2>
     <div id="t-comercio" class="thread"></div>
@@ -188,11 +192,21 @@ let last = { comercio: -1, cliente: -1 }, customers = [];
 $("#chips").innerHTML = SUGG.map((s) => `<button class="chip" type="button">${esc(s)}</button>`).join("");
 $("#chips").onclick = (e) => { if (e.target.matches(".chip")) { $("#txt").value = e.target.textContent; $("#txt").focus(); } };
 
+// Mensaje breve abajo (red.js); si ese archivo no cargó, cae a alert().
+const toast = (t, ok) => (window.cuadraNet ? window.cuadraNet.toast(t, ok) : alert(t));
+const toLogin = () => { location.href = "/login?next=%2F"; };
+/** Manda una acción al servidor. Devuelve true si se aceptó; si no, avisa con un mensaje claro. */
 async function post(url, body) {
-  const r = await fetch(url, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify(body ?? {}) });
-  if (r.status === 409 && url.startsWith("/api/sim/pay/")) alert("Esa solicitud ya no está vigente: venció o ya se pagó.");
-  else if (!r.ok) alert("Error: " + (await r.text()));
+  let ok = false;
+  try {
+    const r = await fetch(url, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify(body ?? {}) });
+    if (r.status === 401) return toLogin(), false;
+    if (r.status === 409 && url.startsWith("/api/sim/pay/")) toast("Esa solicitud ya no está vigente: venció o ya se pagó.");
+    else if (!r.ok) { const j = await r.json().catch(() => null); toast(j?.error || "No se pudo completar. Intenta otra vez."); }
+    else ok = true;
+  } catch { toast("No hay conexión. No se envió nada."); }
   refresh();
+  return ok;
 }
 let fromVoice = false;
 $("#f").onsubmit = (e) => {
@@ -201,7 +215,10 @@ $("#f").onsubmit = (e) => {
   $("#txt").value = "";
   const provenance = $("#third").checked ? "third_party_content" : fromVoice ? "user_voice" : "user_direct";
   fromVoice = false;
-  post("/api/chat", { text, provenance });
+  const send = $("#f").querySelector("button:not(.mic)");
+  send.disabled = true;
+  // Si no se pudo enviar, el texto regresa a la caja para no perderlo.
+  post("/api/chat", { text, provenance }).then((ok) => { if (!ok && !$("#txt").value) $("#txt").value = text; }).finally(() => { send.disabled = false; });
 };
 // Nota de voz: reconocimiento del navegador en español de México. El texto se revisa antes de enviar.
 const SR = window.SpeechRecognition || window.webkitSpeechRecognition;
@@ -299,7 +316,20 @@ function render(s) {
   $("#upd").textContent = new Date().toLocaleTimeString("es-MX");
 }
 $("#who").onchange = () => refresh();
-async function refresh() { try { const r = await fetch("/api/state"); if (r.ok) render(await r.json()); } catch {} }
+let booted = false;
+async function refresh() {
+  try {
+    const r = await fetch("/api/state");
+    if (r.status === 401) return toLogin();
+    if (!r.ok) throw new Error("estado " + r.status);
+    render(await r.json());
+    window.cuadraNet?.ok();
+    if (!booted) { booted = true; $("#boot").remove(); }
+  } catch {
+    window.cuadraNet?.fail();
+    if (!booted) $("#boot").textContent = "No se pudo conectar con el servidor. Reintentando…";
+  }
+}
 refresh(); setInterval(refresh, 1500);
 </script>
 </body>

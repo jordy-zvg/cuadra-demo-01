@@ -5,6 +5,7 @@
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Aprobar con passkey</title>
 <link rel="stylesheet" href="/assets/cuadra.css">
+<script src="/assets/red.js" defer></script>
 <link rel="icon" href="/logo.svg" type="image/svg+xml">
 <style>
 :root{--panel:var(--surface-plain);--muted:var(--ink-2);--brand:var(--primary);--brand-ink:var(--primary-ink);--chip:var(--glyph-bg)}
@@ -51,6 +52,9 @@ input,select{border-color:var(--line-strong)}
 <div class="card">
   <h1 id="title">Aprobar con passkey</h1>
   <p class="muted">Tu huella o rostro firma exactamente lo que ves abajo. Si algo cambia, la firma deja de valer.</p>
+
+  <div class="cargando" id="loading" role="status">Cargando…</div>
+  <button id="retry" type="button" class="ghost" hidden>Intentar otra vez</button>
 
   <div id="mandate-form" hidden>
     <label>Proveedor<select id="payee"></select></label>
@@ -149,14 +153,27 @@ $("#sign").onclick = async () => {
   } catch (e) { say(e.message || String(e)); $("#sign").disabled = false; }
 };
 
-(async () => {
-  await ensurePasskey();
-  if (proposalId) { await showProposal(proposalId).catch((e) => say(e.message)); return; }
-  const payees = await api("/api/payees");
-  $("#payee").innerHTML = payees.map((p) => `<option value="${p.id}">${p.alias} (CLABE ••••${p.clabe_last4})</option>`).join("");
-  $("#title").textContent = "Nuevo mandato";
-  $("#mandate-form").hidden = false;
-})();
+// Carga inicial: "Cargando…" mientras llegan los datos; si falla, el motivo y un botón para reintentar.
+async function boot() {
+  $("#loading").hidden = false; $("#retry").hidden = true; $("#out").className = "msg";
+  try {
+    await ensurePasskey();
+    if (proposalId) await showProposal(proposalId);
+    else {
+      const payees = await api("/api/payees");
+      const esc = (v) => String(v ?? "").replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
+      $("#payee").innerHTML = payees.map((p) => `<option value="${esc(p.id)}">${esc(p.alias)} (CLABE ••••${esc(p.clabe_last4)})</option>`).join("");
+      $("#title").textContent = "Nuevo mandato";
+      if (!payees.length) say("Todavía no tienes proveedores autorizados. Agrégalos desde el chat de Cuadra.");
+      $("#mandate-form").hidden = !payees.length;
+    }
+  } catch (e) {
+    say(e.message || "No se pudo cargar.");
+    $("#retry").hidden = false;
+  } finally { $("#loading").hidden = true; }
+}
+$("#retry").onclick = boot;
+boot();
 </script>
 </body>
 </html>

@@ -14,6 +14,7 @@
 <link rel="apple-touch-icon" href="/icons/apple-touch-icon.png">
 <link rel="manifest" href="/manifest.webmanifest" crossorigin="use-credentials">
 <link rel="stylesheet" href="/assets/cuadra.css">
+<script src="/assets/red.js" defer></script>
 <style>
 /* Portal para el comercio. Pensado para personas con poca práctica con el celular:
    letra grande, botones grandes, una sola pregunta por pantalla y siempre un camino de regreso.
@@ -252,7 +253,9 @@ async function load() {
 let payeesCache = null;
 async function payees() {
   if (payeesCache) return payeesCache;
-  try { const r = await fetch("/api/payees"); checkAuth(r); payeesCache = r.ok ? await r.json() : []; } catch (e) { if (e instanceof NeedLogin) throw e; payeesCache = []; }
+  const r = await fetch("/api/payees"); checkAuth(r);
+  if (!r.ok) throw new Error("proveedores " + r.status);
+  payeesCache = await r.json();
   return payeesCache;
 }
 const chat = () => (state?.messages || []).filter((m) => m.thread === "comercio");
@@ -305,6 +308,23 @@ document.addEventListener("keydown", (e) => {
   if (e.key === "Enter" && app.querySelector(".keys") && !e.target.closest?.("button")) $("#ok")?.click();
 });
 
+// ---------- cargando y sin conexión ----------
+const loadingHtml = (text = "Cargando…") => `<div class="wait"><div class="spin"></div>${text}</div>`;
+/** Pantalla "No hay conexión" con un botón que vuelve a intentar lo mismo. */
+function offline(retry) {
+  app.innerHTML = `<h1>${ic("wifi_off")}No hay conexión</h1><p class="lead">Revisa tu internet y vuelve a intentar. No se movió dinero.</p><button class="go btn btn--block" type="button" id="retry">${ic("refresh")}Intentar otra vez</button>${navHtml(false)}`;
+  $("#retry").onclick = retry;
+  const h = app.querySelector("h1"); h.tabIndex = -1; h.focus({ preventScroll: true });
+}
+/** Muestra "Cargando…", trae el estado y, si falla, la pantalla sin conexión. Devuelve true si cargó. */
+async function needState() {
+  app.innerHTML = loadingHtml();
+  try { await load(); return true; } catch (e) {
+    if (!(e instanceof NeedLogin)) { const c = current; offline(() => go(c.screen, c.arg, false)); }
+    return false;
+  }
+}
+
 // ---------- pantallas ----------
 const SCREENS = {};
 
@@ -312,8 +332,7 @@ SCREENS.home = async () => {
   app.innerHTML = `<div class="wait"><div class="spin"></div>Cargando…</div>`;
   try { await load(); } catch (e) {
     if (e instanceof NeedLogin) return;
-    app.innerHTML = `<h1>No hay conexión</h1><p class="lead">Revisa tu internet y vuelve a intentar.</p><button class="go btn btn--block" type="button" id="retry">${ic("refresh")}Intentar otra vez</button>`;
-    $("#retry").onclick = home; return;
+    offline(home); return;
   }
   const owes = state.customers.reduce((a, c) => a + BigInt(c.owes), 0n);
   const debtors = state.customers.filter((c) => BigInt(c.owes) > 0n).length;
@@ -351,7 +370,7 @@ SCREENS.home = async () => {
   app.querySelectorAll("[data-go]").forEach((b) => (b.onclick = () => go(b.dataset.go)));
   renderAvisos();
   showInstall();
-  pollTimer = setInterval(async () => { try { await load(); renderAvisos(); } catch {} }, 4000);
+  pollTimer = setInterval(async () => { try { await load(); renderAvisos(); window.cuadraNet?.ok(); } catch { window.cuadraNet?.fail(); } }, 4000);
 };
 // Los avisos ya llevan su ícono: se quitan los emojis del texto que viene del chat de WhatsApp.
 const noEmoji = (s) => String(s).replace(/[\p{Extended_Pictographic}️‍]+\s?/gu, "");
@@ -379,17 +398,17 @@ function customerList(onPick, { onlyDebtors = false } = {}) {
 }
 
 SCREENS.fiado = async () => {
-  await load().catch(() => {});
+  if (!(await needState())) return;
   app.innerHTML = `<h1>¿Quién se lo llevó?</h1><p class="lead">Toca el nombre del cliente.</p>${customerList((c) => go("monto", { mode: "fiado", who: c }))}${navHtml()}`;
 };
 
 SCREENS.cobrar = async () => {
-  await load().catch(() => {});
+  if (!(await needState())) return;
   app.innerHTML = `<h1>¿A quién le cobras?</h1><p class="lead">Toca el nombre del cliente.</p>${customerList((c) => go("como", c), { onlyDebtors: true })}${navHtml()}`;
 };
 
 SCREENS.deben = async () => {
-  await load().catch(() => {});
+  if (!(await needState())) return;
   app.innerHTML = `<h1>¿Quién me debe?</h1><p class="lead">Toca a alguien para cobrarle.</p>${customerList((c) => go("como", c), { onlyDebtors: true })}${navHtml()}`;
 };
 
@@ -406,8 +425,9 @@ SCREENS.como = (c) => {
 };
 
 SCREENS.pagar = async () => {
-  app.innerHTML = `<div class="wait"><div class="spin"></div>Cargando…</div>`;
-  const ps = await payees();
+  app.innerHTML = loadingHtml();
+  let ps;
+  try { ps = await payees(); } catch (e) { if (!(e instanceof NeedLogin)) offline(() => go("pagar", null, false)); return; }
   app.innerHTML = `<h1>¿A qué proveedor le pagas?</h1><p class="lead">Solo aparecen los proveedores que ya autorizaste.</p>
     <div class="list">${ps.map((p) => `<button class="opt" type="button" data-p="${esc(p.id)}"><span class="av" aria-hidden="true">${ic("local_shipping")}</span><span class="t">${esc(p.alias)}<small>Cuenta que termina en ${esc(p.clabe_last4)}</small></span>${ic("chevron_right")}</button>`).join("") || `<p class="empty">No tienes proveedores autorizados.</p>`}</div>
     <div class="tip">${ic("lock")}<span>Para agregar un proveedor nuevo se necesita tu huella y esperar 24 horas. Así nadie te engaña con una cuenta falsa.</span></div>${navHtml()}`;
@@ -544,7 +564,7 @@ const plain = (body) => String(body).replace(/\s*\(R\d{2}\)/g, "");
 SCREENS.respuesta = ({ pending, replies, error, done, cancelled } = {}) => {
   if (pending) { app.innerHTML = `<div class="wait"><div class="spin"></div>Un momento, Cuadra está revisando…</div>${navHtml(false)}`; return; }
   if (error) {
-    app.innerHTML = `<h1>Algo salió mal</h1><p class="lead">No se movió dinero. Revisa tu internet y vuelve a intentar.</p>${navHtml(false)}`;
+    app.innerHTML = `<h1 class="t-bad">${ic("error")}Algo salió mal</h1><p class="lead">No pudimos confirmar tu mensaje. Antes de repetirlo, revisa “Últimos avisos” en el inicio para no anotarlo dos veces.</p>${navHtml(false)}`;
     return;
   }
   if (!replies || !replies.length) {
@@ -792,8 +812,7 @@ async function start() {
     if (r.ok) return signedIn(data.account, "");
     signedOut();
   } catch {
-    app.innerHTML = `<h1>No hay conexión</h1><p class="lead">Revisa tu internet y vuelve a intentar.</p><button class="go btn btn--block" type="button" id="retry">${ic("refresh")}Intentar otra vez</button>`;
-    $("#retry").onclick = start;
+    offline(start);
   }
 }
 
