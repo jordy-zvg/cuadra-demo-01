@@ -96,6 +96,8 @@ async function main(): Promise<void> {
     peyWebhookSecret: env("PEY_WEBHOOK_SECRET") ?? null,
     bankSim,
     udi: env("UDI_VALOR") ? parseUdiValue(env("UDI_VALOR")!) : null,
+    // Al confirmar un fiado se avisa al cliente (WhatsApp + solicitud CoDi). AUTO_COBRO_FIADO=off lo apaga.
+    chargeOnFiado: env("AUTO_COBRO_FIADO") !== "off",
     // Solo desarrollo/demo: REMINDER_MIN_INTERVAL_MINUTES=0 o 1 permite repetir el recordatorio (normal: 72 h).
     ...(reminderMinIntervalMs !== undefined ? { reminderMinIntervalMs } : {}),
     log,

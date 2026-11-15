@@ -110,6 +110,8 @@ export interface ServiceDeps {
   reminderMinIntervalMs?: number;
   /** Canales que además entregan los mensajes (WhatsApp, SMS). El chat web lee de la base. */
   channels?: OutboundChannel[];
+  /** Al confirmar un fiado, mandar enseguida el aviso por WhatsApp y la solicitud CoDi (AUTO_COBRO_FIADO). */
+  chargeOnFiado?: boolean;
   log: (r: Record<string, unknown>) => void;
 }
 
@@ -513,6 +515,7 @@ export class CuadraService {
       const [c] = await this.d.db.select().from(schema.customers).where(eq(schema.customers.id, parsed.customer_id));
       const bal = await ledgerBalance(this.d.db, this.d.merchantId, "1200", parsed.customer_id);
       await this.say("comercio", `📒 Listo. ${c?.name} te debe ${formatMXN(bal)}.`);
+      if (this.d.chargeOnFiado) await this.chargeAfterFiado(parsed.customer_id, parsed.provenance);
       return;
     }
     if (parsed.type === "CreateCustomer") {
@@ -613,6 +616,25 @@ export class CuadraService {
    * - "resend": solo la solicitud CoDi, si lo único que lo impide es P03 y la anterior venció sin
    *   pago (evaluateResend). Nunca hay dos solicitudes vivas: así no puede pagar doble.
    */
+  /**
+   * Cobro automático al anotar un fiado: el cliente recibe el aviso por WhatsApp y la solicitud CoDi
+   * en su banco. Es el mismo camino que "Cóbrale a…" → Confirmar, con todas sus reglas (permiso de
+   * mensajes, horario, espera entre recordatorios, un solo cobro abierto); si alguna lo impide, se le
+   * dice al comercio por qué y el fiado queda anotado igual.
+   */
+  private async chargeAfterFiado(customerId: string, provenance: Provenance): Promise<void> {
+    const plan = await this.planReminder(customerId);
+    if (!plan.ok) {
+      await this.say("comercio", `ℹ️ No le avisé a su banco todavía. ${plan.message}`);
+      return;
+    }
+    // Lo que el comercio confirmó (el fiado) ya implica avisar; se guarda el plan como en proposeReminder.
+    const p = await this.newProposal({ type: "SendReminder", customer_id: customerId }, provenance);
+    const planned: PlannedReminder = { mode: plan.mode, amount: plan.amount.toString(), at: this.d.now().toISOString() };
+    await setProposalStatus(this.d.db, p.id, "pending", { planned });
+    await this.sendReminder(p.id, customerId);
+  }
+
   private async planReminder(customerId: string, opts: { scheduled?: boolean } = {}, at?: Date): Promise<ReminderPlan> {
     // Una sola hora por ejecución: lo que estaba vivo al consultar a pey sigue vivo al decidir.
     const now = at ?? this.d.now();
