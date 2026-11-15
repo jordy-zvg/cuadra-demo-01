@@ -1,7 +1,8 @@
 // Service worker del portal (/login). Solo guarda la "cáscara" de la página para que abra rápido
 // y sin internet muestre el aviso de conexión. NUNCA guarda /api/*: saldos, cobros y pagos
 // siempre se piden en vivo al servidor.
-const CACHE = "cuadra-portal-v14";
+const CACHE = "cuadra-portal-v15";
+// v15: agregar cliente, campo de NIP real, encabezados de respuesta claros y textos sin "simulado".
 // v14: revisión de la entrada (accesibilidad, enlaces directos ?entrar y ?registro, títulos).
 // v13: entrada en dos paneles en laptop y sin textos de demo.
 // v12: textos de aprobación en lugar de "huella".

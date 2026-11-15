@@ -114,6 +114,8 @@ describe("canal WhatsApp", () => {
   it("con AUTO_COBRO_FIADO, confirmar el fiado avisa al cliente por WhatsApp y manda la solicitud CoDi", async () => {
     const f = await setup({ chargeOnFiado: true });
     await f.channel.handleInbound([f.text("Doña Lupe se llevó $185")], f.svc);
+    // La pregunta ya dice que, además de anotar, le sale el cobro a su celular.
+    expect(f.wa.sent.at(-1)!.body).toMatch(/Anoto \$185\.00 de fiado a Doña Lupe y le mando el cobro a su celular\. ¿Confirmas\?/);
     await f.channel.handleInbound([{ kind: "button", id: "b1", from: OWNER_WA, button_id: f.wa.sent.at(-1)!.buttons[0]!.id }], f.svc);
     const charges = await f.db.select().from(schema.charges).where(eq(schema.charges.customerId, "c_lupe"));
     expect(charges.filter((c) => c.channel === "codi_pn" && c.amountCents === 18500n)).toHaveLength(1);
@@ -123,6 +125,8 @@ describe("canal WhatsApp", () => {
   it("con AUTO_COBRO_FIADO y un cliente sin permiso de mensajes, el fiado queda y se explica por qué no se avisó", async () => {
     const f = await setup({ chargeOnFiado: true });
     await f.channel.handleInbound([f.text("Chela Gómez se llevó $50")], f.svc);
+    // Sin permiso de mensajes no se le puede cobrar al celular: la pregunta no lo promete.
+    expect(f.wa.sent.at(-1)!.body).toMatch(/^Anoto \$50\.00 de fiado a Chela Gómez\. ¿Confirmas\?$/);
     await f.channel.handleInbound([{ kind: "button", id: "b1", from: OWNER_WA, button_id: f.wa.sent.at(-1)!.buttons[0]!.id }], f.svc);
     expect(f.wa.sent.at(-1)!.body).toMatch(/No le avisé a su banco todavía/);
     expect(await ledgerBalance(f.db, M, "1200", "c_chela")).toBe(5000n);

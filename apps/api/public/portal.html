@@ -114,6 +114,8 @@ button:focus-visible,a:focus-visible,input:focus-visible{outline:3px solid var(-
 .opt .amt.zero .ico{width:1.1rem;height:1.1rem}
 .opt > .ico{width:1.4rem;height:1.4rem;color:var(--ink-2);margin-left:-.2rem}
 .opt--choice{min-height:5rem}
+.opt--add{border-style:dashed;border-color:var(--line-strong);background:var(--surface-plain);box-shadow:none}
+.opt--add .t{color:var(--heading)}
 .opt--choice .t{color:var(--heading);font-weight:700}
 .opt:disabled{background:transparent;box-shadow:none;border-style:dashed;border-color:var(--line-strong);cursor:default}
 .opt:disabled .av{background:var(--bg-soft);color:var(--ink-2)}
@@ -164,6 +166,9 @@ button:focus-visible,a:focus-visible,input:focus-visible{outline:3px solid var(-
 .field::placeholder{color:var(--ink-2);opacity:.85;font-weight:400;letter-spacing:0}
 .field:focus,.field:focus-visible{border-color:var(--primary);outline:3px solid var(--focus);outline-offset:2px}
 .dots{display:flex;justify-content:center;gap:1.1rem;margin:.6rem 0 1.2rem}
+.pin-field{display:block;width:min(100%,13rem);margin:.5rem auto 1.1rem;padding:.35rem .2rem .35rem .75rem;border:2px solid var(--line-strong);border-radius:var(--r-lg);background:var(--surface-plain);color:var(--ink);font-family:var(--font-head);font-size:2.1rem;font-weight:700;letter-spacing:.55em;text-align:center}
+.pin-field::placeholder{color:var(--ink-2);opacity:.45;letter-spacing:.55em}
+.pin-field:focus-visible,.pin-field:focus{outline:3px solid var(--focus);outline-offset:2px;border-color:var(--primary)}
 .dots span{width:1.3rem;height:1.3rem;border-radius:50%;border:3px solid var(--glyph);background:transparent}
 .dots span.on{background:var(--glyph)}
 .link{display:block;width:100%;min-height:2.8rem;margin-top:.4rem;background:transparent;border:0;color:var(--link);text-decoration:underline;text-underline-offset:3px;font-weight:600}
@@ -183,7 +188,7 @@ button,.opt,.keys button{touch-action:manipulation}
 @media (min-width:700px) and (max-width:959px){
   :root{--gut:max(24px, calc(50% - 320px))}
   header .wrap{max-width:none;padding-left:var(--gut);padding-right:var(--gut)}
-  .svc-grid > *{flex-basis:calc((100% - 1.6em) / 5)}
+  .svc-grid > *{flex-basis:calc((100% - 2em) / 6)}
 }
 /* Laptop y escritorio: el encabezado se abre a lo ancho y el Inicio pasa a dos columnas
    (cifra y acciones a la izquierda, avisos a la derecha). Las demás pantallas siguen siendo
@@ -234,6 +239,7 @@ button,.opt,.keys button{touch-action:manipulation}
   body.auth #app > .hero + .sheet{padding:1.2rem 0 0;background:transparent;border-radius:0}
   body.auth .secure,body.auth .legal{margin-left:0}
   body.auth .keys,body.auth .dots{max-width:20rem;margin-left:0;margin-right:0}
+  body.auth .pin-field{margin-left:0;width:min(100%,20rem)}
   body.auth .link{width:auto;text-align:left;color:var(--heading);padding-left:0;padding-right:0;min-height:2.4rem}
 }
 @media (min-width:700px) and (max-width:959px){body.auth{--gut:max(24px, calc(50% - 13rem))}}
@@ -486,6 +492,7 @@ SCREENS.home = async () => {
       <button class="big svc" type="button" data-go="fiado"><span class="ic-circle">${ic("edit_note")}</span>Anotar fiado</button>
       <button class="big svc" type="button" data-go="cobrar"><span class="ic-circle">${ic("payments")}</span>Cobrar</button>
       <button class="big alt svc" type="button" data-go="deben"><span class="ic-circle">${ic("groups")}</span>¿Quién me debe?</button>
+      <button class="big alt svc" type="button" data-go="nuevoCliente"><span class="ic-circle">${ic("person_add")}</span>Agregar cliente</button>
       <button class="big alt svc" type="button" data-go="pagar"><span class="ic-circle">${ic("local_shipping")}</span>Pagar a proveedor</button>
       <button class="big wide alt svc" type="button" data-go="voz"><span class="ic-circle">${ic("mic")}</span>Decirlo con mi voz</button>
       <button class="big wide alt svc" type="button" id="install" hidden><span class="ic-circle">${ic("install_mobile")}</span>Poner Cuadra en mi pantalla</button>
@@ -531,7 +538,7 @@ function renderAvisos() {
 }
 
 // Elegir cliente (para fiado o cobro)
-function customerList(onPick, { onlyDebtors = false } = {}) {
+function customerList(onPick, { onlyDebtors = false, add = false } = {}) {
   const cs = [...state.customers].sort((a, b) => (BigInt(b.owes) > BigInt(a.owes) ? 1 : BigInt(b.owes) < BigInt(a.owes) ? -1 : a.name.localeCompare(b.name)));
   const html = cs.map((c) => {
     const zero = BigInt(c.owes) <= 0n;
@@ -541,13 +548,20 @@ function customerList(onPick, { onlyDebtors = false } = {}) {
       <span class="t">${esc(c.name)}${zero ? `<span class="amt zero">${ic("check_circle")}Al corriente</span>` : ""}${dis ? "<small>No te debe nada</small>" : ""}</span>
       ${zero ? "" : `<span class="amt">${esc(mxn(c.owes))}</span>`}${dis ? "" : ic("chevron_right")}</button>`;
   }).join("");
-  setTimeout(() => app.querySelectorAll(".opt[data-id]").forEach((b) => (b.onclick = () => onPick(state.customers.find((c) => c.id === b.dataset.id)))));
-  return `<div class="list">${html || `<p class="empty">Todavía no tienes clientes.</p>`}</div>`;
+  setTimeout(() => {
+    app.querySelectorAll(".opt[data-id]").forEach((b) => (b.onclick = () => onPick(state.customers.find((c) => c.id === b.dataset.id))));
+    const n = app.querySelector("#add-cli"); if (n) n.onclick = () => go("nuevoCliente", {});
+  });
+  // "Agregar cliente": siempre al anotar fiado; en las listas de cobro, solo si todavía no hay clientes.
+  const addBtn = add || !cs.length
+    ? `<button class="opt opt--add" type="button" id="add-cli"><span class="av" aria-hidden="true">${ic("person_add")}</span><span class="t">Agregar cliente<small>Nombre y, si lo sabes, su celular</small></span>${ic("chevron_right")}</button>`
+    : "";
+  return `<div class="list">${html || `<p class="empty">Todavía no tienes clientes.</p>`}${addBtn}</div>`;
 }
 
 SCREENS.fiado = async () => {
   if (!(await needState())) return;
-  app.innerHTML = `<h1>¿Quién se lo llevó?</h1><p class="lead">Toca el nombre del cliente.</p>${customerList((c) => go("monto", { mode: "fiado", who: c }))}${navHtml()}`;
+  app.innerHTML = `<h1>¿Quién se lo llevó?</h1><p class="lead">Toca el nombre del cliente.</p>${customerList((c) => go("monto", { mode: "fiado", who: c }), { add: true })}${navHtml()}`;
 };
 
 SCREENS.cobrar = async () => {
@@ -583,6 +597,48 @@ SCREENS.pagar = async () => {
 };
 
 // Teclado de monto
+// Agregar cliente: nombre y, si lo sabe, su celular. Se manda como "Agrega a …" al mismo agente del
+// chat: Cuadra arma la propuesta y pide "¿Confirmas?" antes de darlo de alta (el código decide).
+SCREENS.nuevoCliente = (arg = {}) => {
+  app.innerHTML = `
+    <h1 id="q-cn">¿Cómo se llama tu cliente?</h1>
+    <p class="lead" id="h-cn">Como lo conoces, por ejemplo «Doña Lupe».</p>
+    <form id="f"><input class="field name" id="cn" type="text" autocomplete="off" autocapitalize="words" maxlength="60" placeholder="Ej. Doña Lupe" aria-labelledby="q-cn" aria-describedby="h-cn" value="${esc(arg.name || "")}">
+    ${arg.error ? `<div class="err" role="alert">${ic("error")}<span>${esc(arg.error)}</span></div>` : ""}
+    <button class="go btn btn--block" type="submit">Siguiente${ic("arrow_forward")}</button></form>${navHtml()}`;
+  setTimeout(() => $("#cn").focus(), 50);
+  $("#f").onsubmit = (e) => {
+    e.preventDefault();
+    // Sin comas ni números largos: así el nombre nunca se confunde con un celular.
+    const name = $("#cn").value.replace(/[,;]/g, " ").replace(/\d{6,}/g, "").replace(/\s+/g, " ").trim();
+    if (name.length < 2) { go("nuevoCliente", { ...arg, name, error: "Escribe el nombre de tu cliente." }, false); return; }
+    go("celCliente", { ...arg, name, error: null });
+  };
+};
+
+SCREENS.celCliente = (arg) => {
+  app.innerHTML = `
+    <h1 id="q-cc">¿Cuál es el celular de ${esc(arg.name)}?</h1>
+    <p class="lead" id="h-cc">Para mandarle sus cobros a su celular. Si no lo sabes, déjalo vacío: le podrás cobrar con QR.</p>
+    <form id="f"><input class="field" id="cc" type="tel" inputmode="numeric" autocomplete="off" maxlength="14" placeholder="Ej. 55 1234 5678" aria-labelledby="q-cc" aria-describedby="h-cc" value="${esc(arg.phone || "")}">
+    ${arg.error ? `<div class="err" role="alert">${ic("error")}<span>${esc(arg.error)}</span></div>` : ""}
+    <button class="go btn btn--block" type="submit">${ic("person_add")}Agregar a ${esc(arg.name)}</button></form>${navHtml()}`;
+  const cc = $("#cc");
+  setTimeout(() => cc.focus(), 50);
+  cc.oninput = () => {
+    const d = cc.value.replace(/\D/g, "");
+    if (d.length <= 10 && /^[\d\s-]*$/.test(cc.value)) cc.value = [d.slice(0, 2), d.slice(2, 6), d.slice(6, 10)].filter(Boolean).join(" ");
+  };
+  $("#f").onsubmit = (e) => {
+    e.preventDefault();
+    let d = cc.value.replace(/\D/g, "");
+    if (d.length === 13 && d.startsWith("521")) d = d.slice(3);
+    else if (d.length === 12 && d.startsWith("52")) d = d.slice(2);
+    if (d && !/^[1-9]\d{9}$/.test(d)) { go("celCliente", { ...arg, phone: cc.value, error: "Revisa el número: deben ser 10 números (o déjalo vacío)." }, false); return; }
+    send(`Agrega a ${arg.name}${d ? `, ${d}` : ""}`);
+  };
+};
+
 SCREENS.monto = (arg) => {
   const { mode, who } = arg;
   const name = mode === "fiado" ? who.name : who.alias;
@@ -685,20 +741,24 @@ async function act(a) {
       const replies = await waitReply(before, 12000);
       go("respuesta", { replies, done: true, cancelled: a.kind === "cancel" }, false);
     } catch (e) { if (!(e instanceof NeedLogin)) go("respuesta", { error: true }, false); }
+  } else if (a.kind === "say" && a.text) {
+    // Sugerencias de Cuadra ("¿Quién me debe?", "Cobrar a Beto"…). "Agrega a X" abre el alta para pedir su celular.
+    const alta = /^Agrega a (.+)$/.exec(a.text);
+    if (alta) go("celCliente", { name: alta[1].trim() }); else send(a.text);
   } else if (a.url) {
     window.open(a.url, "_blank", "noopener");
   }
 }
 
 function tone(body) {
-  if (/^(🛡️|⛔|❌)|No (envío|pago|te entendí)|no está en tu lista/.test(body)) return "bad";
-  if (/^(⚠️|🔐)|ya tiene un cobro abierto|necesito tu aprobación/.test(body)) return "warn";
-  if (/^(✅|💰|🎉)|Listo|Anotado|Recib/.test(body)) return "ok";
+  if (/^(🛡️|⛔|❌)|No (envío|pago|te entendí|mando)|no está en tu lista|aún no está habilitado/.test(body)) return "bad";
+  if (/^(⚠️|🔐|ℹ️)|ya tiene (un cobro|una solicitud|un QR)|necesito tu aprobación|No tengo a|Ya tengo a|no te debe nada|Solo te ayudo/.test(body)) return "warn";
+  if (/^(✅|💰|🎉|📒|👤|📨|🔁|🧾|🏦|📱)|Listo|Anotado|Recib/.test(body)) return "ok";
   return "";
 }
 function actionHtml(a, i, body = "") {
-  if (a.kind === "qr") return a.url ? `<img class="qr" alt="Código QR para pagar" src="${esc(a.url)}">` : `<div class="qr sim">Código QR<br>(de prueba)</div>`;
-  const label = a.kind === "confirm" ? ic("check_circle") + (/^Anoto/.test(body) ? "Sí, anotar" : /^Le mando/.test(body) ? "Sí, mandar el cobro" : "Sí, está bien")
+  if (a.kind === "qr") return a.url ? `<img class="qr" alt="Código QR para pagar" src="${esc(a.url)}">` : `<div class="qr sim">Código QR</div>`;
+  const label = a.kind === "confirm" ? ic("check_circle") + (/^Anoto .*le mando el cobro/.test(body) ? "Sí, anotar y cobrar" : /^Anoto/.test(body) ? "Sí, anotar" : /^Le mando/.test(body) ? "Sí, mandar el cobro" : /^Doy de alta/.test(body) ? "Sí, agregar" : "Sí, está bien")
     : a.kind === "cancel" ? ic("close") + "No, cancelar"
     : a.kind === "approve" ? ic("check_circle") + "Aprobar"
     : esc(a.label);
@@ -731,7 +791,9 @@ SCREENS.respuesta = ({ pending, replies, error, done, cancelled } = {}) => {
   const [kind, title] = asks ? ["ask", ic("help") + "¿Está bien así?"]
     : tones.includes("bad") ? ["bad", ic("block") + "No se pudo hacer"]
     : tones.includes("warn") ? ["warn", ic("warning") + "Revisa esto"]
-    : cancelled ? ["ask", ic("cancel") + "Cancelado"] : ["ok", ic("check_circle") + "Listo"];
+    : cancelled ? ["ask", ic("cancel") + "Cancelado"]
+    : tones.includes("ok") ? ["ok", ic("check_circle") + "Listo"]
+    : ["ask", ic("info") + "Cuadra te responde"];
   // Mientras haya una pregunta abierta, la única salida es Sí o No (así no quedan propuestas colgadas).
   app.innerHTML = `
     <h1 class="t-${kind}">${title}</h1>
@@ -783,25 +845,35 @@ async function authPost(url, body) {
   return { ok: r.ok, status: r.status, ...data };
 }
 
-/** Teclado de NIP: 4 puntos y números grandes. Llama a onDone(nip) al completar 4. */
-function pinPad(el, onDone) {
-  let v = "";
-  el.innerHTML = `<div class="dots" id="dots" role="img" aria-label="0 de 4 números"><span></span><span></span><span></span><span></span></div>
+/**
+ * NIP: un campo de verdad (se puede escribir, pegar o llenar con el administrador de contraseñas)
+ * y el teclado grande de siempre, como en el cajero. Llama a onDone(nip) al completar 4.
+ * En celulares el campo no toma el foco solo, para que no tape el teclado grande.
+ */
+function pinPad(el, onDone, { phone = "", nuevo = false } = {}) {
+  el.innerHTML = `<form class="pin" autocomplete="on" onsubmit="return false">
+    <input class="sr" type="text" name="username" autocomplete="username" value="${esc(phone)}" tabindex="-1" aria-hidden="true" readonly>
+    <label class="sr" for="pin">NIP de 4 números</label>
+    <input class="pin-field" id="pin" type="password" inputmode="numeric" pattern="[0-9]*" maxlength="4" placeholder="••••"
+      autocomplete="${nuevo ? "new-password" : "current-password"}" aria-describedby="pin-help">
+    <span class="sr" id="pin-help">Escribe tus 4 números o usa el teclado de abajo.</span>
     <div class="keys">${["1","2","3","4","5","6","7","8","9","","0","⌫"].map((k) => k
-      ? `<button type="button" data-k="${k}" aria-label="${k === "⌫" ? "Borrar" : k}">${k}</button>`
-      : `<span></span>`).join("")}</div>`;
-  const show = () => {
-    el.querySelectorAll("#dots span").forEach((d, i) => d.classList.toggle("on", i < v.length));
-    el.querySelector("#dots").setAttribute("aria-label", `${v.length} de 4 números`);
+      ? `<button type="button" data-k="${k}" aria-label="${k === "⌫" ? "Borrar" : k}">${k === "⌫" ? ic("backspace") : k}</button>`
+      : `<span></span>`).join("")}</div></form>`;
+  const f = el.querySelector("#pin");
+  let sent = false;
+  const check = () => {
+    f.value = f.value.replace(/\D/g, "").slice(0, 4);
+    if (f.value.length === 4 && !sent) { sent = true; const v = f.value; setTimeout(() => { f.value = ""; onDone(v); }, 150); }
   };
+  f.oninput = check;
   el.querySelector(".keys").onclick = (e) => {
-    const b = e.target.closest("[data-k]"); if (!b) return;
-    if (b.dataset.k === "⌫") v = v.slice(0, -1);
-    else if (v.length < 4) v += b.dataset.k;
-    show();
-    if (v.length === 4) { const done = v; setTimeout(() => { v = ""; show(); onDone(done); }, 150); }
+    const b = e.target.closest("[data-k]"); if (!b || sent) return;
+    if (b.dataset.k === "⌫") f.value = f.value.slice(0, -1);
+    else if (f.value.length < 4) f.value += b.dataset.k;
+    check();
   };
-  show();
+  if (matchMedia("(hover:hover) and (pointer:fine)").matches) setTimeout(() => f.focus(), 60);
 }
 
 // Verificar el celular: la persona manda por WhatsApp el código que le mostramos. El webhook lo
@@ -905,13 +977,13 @@ SCREENS.nip = ({ phone, name, error }) => {
     <button class="link" type="button" id="other">${name ? "No soy yo / usar otro celular" : "Cambiar de celular"}</button>
     <p class="secure">${ic("lock")}<span>Cuadra nunca te pide tu NIP por WhatsApp ni por llamada.</span></p>`;
   pinPad($("#pad"), async (pin) => {
-    app.querySelector("#pad").innerHTML = `<div class="wait"><div class="spin"></div>Revisando…</div>`;
+    app.querySelector("#pad").innerHTML = `<div class="wait" role="status"><div class="spin"></div>Revisando…</div>`;
     let r;
     try { r = await authPost("/api/auth/login", { phone, pin }); } catch { r = { ok: false, error: "No hay conexión. Revisa tu internet." }; }
     if (r.ok) return signedIn(r.account, phone);
     if (r.status === 404) return go("noEncontrado", { phone }, false);
     go("nip", { phone, name, error: r.error || "No se pudo entrar." }, false);
-  });
+  }, { phone });
   $("#forgot").onclick = () => go("olvide", null);
   $("#other").onclick = () => { store.set("cuadra.cuenta", ""); history_.length = 0; go("bienvenida", null, false); };
 };
@@ -992,7 +1064,7 @@ SCREENS.nipNuevo = (arg) => {
     if (r.field === "phone") return go("celular", { ...base, mode: "registro", error: r.error }, false);
     if (r.field === "shop_code") return go("codigo", { ...base, code: "", error: r.error }, false);
     go("nipNuevo", { ...base, error: r.error || "No se pudo crear la cuenta." }, false);
-  });
+  }, { phone: arg.phone, nuevo: true });
 };
 
 SCREENS.listo = ({ account, phone }) => {

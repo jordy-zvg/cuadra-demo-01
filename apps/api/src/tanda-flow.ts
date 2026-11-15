@@ -154,7 +154,7 @@ export class TandaFlow {
       return false;
     }
     const actions: MessageAction[] = this.d.gateway.simulated
-      ? [{ kind: "pay", label: `Aprobar ${formatMXN(t.contributionCents)} (banco simulado)`, url: `/api/sim/tanda/pay/${chargeId}` }]
+      ? [{ kind: "pay", label: `Aprobar ${formatMXN(t.contributionCents)}`, url: `/api/sim/tanda/pay/${chargeId}` }]
       : [];
     await this.d.say(
       memberThread(t.id, payer.position),

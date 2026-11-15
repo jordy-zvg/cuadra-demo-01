@@ -41,6 +41,7 @@ import {
   loadOutflowContext,
   newChargeReference,
   postEntries,
+  realPhone10,
   recordProviderPayment,
   saveProposal,
   schema,
@@ -416,11 +417,16 @@ export class CuadraService {
             },
             provenance,
           );
+          // Con AUTO_COBRO_FIADO, al confirmar también sale el cobro a su celular: se dice desde la pregunta
+          // (solo si el cliente puede recibirlo: aceptó mensajes y tiene un celular válido).
+          const alsoCharge = !intent.charge_now && this.d.chargeOnFiado === true && r.row.optIn && realPhone10(r.row.phone) !== null;
           await this.say(
             "comercio",
             intent.charge_now
               ? `Le cobro a ${r.row.name} ${amount}${intent.concept ? ` por ${intent.concept}` : ""}: lo anoto y le mando la solicitud CoDi a su banco. ¿Confirmas?`
-              : `Anoto ${amount} de fiado a ${r.row.name}. ¿Confirmas?`,
+              : alsoCharge
+                ? `Anoto ${amount} de fiado a ${r.row.name} y le mando el cobro a su celular. ¿Confirmas?`
+                : `Anoto ${amount} de fiado a ${r.row.name}. ¿Confirmas?`,
             confirmButtons(p.id),
             p.id,
           );
@@ -472,7 +478,7 @@ export class CuadraService {
     const amount = formatMXN(BigInt(intent.amount_cents));
     if (decision.decision === "allow") {
       await setProposalStatus(this.d.db, p.id, "queued", decision);
-      await this.say("comercio", `✅ Dentro de tu mandato. Enviando ${amount} a ${r.row.alias} por SPEI (cuenta simulada)…`, undefined, p.id);
+      await this.say("comercio", `✅ Dentro de tu permiso. Enviando ${amount} a ${r.row.alias} por SPEI…`, undefined, p.id);
       return;
     }
     const reasons = decision.rules_failed.map((f) => `${f.reason} (${f.rule_id})`);
@@ -1078,15 +1084,17 @@ export class CuadraService {
       ...(plan.resendOf ? { resend_of: plan.resendOf, resend_number: plan.resendNumber } : {}),
     });
     const sim = this.d.gateway.simulated;
-    const simPay: MessageAction[] = pushed && sim ? [{ kind: "pay", label: `Aprobar pago de ${amount} (banco simulado)`, url: `/api/sim/pay/${chargeId}` }] : [];
+    const simPay: MessageAction[] = pushed && sim ? [{ kind: "pay", label: `Pagar como ${name}`, url: `/api/sim/pay/${chargeId}` }] : [];
     const validity = `vigente ${PN_TTL_S / 60} min`;
 
     if (plan.mode === "resend") {
       // Reenvío: solo la solicitud CoDi; al cliente no le llega otro mensaje.
       await this.say(
         "comercio",
-        `🔁 Le reenvié a ${name} la solicitud CoDi de ${amount}${sim ? " (simulado)" : ""} (${validity}, reenvío ${plan.resendNumber} de ${REMINDER_MAX_RESENDS}). ` +
-          `Le llega como notificación de la app de su banco. Te aviso cuando pague.`,
+        sim
+          ? `🔁 Preparé otra vez el cobro de ${amount} para ${name} (${validity}, reenvío ${plan.resendNumber} de ${REMINDER_MAX_RESENDS}). Te aviso cuando pague.`
+          : `🔁 Le reenvié a ${name} la solicitud CoDi de ${amount} (${validity}, reenvío ${plan.resendNumber} de ${REMINDER_MAX_RESENDS}). ` +
+            `Le llega como notificación de la app de su banco. Te aviso cuando pague.`,
         simPay,
       );
       return "sent";
@@ -1106,7 +1114,7 @@ export class CuadraService {
       "comercio",
       pushed
         ? sim
-          ? `📨 Cobro de ${amount} enviado a ${name} por CoDi (simulado). Te aviso cuando pague.`
+          ? `📨 Preparé el cobro de ${amount} para ${name} (${validity}). Te aviso cuando pague.`
           : `📨 pey aceptó la solicitud CoDi de ${amount} para ${name} (${validity}). ` +
             `Le llega como notificación de la app de su banco si su celular está registrado en CoDi. Te aviso cuando pague.`
         : `⚠️ ${name} no tiene un celular válido para CoDi. Le dejé el recordatorio con la referencia ${reference}; si está en la tienda, cóbrale con “QR para ${name}”.`,
@@ -1174,7 +1182,7 @@ export class CuadraService {
       const actions: MessageAction[] = [
         { kind: "qr", label: "QR CoDi", ...(qr.image_png_base64 ? { url: `data:image/png;base64,${qr.image_png_base64}` } : {}) },
       ];
-      if (this.d.gateway.simulated) actions.push({ kind: "pay", label: `${c.name} escanea y paga (simulado)`, url: `/api/sim/pay/${chargeId}` });
+      if (this.d.gateway.simulated) actions.push({ kind: "pay", label: `Pagar como ${c.name}`, url: `/api/sim/pay/${chargeId}` });
       await this.say("comercio", `📱 Que ${c.name} escanee este QR con la app de su banco: ${amount}, ref. ${reference}. Vale ${QR_TTL_S / 60} min.`, actions);
     } catch (e) {
       // Un QR que no se le mostró a nadie no se puede pagar: se cancela.

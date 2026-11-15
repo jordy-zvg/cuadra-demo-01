@@ -66,7 +66,7 @@ async function main(): Promise<void> {
         const merchantId = q.merchantId;
         const say1 = (body: string) => say(merchantId, body);
         const r = await executeOutflow({ proposal_id: q.id }, deps(merchantId));
-        if (r.status === "sent") await say1("🏦 SPEI enviado (cuenta simulada). Esperando confirmación del banco…");
+        if (r.status === "sent") await say1("🏦 SPEI enviado. Esperando confirmación del banco…");
         else if (r.status === "failed") await say1(`⚠️ El pago no salió: ${r.reason}. Se reversó el asiento.`);
         else if (r.status === "rejected" || r.status === "awaiting_passkey") {
           const reasons = "rules_failed" in r.decision ? r.decision.rules_failed.map((f) => `${f.reason} (${f.rule_id})`) : [String(r.decision.integrity_error)];
@@ -79,7 +79,7 @@ async function main(): Promise<void> {
           if (out.status === "transfer_confirmed") {
             const [t] = await db.select().from(schema.transfers).where(eq(schema.transfers.id, out.transfer_id));
             const [p] = t ? await db.select().from(schema.payees).where(eq(schema.payees.id, t.payeeId)) : [];
-            if (t) await say(merchantId, `🧾 Recibo: ${formatMXN(t.amountCents)} pagados a ${p?.alias ?? "proveedor"} (SPEI simulado, ref. ${ref.slice(-8)}).`);
+            if (t) await say(merchantId, `🧾 Recibo: ${formatMXN(t.amountCents)} pagados a ${p?.alias ?? "proveedor"} (ref. ${ref.slice(-8)}).`);
           }
         }
       }
