@@ -55,7 +55,9 @@ WhatsApp y manda notas de voz:
 
 **https://api-production-3d19d021.up.railway.app** — landing pública con el botón **Entrar**
 (lleva a `/login`: registro o entrada con celular + NIP, o Llave CDMX en modo demo, y de ahí a la
-plataforma). El panel de la demo está en **`/panel`** (pide sesión).
+plataforma). Antes de ver la libreta, la persona **comprueba su celular**: Cuadra le manda un código de 6
+números por WhatsApp y lo escribe en el portal; si no le llega, ella manda desde su WhatsApp el código que ve
+en pantalla. El panel de la demo está en **`/panel`** (pide sesión).
 
 Panel (`/panel`): pantalla dividida: WhatsApp del comercio (chat web con el mismo agente) · teléfono del cliente · panel en vivo
 (balanza, conciliación, ledger, cobros CoDi, bloqueos del guard).
@@ -97,7 +99,8 @@ Con `PEY_API_KEY` y `PEY_WEBHOOK_SECRET` el cobro es real por CoDi (pruebas con 
 | Ledger, guard, mandatos, passkeys, conciliación | Reales (Postgres, WebAuthn) |
 | Tanda (aportaciones directas al integrante en turno) | **pey** (cuenta receptora por cobro); sin custodia |
 | Pagos salientes a proveedores | **Simulados**: pey solo cobra. Adapter de Fintoc (SPEI, JWS) listo, sin llaves |
-| WhatsApp | Chat web simulado (mismo agente, otro canal) |
+| WhatsApp | **Cloud API de Meta** (webhook firmado, plantillas) con el **número de prueba**: solo entrega a los celulares de su lista. El chat web del panel usa el mismo agente |
+| Verificación del celular | Código por WhatsApp (plantilla de autenticación `cuadra_codigo`, **pendiente de aprobación en Meta**); mientras tanto, el respaldo: la persona manda el código desde su WhatsApp |
 | Intérprete | Reglas deterministas + consenso; enchufable a LLM |
 
 ## Cómo se protege el dinero
@@ -120,11 +123,16 @@ Con `PEY_API_KEY` y `PEY_WEBHOOK_SECRET` el cobro es real por CoDi (pruebas con 
 - **Idempotencia en todo:** asientos, transferencias, abonos (transacción de pey), webhooks.
 - **Conciliación continua:** si el ledger no cuadra con la cuenta, se congelan las salidas.
 - **Freno de emergencia** global y por comercio.
+- **Acceso a la tienda:** el celular se comprueba por WhatsApp y vale solo para la sesión que lo comprobó
+  (las demás se cierran). El código se guarda (solo su hash) hasta que WhatsApp lo aceptó, vence en 10
+  minutos y admite 5 intentos; los topes van por celular (1 por minuto, 5 por hora, 10 al día, 10 códigos
+  equivocados en 24 h) con un candado de Postgres, y hay un tope diario para todo Cuadra. Detalle en
+  [docs/whatsapp.md](./docs/whatsapp.md).
 
 ## Arquitectura
 
 ```
-apps/api        Fastify: chat, webhooks de pey, passkeys, panel (public/)
+apps/api        Fastify: chat, webhooks de pey y WhatsApp, portal (login y verificación del celular), passkeys, panel (public/)
 apps/executor   Único con llaves de pago. Modo poll (demo) o BullMQ
 packages/core   Dominio puro: money, CLABE, ledger, proposals, guard, mandatos, recordatorios, conciliación
 packages/db     Postgres + Drizzle, migraciones SQL con los invariantes, repositorios
@@ -136,12 +144,17 @@ packages/agents    Intérprete (reglas) y consenso de extracciones
 
 ```bash
 pnpm install
-pnpm test          # ~200 tests: core, db (PGlite), adapters, executor, api
+pnpm test          # ~470 tests: core, db (PGlite), adapters, executor, api
 pnpm typecheck
+# Pruebas con Postgres real (migraciones y carreras entre dos procesos); CI levanta uno desechable:
+TEST_DATABASE_URL=postgres://...  pnpm test
+# Vista previa de las pantallas sin Postgres ni llaves (PREVIEW_VERIFICATION=whatsapp para la verificación):
+pnpm --filter @cuadra/api preview                  # http://localhost:4100
 DATABASE_URL=postgres://... pnpm start:api        # http://localhost:3000
 DATABASE_URL=postgres://... pnpm start:executor
 ```
 
 Variables: ver [.env.example](./.env.example). `UDI_VALOR` es el valor de la UDI de Banxico (serie SP68257);
-en producción está en 8.927827 (publicado para el 25-nov-2026) y se actualiza a mano. Secretos (`PEY_API_KEY`, `PEY_WEBHOOK_SECRET`) solo por
-variables de entorno; nunca en el repo.
+en producción está en 8.927827 (publicado para el 25-nov-2026) y se actualiza a mano. Secretos (`PEY_API_KEY`, `PEY_WEBHOOK_SECRET`, `WHATSAPP_*`) solo por
+variables de entorno; nunca en el repo. Las plantillas de WhatsApp (incluida `cuadra_codigo`) se dan de alta
+con `pnpm --filter @cuadra/api templates:create` (pide `WHATSAPP_TOKEN` y `WHATSAPP_WABA_ID`).
