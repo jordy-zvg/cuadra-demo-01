@@ -86,10 +86,17 @@ const busy = (on) => { const b = $("#go"); b.disabled = on; b.classList.toggle("
 fetch("/api/auth/me").then((r) => r.json()).then((d) => { $("#code-box").hidden = !d.needs_shop_code; window.cuadraNet?.ok(); })
   .catch(() => { window.cuadraNet?.fail(); window.cuadraNet?.fail(); });
 
-// Datos ficticios (CURP con formato válido, no corresponde a nadie).
+// Datos ficticios: una CURP al azar con formato válido (cada quien la suya; no corresponde a nadie).
+const pick = (s) => s[Math.floor(Math.random() * s.length)];
+const randomCurp = () => {
+  const L = "ABCDEFGHIJKLMNOPQRSTUVWXYZ", V = "AEIOU", C = "BCDFGHJKLMNPQRSTVWXZ", D = "0123456789";
+  const yy = String(50 + Math.floor(Math.random() * 50)), mm = String(1 + Math.floor(Math.random() * 12)).padStart(2, "0");
+  const dd = String(1 + Math.floor(Math.random() * 28)).padStart(2, "0");
+  return pick(L) + pick(V) + pick(L) + pick(L) + yy + mm + dd + "M" + "DF" + pick(C) + pick(C) + pick(C) + pick(L) + pick(D);
+};
 $("#sample").onclick = () => {
   $("#name").value = "María Pérez López";
-  $("#curp").value = "PELM550101MDFRPR09";
+  $("#curp").value = randomCurp();
   $("#phone").value = "55" + String(Math.floor(10000000 + Math.random() * 89999999));
 };
 $("#cancel").onclick = () => { location.href = "/login"; };

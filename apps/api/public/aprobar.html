@@ -102,7 +102,8 @@ async function api(url, body) {
 }
 
 async function ensurePasskey() {
-  const s = await api("/api/passkey/status");
+  // La passkey que cuenta es la del dueño de la tienda de esta propuesta.
+  const s = await api("/api/passkey/status" + (proposalId ? "?proposal=" + encodeURIComponent(proposalId) : ""));
   $("#register").hidden = s.registered;
   return s.registered;
 }

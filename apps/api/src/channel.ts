@@ -26,23 +26,32 @@ export interface OutboundChannel {
 
 const ten = realPhone10;
 
-/** Celular del destinatario de una conversación, tomado de la base (nunca del texto). */
+/**
+ * Celular del destinatario de una conversación, tomado de la base (nunca del texto). Solo se entrega
+ * por WhatsApp/SMS cuando la tienda probó que el celular de su dueño es suyo (le escribió a Cuadra):
+ * así nadie puede registrarse con el celular de otra persona y hacer que le lleguen mensajes, ni
+ * mandar mensajes a nombre de una tienda sin dueño verificado. A un cliente, además, solo con su
+ * permiso (opt-in); a un integrante, solo si la tanda es de esta tienda.
+ */
 export async function resolveThreadPhone(db: Db, merchantId: string, ownerId: string, thread: string): Promise<string | null> {
-  if (thread === "comercio") {
-    const [u] = await db.select({ phone: schema.merchantUsers.phone }).from(schema.merchantUsers).where(eq(schema.merchantUsers.id, ownerId));
-    return ten(u?.phone);
-  }
+  const [owner] = await db
+    .select({ phone: schema.merchantUsers.phone, verified: schema.merchantUsers.phoneVerified })
+    .from(schema.merchantUsers)
+    .where(and(eq(schema.merchantUsers.id, ownerId), eq(schema.merchantUsers.merchantId, merchantId)));
+  if (!owner?.verified) return null;
+  if (thread === "comercio") return ten(owner.phone);
   const tanda = /^tanda:([^:]+):(\d+)$/.exec(thread);
   if (tanda) {
     const [m] = await db
       .select({ phone: schema.tandaMembers.phone })
       .from(schema.tandaMembers)
-      .where(and(eq(schema.tandaMembers.tandaId, tanda[1]!), eq(schema.tandaMembers.position, Number(tanda[2]))));
+      .innerJoin(schema.tandas, eq(schema.tandas.id, schema.tandaMembers.tandaId))
+      .where(and(eq(schema.tandaMembers.tandaId, tanda[1]!), eq(schema.tandaMembers.position, Number(tanda[2])), eq(schema.tandas.merchantId, merchantId)));
     return ten(m?.phone);
   }
   const [c] = await db
-    .select({ phone: schema.customers.phone })
+    .select({ phone: schema.customers.phone, optIn: schema.customers.optIn })
     .from(schema.customers)
     .where(and(eq(schema.customers.id, thread), eq(schema.customers.merchantId, merchantId)));
-  return ten(c?.phone);
+  return c?.optIn ? ten(c.phone) : null;
 }

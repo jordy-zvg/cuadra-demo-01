@@ -25,12 +25,13 @@ export function parsePortalReset(raw: string | undefined): { entries: PortalRese
   return { entries, invalid };
 }
 
-export async function resetPortalAccounts(db: Db, merchantId: string, entries: PortalReset[]): Promise<Array<{ phone_last4: string; deleted: number }>> {
+/** El celular identifica a la persona en todo Cuadra, así que se busca en todas las tiendas. */
+export async function resetPortalAccounts(db: Db, entries: PortalReset[]): Promise<Array<{ phone_last4: string; deleted: number }>> {
   const out: Array<{ phone_last4: string; deleted: number }> = [];
   for (const e of entries) {
     const gone = await db
       .delete(schema.portalAccounts)
-      .where(and(eq(schema.portalAccounts.merchantId, merchantId), eq(schema.portalAccounts.phone, e.phone10), lt(schema.portalAccounts.createdAt, e.before)))
+      .where(and(eq(schema.portalAccounts.phone, e.phone10), lt(schema.portalAccounts.createdAt, e.before)))
       .returning({ id: schema.portalAccounts.id });
     out.push({ phone_last4: e.phone10.slice(-4), deleted: gone.length });
   }

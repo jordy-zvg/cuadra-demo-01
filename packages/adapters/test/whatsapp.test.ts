@@ -89,6 +89,14 @@ describe("WhatsAppClient", () => {
     });
   });
 
+  it("número de Cuadra para wa.me: solo dígitos; si Meta no lo da, null", async () => {
+    const f = fake(new Response(JSON.stringify({ display_phone_number: "+1 555-000-1111", id: "PN1" }), { status: 200 }));
+    expect(await new WhatsAppClient({ token: "t", phoneNumberId: "PN1", fetch: f.fn }).displayNumber()).toBe("15550001111");
+    expect(f.calls[0]!.url).toBe("https://graph.facebook.com/v25.0/PN1?fields=display_phone_number");
+    const bad = fake(new Response(JSON.stringify({ error: { message: "x" } }), { status: 400 }));
+    expect(await new WhatsAppClient({ token: "t", phoneNumberId: "PN1", fetch: bad.fn }).displayNumber()).toBeNull();
+  });
+
   it("botones: máximo 3 y títulos de 20 caracteres", async () => {
     const f = fake(ok());
     await new WhatsAppClient({ token: "t", phoneNumberId: "PN1", fetch: f.fn }).sendButtons("52", "¿Confirmo?", [

@@ -126,6 +126,11 @@ export class CuadraService {
   readonly tanda: TandaFlow;
   /** Cobros al mismo cliente (solicitudes CoDi y QR): de uno en uno. */
   private readonly chargeLocks = new Map<string, Promise<void>>();
+  /** Tienda a la que pertenece este servicio. */
+  get merchantId(): string {
+    return this.d.merchantId;
+  }
+
   constructor(private readonly d: ServiceDeps) {
     this.tanda = new TandaFlow({
       db: d.db,
@@ -586,7 +591,10 @@ export class CuadraService {
       await this.say("comercio", "Cancelado. No anoté nada.");
       return;
     }
-    const [p] = await this.d.db.select({ status: schema.proposals.status }).from(schema.proposals).where(eq(schema.proposals.id, proposalId));
+    const [p] = await this.d.db
+      .select({ status: schema.proposals.status })
+      .from(schema.proposals)
+      .where(and(eq(schema.proposals.id, proposalId), eq(schema.proposals.merchantId, this.d.merchantId)));
     if (p?.status === "executing") await this.say("comercio", "Ya no se puede cancelar: ese cobro se está enviando.");
   }
 
@@ -626,13 +634,6 @@ export class CuadraService {
   }
 
   /**
-   * Decide si hoy se le puede cobrar al cliente por su celular, y cómo (código, no LLM). Se evalúa
-   * al proponer (para no pedir "Confirmar" en vano) y otra vez al ejecutar.
-   * - "new": recordatorio normal (mensaje + solicitud CoDi), si pasa la política de recordatorios.
-   * - "resend": solo la solicitud CoDi, si lo único que lo impide es P03 y la anterior venció sin
-   *   pago (evaluateResend). Nunca hay dos solicitudes vivas: así no puede pagar doble.
-   */
-  /**
    * Cobro automático al anotar un fiado: el cliente recibe el aviso por WhatsApp y la solicitud CoDi
    * en su banco. Es el mismo camino que "Cóbrale a…" → Confirmar, con todas sus reglas (permiso de
    * mensajes, horario, espera entre recordatorios, un solo cobro abierto); si alguna lo impide, se le
@@ -651,6 +652,13 @@ export class CuadraService {
     await this.sendReminder(p.id, customerId);
   }
 
+  /**
+   * Decide si hoy se le puede cobrar al cliente por su celular, y cómo (código, no LLM). Se evalúa
+   * al proponer (para no pedir "Confirmar" en vano) y otra vez al ejecutar.
+   * - "new": recordatorio normal (mensaje + solicitud CoDi), si pasa la política de recordatorios.
+   * - "resend": solo la solicitud CoDi, si lo único que lo impide es P03 y la anterior venció sin
+   *   pago (evaluateResend). Nunca hay dos solicitudes vivas: así no puede pagar doble.
+   */
   private async planReminder(customerId: string, opts: { scheduled?: boolean } = {}, at?: Date): Promise<ReminderPlan> {
     // Una sola hora por ejecución: lo que estaba vivo al consultar a pey sigue vivo al decidir.
     const now = at ?? this.d.now();
