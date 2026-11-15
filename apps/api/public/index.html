@@ -3,99 +3,148 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>Cuadra</title>
+<title>Cuadra · consola</title>
+<meta name="theme-color" content="#0D3336" media="(prefers-color-scheme: light)">
+<meta name="theme-color" content="#0B2B2E" media="(prefers-color-scheme: dark)">
+<link rel="icon" href="/logo.svg" type="image/svg+xml">
+<link rel="stylesheet" href="/assets/cuadra.css">
 <style>
-:root{
-  --bg:#f4f1ea;--panel:#fffdf8;--ink:#1d1b16;--muted:#6b665c;--line:#e4ded2;
-  --brand:#0f6b4f;--brand-ink:#fff;--bubble-in:#ffffff;--bubble-out:#dcf3e6;
-  --warn:#9a5b00;--warn-bg:#fff3dc;--bad:#a1271b;--bad-bg:#fde8e5;--ok:#0f6b4f;--ok-bg:#e1f3ea;
-  --chip:#efe9dd;--mono:ui-monospace,SFMono-Regular,Menlo,monospace;
-}
-@media (prefers-color-scheme: dark){:root{
-  --bg:#141412;--panel:#1d1c19;--ink:#efeae0;--muted:#a39d91;--line:#33302a;
-  --brand:#3cc492;--brand-ink:#08130e;--bubble-in:#25231f;--bubble-out:#173a2c;
-  --warn:#f0b35a;--warn-bg:#3a2a10;--bad:#ff8a7d;--bad-bg:#3d1a16;--ok:#59d7a6;--ok-bg:#143326;--chip:#2a2824;
-}}
-*{box-sizing:border-box}
-body{margin:0;background:var(--bg);color:var(--ink);font:15px/1.4 system-ui,-apple-system,Segoe UI,Roboto,sans-serif}
-header{display:flex;align-items:center;gap:12px;padding:12px 16px;border-bottom:1px solid var(--line);background:var(--panel);position:sticky;top:0;z-index:2}
-header h1{font-size:18px;margin:0}
-.badge{font-size:12px;padding:3px 8px;border-radius:999px;background:var(--chip);color:var(--muted)}
-.badge.live{background:var(--ok-bg);color:var(--ok)}
-.badge.sim{background:var(--warn-bg);color:var(--warn)}
-main{display:grid;grid-template-columns:minmax(300px,1fr) minmax(280px,.8fr) minmax(360px,1.4fr);gap:12px;padding:12px;height:calc(100vh - 53px)}
-@media (max-width:1000px){main{grid-template-columns:1fr;height:auto}.col{height:auto!important;min-height:420px}}
-.col{background:var(--panel);border:1px solid var(--line);border-radius:14px;display:flex;flex-direction:column;overflow:hidden;height:100%}
-.col h2{font-size:13px;letter-spacing:.04em;text-transform:uppercase;color:var(--muted);margin:0;padding:10px 14px;border-bottom:1px solid var(--line);display:flex;justify-content:space-between;align-items:center;gap:8px}
-.thread{flex:1;overflow:auto;padding:12px;display:flex;flex-direction:column;gap:8px}
-.msg{max-width:88%;padding:8px 10px;border-radius:12px;white-space:pre-wrap;word-wrap:break-word;box-shadow:0 1px 0 rgba(0,0,0,.05)}
-.msg.in{align-self:flex-end;background:var(--bubble-out)}
-.msg.out{align-self:flex-start;background:var(--bubble-in);border:1px solid var(--line)}
-.msg .acts{display:flex;gap:6px;margin-top:8px;flex-wrap:wrap}
-button,.btn{font:inherit;border:0;border-radius:10px;padding:7px 12px;cursor:pointer;background:var(--brand);color:var(--brand-ink);text-decoration:none;display:inline-block}
-button.ghost{background:var(--chip);color:var(--ink)}
+/* Consola de demostración: chat del comercio, teléfono del cliente y panel en vivo.
+   Misma familia que el portal (banda verde azulada, hoja blanca, tarjetas menta), en versión densa. */
+[hidden]{display:none!important}
+html{background:var(--bg)}
+body{font-size:15px;line-height:1.4;display:flex;flex-direction:column;min-height:100vh}
+@media (min-width:1001px){body{height:100vh;overflow:hidden}}
+.top{display:flex;align-items:center;gap:12px;padding:12px 18px 30px;position:relative}
+.top .logo{width:34px;height:34px;flex:none}
+.top h1{font-size:21px;font-weight:600;margin:0;color:#fff;letter-spacing:-.01em}
+.top #merchant{color:var(--on-brand-accent);font-weight:600;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.links{margin-left:auto;display:flex;gap:8px;flex-wrap:wrap}
+.links .btn{font-size:13.5px;padding:7px 15px 7px 12px;gap:7px}
+.links .btn .ico{width:18px;height:18px}
+.badge{display:inline-flex;align-items:center;font-size:12px;font-weight:600;padding:3px 10px;border-radius:999px;background:var(--glyph-bg);color:var(--heading);white-space:nowrap;letter-spacing:.01em}
+.top .badge{background:var(--c-mint-300);color:var(--c-deep)}
+.top .badge.sim{background:#FFF3D6;color:#7A4A00}
+.top .badge.live{background:var(--c-mint-300);color:var(--c-deep)}
+main{flex:1;min-height:0;display:grid;grid-template-columns:minmax(300px,1fr) minmax(280px,.8fr) minmax(360px,1.4fr);grid-template-rows:minmax(0,1fr);gap:14px;padding:16px;margin-top:-18px;position:relative;background:var(--bg);border-radius:22px 22px 0 0}
+.col{background:var(--surface);border:1px solid var(--card-line);border-radius:var(--r-lg);box-shadow:var(--shadow-1);display:flex;flex-direction:column;overflow:hidden;min-height:0}
+.col h2{font-size:15px;font-weight:600;color:var(--accent);margin:0;padding:10px 12px;border-bottom:1px solid var(--card-line);display:flex;justify-content:space-between;align-items:center;gap:8px;min-height:52px;background:var(--surface-plain)}
+.col h2 .ttl{display:flex;align-items:center;gap:9px;min-width:0;white-space:nowrap}
+.col h2 .tt{min-width:0;overflow:hidden;text-overflow:ellipsis}
+.col h2 .ic-circle{font-size:12.5px}
+.col h2 select{min-width:0;flex:0 1 auto;field-sizing:content}
+.col h2 .muted{font-family:var(--font-body);font-size:13px;font-weight:600;font-variant-numeric:tabular-nums}
+.thread{flex:1;overflow:auto;padding:14px;display:flex;flex-direction:column;gap:8px;background-image:var(--pattern-ink);background-size:72px 72px}
+.msg{max-width:88%;padding:8px 11px;border-radius:14px;white-space:pre-wrap;word-wrap:break-word;box-shadow:var(--shadow-1);font-size:14.5px}
+.msg.in{align-self:flex-end;background:var(--bubble-me);border-bottom-right-radius:4px}
+.msg.out{align-self:flex-start;background:var(--surface-plain);border:1px solid var(--card-line);border-bottom-left-radius:4px}
+.msg .acts{display:flex;gap:6px;margin-top:9px;flex-wrap:wrap}
+button{font:inherit;cursor:pointer;border:0;border-radius:999px;padding:7px 15px;background:var(--primary);color:var(--primary-ink);font-weight:700;line-height:1.25}
+button:hover{background:var(--primary-press)}
+button.ghost{background:var(--surface-plain);color:var(--ink);border:1px solid var(--chip-line);font-weight:600;padding:6px 14px}
+button.ghost:hover{background:var(--surface);border-color:var(--primary)}
 button:disabled{opacity:.5;cursor:default}
-form{display:flex;gap:8px;padding:10px;border-top:1px solid var(--line)}
-input[type=text]{flex:1;min-width:0;font:inherit;padding:9px 11px;border-radius:10px;border:1px solid var(--line);background:var(--bg);color:var(--ink)}
-.chips{display:flex;gap:6px;flex-wrap:wrap;padding:8px 10px 0}
-.chip{font-size:12.5px;background:var(--chip);color:var(--ink);padding:5px 9px;border-radius:999px;cursor:pointer;border:0}
-.toggle{display:flex;align-items:center;gap:6px;font-size:12.5px;color:var(--muted);padding:6px 10px 0}
-select{font:inherit;background:var(--bg);color:var(--ink);border:1px solid var(--line);border-radius:8px;padding:3px 6px}
-.panel{flex:1;overflow:auto;padding:12px;display:flex;flex-direction:column;gap:12px}
-.kpis{display:grid;grid-template-columns:repeat(auto-fit,minmax(130px,1fr));gap:8px}
-.kpi{border:1px solid var(--line);border-radius:12px;padding:10px}
-.kpi .v{font-size:20px;font-weight:650;font-variant-numeric:tabular-nums}
-.kpi .l{font-size:12px;color:var(--muted)}
+.composer{border-top:1px solid var(--card-line);background:var(--surface-plain)}
+form{display:flex;gap:8px;padding:10px 12px 12px;align-items:center}
+input[type=text]{flex:1;min-width:0;font:inherit;padding:10px 14px;border-radius:12px;border:1.5px solid var(--line-strong);background:var(--surface-plain);color:var(--ink)}
+input[type=text]::placeholder{color:var(--ink-2);opacity:.85}
+input[type=text]:focus{border-color:var(--primary)}
+.chips{display:flex;gap:6px;flex-wrap:wrap;padding:10px 12px 0}
+.chip{font-size:12.5px;font-weight:500;padding:5px 10px;border-radius:var(--r-sm);background:var(--surface-plain);color:var(--ink);border:1px solid var(--chip-line)}
+.chip:hover{background:var(--surface);border-color:var(--primary)}
+.toggle{display:flex;align-items:center;gap:8px;font-size:13px;color:var(--ink-2);padding:8px 12px 0}
+.toggle input{width:17px;height:17px;accent-color:var(--select);margin:0}
+select{font:inherit;font-size:13px;font-weight:600;background:var(--surface-plain);color:var(--ink);border:1px solid var(--chip-line);border-radius:10px;padding:5px 4px;max-width:46%}
+.mic{flex:none;width:42px;height:42px;padding:0;border-radius:50%;display:inline-flex;align-items:center;justify-content:center;background:var(--primary);color:var(--primary-ink)}
+.mic .ico{width:22px;height:22px}
+.mic.on{background:#A3261D;color:#fff}
+.panel{flex:1;overflow:auto;padding:14px;display:flex;flex-direction:column;gap:16px}
+.kpis{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:10px}
+.kpi{display:grid;grid-template-columns:auto 1fr;align-items:center;gap:6px 9px;background:var(--surface-plain);border:1px solid var(--card-line);border-radius:14px;padding:10px 12px;box-shadow:var(--shadow-1)}
+.kpi .ic-circle{grid-row:1;grid-column:1;width:28px;height:28px}
+.kpi .l{grid-row:1;grid-column:2;font-size:12.5px;color:var(--ink-2);font-weight:600}
+.kpi .v{grid-row:2;grid-column:1 / -1;font-family:var(--font-head);font-size:18px;font-weight:700;font-variant-numeric:tabular-nums;line-height:1.2;color:var(--ink)}
 .kpi.ok .v{color:var(--ok)} .kpi.bad .v{color:var(--bad)}
-table{width:100%;border-collapse:collapse;font-size:13px;font-variant-numeric:tabular-nums}
-th,td{text-align:left;padding:5px 6px;border-bottom:1px solid var(--line);vertical-align:top}
-th{color:var(--muted);font-weight:500;font-size:12px}
-td.n{text-align:right;font-family:var(--mono)}
-.sec h3{font-size:13px;margin:0 0 6px;color:var(--muted);font-weight:600}
-.entry{border:1px solid var(--line);border-radius:10px;padding:6px 8px;margin-bottom:6px;font-size:12.5px}
-.entry .k{font-weight:600}
-.entry .ln{display:grid;grid-template-columns:3.5em 1fr 6em 6em;gap:6px;font-family:var(--mono)}
-.block{background:var(--bad-bg);color:var(--bad);border-radius:10px;padding:6px 8px;font-size:12.5px;margin-bottom:6px}
-.muted{color:var(--muted)}
-.qr{width:180px;height:180px;border-radius:10px;background:#fff;padding:6px;display:block}
-.qr.sim{display:flex;align-items:center;justify-content:center;text-align:center;color:#1d1b16;border:2px dashed #999;font-weight:600}
-.impact{background:var(--ok-bg);color:var(--ok);border-radius:12px;padding:10px 12px;font-size:13.5px}
-.impact b{font-size:16px}
-.mic{background:var(--chip);color:var(--ink);padding:7px 10px}
-.mic.on{background:var(--bad-bg);color:var(--bad)}
+.kpi.ok .ic-circle{background:var(--ok-bg);color:var(--ok)} .kpi.bad .ic-circle{background:var(--bad-bg);color:var(--bad)}
+.impact{background:var(--glyph-bg);color:var(--ink);border-radius:var(--r-lg);padding:12px 14px;font-size:14px;line-height:1.55}
+.impact b{font-family:var(--font-head);font-size:17px;color:var(--hero-ink);font-variant-numeric:tabular-nums}
+.sec h3{font-size:15px;font-weight:600;color:var(--accent);margin:0 0 7px}
+.sec h3 .muted{font-family:var(--font-body);font-size:13px;font-weight:500}
+table{width:100%;border-collapse:separate;border-spacing:0;font-size:13.5px;font-variant-numeric:tabular-nums;background:var(--surface-plain);border:1px solid var(--card-line);border-radius:12px;overflow:hidden}
+th,td{text-align:left;padding:6px 10px;border-bottom:1px solid var(--line);vertical-align:middle}
+tr:last-child > td{border-bottom:0}
+th{color:var(--ink-2);font-weight:600;font-size:12px;background:var(--bg-soft)}
+td.n,th.n{text-align:right;white-space:nowrap}
+.st{font-size:12.5px}
+.entry{background:var(--surface-plain);border:1px solid var(--card-line);border-radius:12px;padding:8px 10px;margin-bottom:8px;font-size:13px}
+.entry .k{font-weight:700;color:var(--heading)}
+.entry .k .muted{font-weight:400}
+.entry .ln{display:grid;grid-template-columns:3.2em 1fr 7.5em 7.5em;gap:6px;font-variant-numeric:tabular-nums;margin-top:2px}
+.entry .ln span:first-child{font-family:var(--font-mono);font-size:12.5px;color:var(--ink-2)}
+.entry .ln span:nth-child(3),.entry .ln span:nth-child(4){text-align:right}
+.block{display:flex;gap:9px;align-items:flex-start;background:var(--bad-bg);color:var(--bad);border-radius:12px;padding:8px 11px;font-size:13px;margin-bottom:6px}
+.block > .ico{width:18px;height:18px;margin-top:1px}
+.muted{color:var(--ink-2)}
+.qr{width:180px;height:180px;border-radius:12px;background:#fff;padding:6px;display:block}
+.qr.sim{display:flex;align-items:center;justify-content:center;text-align:center;color:#0A1E18;border:2px dashed #6F8A8B;font-weight:600}
 .flash{animation:fl 1.2s ease-out}
 @keyframes fl{from{background:var(--ok-bg)}to{background:transparent}}
+@media (prefers-reduced-motion: reduce){.flash{animation:none}}
+/* Celular y pantallas angostas (al final para ganarle a las reglas base) */
+@media (max-width:600px){
+  main{padding:12px 10px}
+  .panel{padding:12px 10px}
+  /* Asiento en dos renglones: cuenta y nombre arriba, debe y haber abajo */
+  .entry .ln{grid-template-columns:2.8em minmax(0,1fr) minmax(0,1fr);row-gap:0;margin-top:5px}
+  .entry .ln span:nth-child(2){grid-column:2 / -1}
+  .entry .ln span:nth-child(3){grid-column:2}
+  .entry .ln span:nth-child(4){grid-column:3}
+  .kpi .v{font-size:16px}
+}
+@media (max-width:1000px){
+  main{grid-template-columns:1fr;grid-template-rows:none}
+  .col{min-height:420px}
+  .thread{max-height:70vh}
+  .top{flex-wrap:wrap;padding-bottom:28px}
+  .col h2 .ttl{white-space:normal}
+  .links{margin-left:0;width:100%}
+}
 </style>
 </head>
 <body>
-<header>
+<header class="top band">
+  <img class="logo" src="/logo.svg" alt="">
   <h1>Cuadra</h1>
   <span id="mode" class="badge">…</span>
-  <span id="merchant" class="muted"></span>
-  <a class="btn" href="/login" target="_blank" style="margin-left:auto;font-size:13px;padding:6px 10px">📱 Portal sencillo</a>
-  <a class="btn" href="/tanda" target="_blank" style="font-size:13px;padding:6px 10px">🤝 Crear tanda</a>
-  <a class="btn" href="/mandato" target="_blank" style="font-size:13px;padding:6px 10px">✍️ Firmar mandato</a>
+  <span id="merchant"></span>
+  <nav class="links" aria-label="Otras pantallas">
+    <a class="btn btn--on-band" href="/login" target="_blank"><svg class="ico" aria-hidden="true"><use href="/assets/icons.svg#i-phone_iphone"/></svg>Portal sencillo</a>
+    <a class="btn btn--on-band" href="/tanda" target="_blank"><svg class="ico" aria-hidden="true"><use href="/assets/icons.svg#i-diversity_3"/></svg>Crear tanda</a>
+    <a class="btn btn--on-band" href="/mandato" target="_blank"><svg class="ico" aria-hidden="true"><use href="/assets/icons.svg#i-edit_note"/></svg>Firmar mandato</a>
+  </nav>
 </header>
 <main>
   <section class="col">
-    <h2>WhatsApp del comercio <span class="badge">chat web simulado</span></h2>
+    <h2><span class="ttl"><span class="ic-circle"><svg class="ico" aria-hidden="true"><use href="/assets/icons.svg#i-forum"/></svg></span><span class="tt">WhatsApp del comercio</span></span> <span class="badge">chat web simulado</span></h2>
     <div id="t-comercio" class="thread"></div>
+    <div class="composer">
     <div class="chips" id="chips"></div>
     <label class="toggle"><input type="checkbox" id="third"> Mensaje reenviado / foto de terceros</label>
-    <form id="f"><button type="button" class="mic" id="mic" title="Nota de voz (español de México)">🎙️</button><input id="txt" type="text" autocomplete="off" placeholder="Ej. Doña Lupe se llevó $185"><button>Enviar</button></form>
+    <form id="f"><button type="button" class="mic" id="mic" title="Nota de voz (español de México)" aria-label="Nota de voz"><svg class="ico" aria-hidden="true"><use href="/assets/icons.svg#i-mic"/></svg></button><input id="txt" type="text" autocomplete="off" placeholder="Ej. Doña Lupe se llevó $185" aria-label="Mensaje del comercio"><button>Enviar</button></form>
+    </div>
   </section>
   <section class="col">
-    <h2>Teléfono del cliente <select id="who"></select></h2>
+    <h2><span class="ttl"><span class="ic-circle"><svg class="ico" aria-hidden="true"><use href="/assets/icons.svg#i-smartphone"/></svg></span><span class="tt">Teléfono del cliente</span></span> <select id="who" aria-label="Cliente"></select></h2>
     <div id="t-cliente" class="thread"></div>
   </section>
   <section class="col">
-    <h2>Panel en vivo <span class="muted" id="upd"></span></h2>
+    <h2><span class="ttl"><span class="ic-circle"><svg class="ico" aria-hidden="true"><use href="/assets/icons.svg#i-insights"/></svg></span><span class="tt">Panel en vivo</span></span> <span class="muted" id="upd"></span></h2>
     <div class="panel">
       <div class="kpis">
-        <div class="kpi" id="k-bal"><div class="v">—</div><div class="l">Balanza Σdebe = Σhaber</div></div>
-        <div class="kpi" id="k-rec"><div class="v">—</div><div class="l">Conciliación</div></div>
-        <div class="kpi" id="k-blk"><div class="v">—</div><div class="l">Bloqueos del guard</div></div>
-        <div class="kpi" id="k-n2"><div class="v">—</div><div class="l">Tope Nivel 2 Bis (mes)</div></div>
+        <div class="kpi" id="k-bal"><span class="ic-circle"><svg class="ico" aria-hidden="true"><use href="/assets/icons.svg#i-balance"/></svg></span><div class="v">—</div><div class="l">Balanza Σdebe = Σhaber</div></div>
+        <div class="kpi" id="k-rec"><span class="ic-circle"><svg class="ico" aria-hidden="true"><use href="/assets/icons.svg#i-sync"/></svg></span><div class="v">—</div><div class="l">Conciliación</div></div>
+        <div class="kpi" id="k-blk"><span class="ic-circle"><svg class="ico" aria-hidden="true"><use href="/assets/icons.svg#i-shield"/></svg></span><div class="v">—</div><div class="l">Bloqueos del guard</div></div>
+        <div class="kpi" id="k-n2"><span class="ic-circle"><svg class="ico" aria-hidden="true"><use href="/assets/icons.svg#i-account_balance_wallet"/></svg></span><div class="v">—</div><div class="l">Tope Nivel 2 Bis (mes)</div></div>
       </div>
       <div class="sec impact" id="impact"></div>
       <div class="sec" id="tanda-sec" hidden><h3>Tanda sin pozo <span class="muted" id="tanda-sub"></span></h3><table id="tanda"></table><div id="tanda-acts"></div></div>
@@ -112,6 +161,9 @@ const $ = (s) => document.querySelector(s);
 const mxn = (c) => { const n = BigInt(c); const neg = n < 0n; const a = neg ? -n : n;
   return (neg ? "-" : "") + "$" + (a / 100n).toString().replace(/\B(?=(\d{3})+(?!\d))/g, ",") + "." + (a % 100n).toString().padStart(2, "0"); };
 const esc = (s) => String(s ?? "").replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c]));
+// Presentación: ícono del sprite y estado con ícono + texto (nunca solo color).
+const ic = (n) => `<svg class="ico" aria-hidden="true"><use href="/assets/icons.svg#i-${n}"/></svg>`;
+const pill = (tone, icon, text) => `<span class="st${tone ? " st--" + tone : ""}">${ic(icon)}${text}</span>`;
 const NAMES = { "1100":"Cuenta operativa","1200":"CxC clientes","1300":"SPEI por identificar","2100":"Saldo a favor","2200":"Pozo de tanda","2400":"Pagos en tránsito","4100":"Ventas a crédito","5100":"Compras a proveedores","5900":"Diferencias" };
 const SUGG = ["Doña Lupe se llevó $185", "Cóbrale a Doña Lupe", "QR para Doña Lupe", "¿Quién me debe?", "Paga al de los refrescos $1,200", "¿Cuánto me queda del tope?", "Cobra la tanda", "¿Cómo va la tanda?", "Págale ya a la cuenta 012180015826225713 $5,000"];
 let last = { comercio: -1, cliente: -1 }, customers = [];
@@ -208,7 +260,7 @@ function render(s) {
   $("#tanda-sec").hidden = !td;
   if (td) {
     $("#tanda-sub").textContent = `· ${td.name} · ronda ${td.round}/${td.members_count} · ${mxn(td.contribution)} c/u · pozo ${mxn(td.pot)}`;
-    const icon = { "recibe": "🎉 recibe", "pagó": "✅ pagó", "falta": "⏳ falta", "esperando": "—" };
+    const icon = { "recibe": pill("", "savings", "recibe"), "pagó": pill("ok", "check_circle", "pagó"), "falta": pill("warn", "schedule", "falta"), "esperando": "—" };
     $("#tanda").innerHTML = `<tr><th>#</th><th>Integrante</th><th>Cuenta</th><th>Ronda</th></tr>` + td.members.map((m) =>
       `<tr><td>${m.position}</td><td>${esc(m.name)}</td><td>••••${esc(m.clabe_last4)} ${m.account === "ACTIVE" ? "" : `<span class="muted">(${esc(m.account)})</span>`}</td><td>${icon[m.state] || esc(m.state)}</td></tr>`).join("");
     $("#tanda-acts").innerHTML = s.simulated && td.members.some((m) => m.state === "falta")
@@ -223,8 +275,8 @@ function render(s) {
     `<tr><td>${k} ${NAMES[k] || ""}</td><td class="n">${mxn(v)}</td></tr>`).join("") || `<tr><td class="muted">Sin movimientos</td></tr>`;
   const cname = (id) => (customers.find((c) => c.id === id) || {}).name || id;
   $("#chg").innerHTML = `<tr><th>Cliente</th><th>Ref.</th><th class="n">Monto</th><th>Estado</th></tr>` +
-    s.charges.map((c) => `<tr><td>${esc(cname(c.customer_id))}</td><td>${esc(c.reference)}</td><td class="n">${c.amount ? mxn(c.amount) : "—"}</td><td>${({ paid: "✅ pagado", open: "⏳ abierto", expired: "⌛ vencido", cancelled: "✖ no salió" })[c.status] ?? esc(c.status)}${c.resend_of ? " · reenvío" : ""}</td></tr>`).join("");
-  $("#blk").innerHTML = s.blocks.recent.map((b) => `<div class="block"><b>${esc(b.kind)}</b> · ${esc(b.provenance)}<br>${b.reasons.map(esc).join("<br>")}</div>`).join("") || `<p class="muted">Ninguno todavía.</p>`;
+    s.charges.map((c) => `<tr><td>${esc(cname(c.customer_id))}</td><td>${esc(c.reference)}</td><td class="n">${c.amount ? mxn(c.amount) : "—"}</td><td>${({ paid: pill("ok", "check_circle", "pagado"), open: pill("", "schedule", "abierto"), expired: pill("", "hourglass_empty", "vencido"), cancelled: pill("bad", "cancel", "no salió") })[c.status] ?? esc(c.status)}${c.resend_of ? " · reenvío" : ""}</td></tr>`).join("");
+  $("#blk").innerHTML = s.blocks.recent.map((b) => `<div class="block">${ic("shield")}<div><b>${esc(b.kind)}</b> · ${esc(b.provenance)}<br>${b.reasons.map(esc).join("<br>")}</div></div>`).join("") || `<p class="muted">Ninguno todavía.</p>`;
   $("#led").innerHTML = s.entries.map((e) => `<div class="entry"><div class="k">${esc(e.kind)} <span class="muted">· ${esc(e.memo)}</span></div>${
     e.lines.map((l) => `<div class="ln"><span>${l.account}</span><span class="muted">${esc(NAMES[l.account] || "")}${l.sub ? " · " + esc(cname(l.sub)) : ""}</span><span>${l.debit !== "0" ? "D " + mxn(l.debit) : ""}</span><span>${l.credit !== "0" ? "H " + mxn(l.credit) : ""}</span></div>`).join("")}</div>`).join("");
   $("#upd").textContent = new Date().toLocaleTimeString("es-MX");
