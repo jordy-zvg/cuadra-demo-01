@@ -340,19 +340,29 @@ export class CuadraService {
         await this.say("comercio", await this.tanda.describe());
         return;
       case "create_customer": {
-        const name = displayName(intent.customer_name);
-        const r = await this.resolve(await this.customers(), name);
-        if (r.ok) {
-          await this.say("comercio", `Ya tengo a ${r.row.name} en tus clientes.`);
+        // El nombre se guarda como lo escribió (sin quitar "La" de "La Güera").
+        const name = asWritten(intent.customer_name);
+        if (!normalizeName(name)) {
+          await this.say("comercio", `Escribe el nombre de tu cliente, no solo «${name}».`);
           return;
         }
+        // Duplicado solo si es el mismo nombre; si hay uno parecido, se avisa en la pregunta.
+        const all = await this.customers();
+        const same = all.find((c) => normalizeName(c.label) === normalizeName(name));
+        if (same) {
+          await this.say("comercio", `Ya tengo a ${same.name} en tus clientes.`);
+          return;
+        }
+        const similar = await this.resolve(all, name);
         const p = await this.newProposal(
           { type: "CreateCustomer", name, ...(intent.phone ? { phone: `+52${intent.phone}` } : {}) },
           provenance,
         );
         await this.say(
           "comercio",
-          `Doy de alta a ${name}${intent.phone ? ` con celular ${intent.phone}` : " (sin celular: solo podrás cobrarle con QR)"}. ¿Confirmas?`,
+          `Doy de alta a ${name}${intent.phone ? ` con celular ${phoneDisplay(intent.phone)}` : " (sin celular: solo podrás cobrarle con QR)"}.` +
+            (similar.ok ? ` Ya tienes a «${similar.row.name}»: si es la misma persona, toca «No».` : "") +
+            " ¿Confirmas?",
           confirmButtons(p.id),
           p.id,
         );
@@ -419,7 +429,9 @@ export class CuadraService {
           );
           // Con AUTO_COBRO_FIADO, al confirmar también sale el cobro a su celular: se dice desde la pregunta
           // (solo si el cliente puede recibirlo: aceptó mensajes y tiene un celular válido).
-          const alsoCharge = !intent.charge_now && this.d.chargeOnFiado === true && r.row.optIn && realPhone10(r.row.phone) !== null;
+          const alsoCharge =
+            !intent.charge_now && this.d.chargeOnFiado === true && realPhone10(r.row.phone) !== null &&
+            (await this.planReminder(r.row.id, { extraCents: BigInt(intent.amount_cents) })).ok;
           await this.say(
             "comercio",
             intent.charge_now
@@ -528,7 +540,10 @@ export class CuadraService {
       }
       return;
     }
-    if (p.status !== "pending") return;
+    if (p.status !== "pending") {
+      await this.say("comercio", alreadyAnswered(p.status));
+      return;
+    }
     const parsed = Proposal.parse(p.payload);
     if (parsed.type === "AddCredit") {
       await postEntries(this.d.db, [
@@ -548,9 +563,10 @@ export class CuadraService {
       return;
     }
     if (parsed.type === "CreateCustomer") {
-      const existing = await this.resolve(await this.customers(), parsed.name);
-      const customerId = existing.ok ? existing.row.id : id("c");
-      if (!existing.ok) {
+      // Solo el mismo nombre cuenta como el mismo cliente (nunca uno parecido: el fiado iría a otra persona).
+      const existing = (await this.customers()).find((c) => normalizeName(c.label) === normalizeName(parsed.name));
+      const customerId = existing ? existing.id : id("c");
+      if (!existing) {
         await this.d.db.insert(schema.customers).values({
           id: customerId,
           merchantId: this.d.merchantId,
@@ -576,9 +592,11 @@ export class CuadraService {
       const bal = await ledgerBalance(this.d.db, this.d.merchantId, "1200", customerId);
       await this.say(
         "comercio",
-        `👤 Listo, di de alta a ${parsed.name}.` +
-          (parsed.credit_cents ? ` 📒 Te debe ${formatMXN(bal)}.` : "") +
-          (parsed.phone ? "" : ` Sin celular, cóbrale con “QR para ${parsed.name}”.`),
+        existing
+          ? `👤 Ya tenías a ${existing.name} en tus clientes.` + (parsed.credit_cents ? ` 📒 Le anoté ${formatMXN(parsed.credit_cents)}: te debe ${formatMXN(bal)}.` : "")
+          : `👤 Listo, di de alta a ${parsed.name}.` +
+              (parsed.credit_cents ? ` 📒 Te debe ${formatMXN(bal)}.` : "") +
+              (parsed.phone ? "" : ` Sin celular, cóbrale con “QR para ${parsed.name}”.`),
       );
       return;
     }
@@ -604,6 +622,7 @@ export class CuadraService {
       .from(schema.proposals)
       .where(and(eq(schema.proposals.id, proposalId), eq(schema.proposals.merchantId, this.d.merchantId)));
     if (p?.status === "executing") await this.say("comercio", "Ya no se puede cancelar: ese cobro se está enviando.");
+    else if (p) await this.say("comercio", p.status === "rejected" ? "Eso ya estaba cancelado; no hice nada más." : `Ya no se puede cancelar: ${alreadyAnswered(p.status).charAt(0).toLowerCase()}${alreadyAnswered(p.status).slice(1)}`);
   }
 
   /**
@@ -667,12 +686,13 @@ export class CuadraService {
    * - "resend": solo la solicitud CoDi, si lo único que lo impide es P03 y la anterior venció sin
    *   pago (evaluateResend). Nunca hay dos solicitudes vivas: así no puede pagar doble.
    */
-  private async planReminder(customerId: string, opts: { scheduled?: boolean } = {}, at?: Date): Promise<ReminderPlan> {
+  private async planReminder(customerId: string, opts: { scheduled?: boolean; extraCents?: bigint } = {}, at?: Date): Promise<ReminderPlan> {
     // Una sola hora por ejecución: lo que estaba vivo al consultar a pey sigue vivo al decidir.
     const now = at ?? this.d.now();
     const [c] = await this.d.db.select().from(schema.customers).where(eq(schema.customers.id, customerId));
     if (!c) return { ok: false, name: "", message: "No encontré a ese cliente.", decision: { reason: "customer_not_found" } };
-    const balance = await ledgerBalance(this.d.db, this.d.merchantId, "1200", customerId);
+    // extraCents: para preguntar antes de anotar un fiado, con el saldo que tendrá después.
+    const balance = (await ledgerBalance(this.d.db, this.d.merchantId, "1200", customerId)) + (opts.extraCents ?? 0n);
     if (balance <= 0n) {
       return {
         ok: false,
@@ -705,7 +725,9 @@ export class CuadraService {
       last_reminder_at: lastReminder?.createdAt ?? null,
       min_interval_ms: intervalMs,
       ...(this.d.reminderHours ? { hours: this.d.reminderHours } : {}),
-      opt_in: c.optIn,
+      // P05: el permiso es para recibir mensajes. En una tienda sin cuenta conectada (cobro simulado) no
+      // sale ningún mensaje ni solicitud real (el canal tampoco le escribe a quien no aceptó): no aplica.
+      opt_in: c.optIn || this.d.gateway.simulated,
       template_id: REMINDER_TEMPLATE,
       approved_template_ids: [REMINDER_TEMPLATE],
     });
@@ -1339,6 +1361,24 @@ function describeIntent(i: Intent): string {
 }
 
 /** "el señor joel" → "Señor Joel": sin artículo al inicio y con mayúsculas si vino todo en minúsculas. */
+/** Nombre tal como lo escribió el comercio (solo espacios y mayúscula inicial): "La Güera" se queda así. */
+function asWritten(raw: string): string {
+  const n = raw.trim().replace(/\s+/g, " ").slice(0, 80);
+  return n === n.toLowerCase() ? n.replace(/(^|\s)(\p{L})/gu, (_m, s: string, c: string) => s + c.toUpperCase()) : n.charAt(0).toUpperCase() + n.slice(1);
+}
+
+/** 5512345678 → "55 1234 5678" (como se dice el número). */
+function phoneDisplay(d: string): string {
+  return /^\d{10}$/.test(d) ? `${d.slice(0, 2)} ${d.slice(2, 6)} ${d.slice(6)}` : d;
+}
+
+/** Qué decir cuando alguien confirma una pregunta que ya no está abierta (otro clic, otra pestaña, WhatsApp). */
+function alreadyAnswered(status: string): string {
+  if (status === "done") return "Eso ya quedó hecho; no hice nada más.";
+  if (status === "rejected") return "Esa pregunta ya se canceló o venció; no hice nada.";
+  return "Eso ya está en proceso; en un momento te digo cómo quedó.";
+}
+
 function displayName(raw: string): string {
   const n = raw.trim().replace(/^(?:el|la|al|a)\s+/i, "").replace(/\s+/g, " ").slice(0, 80);
   return n === n.toLowerCase() ? n.replace(/(^|\s)(\p{L})/gu, (_m, s: string, c: string) => s + c.toUpperCase()) : n.charAt(0).toUpperCase() + n.slice(1);

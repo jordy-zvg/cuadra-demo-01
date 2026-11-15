@@ -58,7 +58,7 @@ export class DbBankSimProvider {
     const [prev] = await this.db.select().from(bankSimMovements).where(eq(bankSimMovements.idempotencyKey, req.idempotency_key));
     if (prev) {
       return prev.status === "failed"
-        ? { provider_ref: prev.ref, status: "failed" as const, failure_reason: "Rechazada (simulado)" }
+        ? { provider_ref: prev.ref, status: "failed" as const, failure_reason: "Rechazada por el banco" }
         : { provider_ref: prev.ref, status: "sent" as const };
     }
     if (!isValidClabe(req.clabe)) return { provider_ref: `sim_rej_${req.idempotency_key}`, status: "failed" as const, failure_reason: "CLABE inválida" };
@@ -67,7 +67,7 @@ export class DbBankSimProvider {
       const balance = await bankSimBalance(tx, this.merchantId);
       const ref = `sim_${randomUUID()}`;
       if (req.amount_cents > balance) {
-        return { provider_ref: `sim_rej_${req.idempotency_key}`, status: "failed" as const, failure_reason: "Saldo insuficiente (simulado)" };
+        return { provider_ref: `sim_rej_${req.idempotency_key}`, status: "failed" as const, failure_reason: "Saldo insuficiente" };
       }
       await tx.insert(bankSimMovements).values({
         merchantId: this.merchantId,

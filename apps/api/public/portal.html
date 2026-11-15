@@ -167,7 +167,7 @@ button:focus-visible,a:focus-visible,input:focus-visible{outline:3px solid var(-
 .field:focus,.field:focus-visible{border-color:var(--primary);outline:3px solid var(--focus);outline-offset:2px}
 .dots{display:flex;justify-content:center;gap:1.1rem;margin:.6rem 0 1.2rem}
 .pin-field{display:block;width:min(100%,13rem);margin:.5rem auto 1.1rem;padding:.35rem .2rem .35rem .75rem;border:2px solid var(--line-strong);border-radius:var(--r-lg);background:var(--surface-plain);color:var(--ink);font-family:var(--font-head);font-size:2.1rem;font-weight:700;letter-spacing:.55em;text-align:center}
-.pin-field::placeholder{color:var(--ink-2);opacity:.45;letter-spacing:.55em}
+.pin-field::placeholder{color:var(--ink-2);opacity:.8;letter-spacing:0;font-size:1rem;font-weight:500}
 .pin-field:focus-visible,.pin-field:focus{outline:3px solid var(--focus);outline-offset:2px;border-color:var(--primary)}
 .dots span{width:1.3rem;height:1.3rem;border-radius:50%;border:3px solid var(--glyph);background:transparent}
 .dots span.on{background:var(--glyph)}
@@ -379,7 +379,7 @@ function go(screen, arg, push = true) {
   const h = app.querySelector("h1"); if (h) { h.tabIndex = -1; h.focus({ preventScroll: true }); }
 }
 let current = null;
-function back() { const p = history_.pop(); if (p) go(p.screen, p.arg, false); else go("home", null, false); }
+function back() { const p = history_.pop(); if (p) go(p.screen, p.arg && { ...p.arg, error: null }, false); else go("home", null, false); }
 function home() { history_.length = 0; go("home", null, false); }
 const navHtml = (showBack = true) => `<div class="nav">${showBack ? `<button class="btn btn--outline" type="button" data-nav="back">${ic("arrow_back")}Regresar</button>` : ""}${me ? `<button class="btn btn--outline" type="button" data-nav="home">${ic("home")}Inicio</button>` : ""}</div>`;
 app.addEventListener("click", (e) => {
@@ -611,7 +611,7 @@ SCREENS.nuevoCliente = (arg = {}) => {
     e.preventDefault();
     // Sin comas ni números largos: así el nombre nunca se confunde con un celular.
     const name = $("#cn").value.replace(/[,;]/g, " ").replace(/\d{6,}/g, "").replace(/\s+/g, " ").trim();
-    if (name.length < 2) { go("nuevoCliente", { ...arg, name, error: "Escribe el nombre de tu cliente." }, false); return; }
+    if (name.replace(/[^\p{L}]/gu, "").length < 2) { go("nuevoCliente", { ...arg, name, error: "Escribe al menos 2 letras del nombre." }, false); return; }
     go("celCliente", { ...arg, name, error: null });
   };
 };
@@ -620,7 +620,7 @@ SCREENS.celCliente = (arg) => {
   app.innerHTML = `
     <h1 id="q-cc">¿Cuál es el celular de ${esc(arg.name)}?</h1>
     <p class="lead" id="h-cc">Para mandarle sus cobros a su celular. Si no lo sabes, déjalo vacío: le podrás cobrar con QR.</p>
-    <form id="f"><input class="field" id="cc" type="tel" inputmode="numeric" autocomplete="off" maxlength="14" placeholder="Ej. 55 1234 5678" aria-labelledby="q-cc" aria-describedby="h-cc" value="${esc(arg.phone || "")}">
+    <form id="f"><input class="field" id="cc" type="tel" inputmode="numeric" autocomplete="off" maxlength="20" placeholder="Ej. 55 1234 5678" aria-labelledby="q-cc" aria-describedby="h-cc" value="${esc(arg.phone || "")}">
     ${arg.error ? `<div class="err" role="alert">${ic("error")}<span>${esc(arg.error)}</span></div>` : ""}
     <button class="go btn btn--block" type="submit">${ic("person_add")}Agregar a ${esc(arg.name)}</button></form>${navHtml()}`;
   const cc = $("#cc");
@@ -631,10 +631,9 @@ SCREENS.celCliente = (arg) => {
   };
   $("#f").onsubmit = (e) => {
     e.preventDefault();
-    let d = cc.value.replace(/\D/g, "");
-    if (d.length === 13 && d.startsWith("521")) d = d.slice(3);
-    else if (d.length === 12 && d.startsWith("52")) d = d.slice(2);
-    if (d && !/^[1-9]\d{9}$/.test(d)) { go("celCliente", { ...arg, phone: cc.value, error: "Revisa el número: deben ser 10 números (o déjalo vacío)." }, false); return; }
+    const raw = cc.value.trim();
+    const d = raw ? phone10(raw, true) : "";
+    if (d === null) { go("celCliente", { ...arg, phone: cc.value, error: "Revisa el número: deben ser 10 números (o déjalo vacío)." }, false); return; }
     send(`Agrega a ${arg.name}${d ? `, ${d}` : ""}`);
   };
 };
@@ -741,18 +740,31 @@ async function act(a) {
       const replies = await waitReply(before, 12000);
       go("respuesta", { replies, done: true, cancelled: a.kind === "cancel" }, false);
     } catch (e) { if (!(e instanceof NeedLogin)) go("respuesta", { error: true }, false); }
+  } else if (a.kind === "pay" && a.url) {
+    // Sin cuenta conectada, el comercio hace la parte del cliente: el pago entra por el mismo camino que CoDi.
+    go("respuesta", { pending: true }, false);
+    try {
+      await load();
+      const before = lastId();
+      const r = await fetch(a.url, { method: "POST", headers: { "content-type": "application/json" }, body: "{}" });
+      checkAuth(r);
+      if (r.status === 409) { go("respuesta", { replies: [{ id: 0, direction: "out", body: "⚠️ Esa solicitud ya no está vigente: venció o ya se pagó.", actions: [] }] }, false); return; }
+      if (!r.ok) throw new Error(await r.text());
+      const replies = await waitReply(before, 12000);
+      go("respuesta", { replies, done: true }, false);
+    } catch (e) { if (!(e instanceof NeedLogin)) go("respuesta", { error: true }, false); }
   } else if (a.kind === "say" && a.text) {
-    // Sugerencias de Cuadra ("¿Quién me debe?", "Cobrar a Beto"…). "Agrega a X" abre el alta para pedir su celular.
+    // Sugerencias de Cuadra ("¿Quién me debe?", "Cobrar a Beto"…). "Agrega a X" abre el alta con su nombre.
     const alta = /^Agrega a (.+)$/.exec(a.text);
-    if (alta) go("celCliente", { name: alta[1].trim() }); else send(a.text);
-  } else if (a.url) {
+    if (alta) go("nuevoCliente", { name: alta[1].trim() }); else send(a.text);
+  } else if (a.url && !a.url.startsWith("/api/")) {
     window.open(a.url, "_blank", "noopener");
   }
 }
 
 function tone(body) {
-  if (/^(🛡️|⛔|❌)|No (envío|pago|te entendí|mando)|no está en tu lista|aún no está habilitado/.test(body)) return "bad";
-  if (/^(⚠️|🔐|ℹ️)|ya tiene (un cobro|una solicitud|un QR)|necesito tu aprobación|No tengo a|Ya tengo a|no te debe nada|Solo te ayudo/.test(body)) return "warn";
+  if (/^(🛡️|⛔|❌)|No (envío|pago|te entendí|mando|pude)|no salió|no está en tu lista|aún no está habilitado/.test(body)) return "bad";
+  if (/^(⚠️|🔐|ℹ️)|ya tiene (un cobro|una solicitud|un QR)|necesito tu aprobación|No tengo a|Ya tengo a|Ya tenías a|no te debe nada|Solo te ayudo|Ya no se puede cancelar|ya quedó hecho|ya estaba cancelado|ya se canceló o venció|ya está en proceso|Escribe el nombre/.test(body)) return "warn";
   if (/^(✅|💰|🎉|📒|👤|📨|🔁|🧾|🏦|📱)|Listo|Anotado|Recib/.test(body)) return "ok";
   return "";
 }
@@ -814,6 +826,16 @@ let llaveMode = "off";
 const firstName = (n) => String(n || "").replace(/^(doña|don)\s+/i, "").split(" ")[0];
 const remembered = () => { try { return JSON.parse(store.get("cuadra.cuenta") || "null"); } catch { return null; } };
 const fmtPhone = (d) => String(d).replace(/^(\d{2})(\d{4})(\d{4})$/, "$1 $2 $3");
+/** Celular de México a 10 números: acepta 10, 52+10 o 521+10 (con espacios, guiones o +). Nunca recorta.
+ *  strict: además, que empiece con 1-9 (un celular real para mandarle cobros). */
+const phone10 = (raw, strict = false) => {
+  let d = String(raw).replace(/\D/g, "");
+  // Con "+" adelante la lada va incluida: "+52 55 1234 56" está incompleto, no es otro número.
+  if (/^\s*\+/.test(String(raw)) && d.length !== 12 && d.length !== 13) return null;
+  if (d.length === 13 && d.startsWith("521")) d = d.slice(3);
+  else if (d.length === 12 && d.startsWith("52")) d = d.slice(2);
+  return (strict ? /^[1-9]\d{9}$/ : /^\d{10}$/).test(d) ? d : null;
+};
 
 function signedOut() {
   me = null; history_.length = 0;
@@ -850,12 +872,12 @@ async function authPost(url, body) {
  * y el teclado grande de siempre, como en el cajero. Llama a onDone(nip) al completar 4.
  * En celulares el campo no toma el foco solo, para que no tape el teclado grande.
  */
-function pinPad(el, onDone, { phone = "", nuevo = false } = {}) {
+function pinPad(el, onDone, { phone = "", nuevo = false, invalid = false } = {}) {
   el.innerHTML = `<form class="pin" autocomplete="on" onsubmit="return false">
     <input class="sr" type="text" name="username" autocomplete="username" value="${esc(phone)}" tabindex="-1" aria-hidden="true" readonly>
     <label class="sr" for="pin">NIP de 4 números</label>
-    <input class="pin-field" id="pin" type="password" inputmode="numeric" pattern="[0-9]*" maxlength="4" placeholder="••••"
-      autocomplete="${nuevo ? "new-password" : "current-password"}" aria-describedby="pin-help">
+    <input class="pin-field" id="pin" type="password" inputmode="numeric" pattern="[0-9]*" placeholder="4 números"
+      autocomplete="${nuevo ? "new-password" : "current-password"}" aria-describedby="${invalid ? "pin-err " : ""}pin-help"${invalid ? ' aria-invalid="true"' : ""}>
     <span class="sr" id="pin-help">Escribe tus 4 números o usa el teclado de abajo.</span>
     <div class="keys">${["1","2","3","4","5","6","7","8","9","","0","⌫"].map((k) => k
       ? `<button type="button" data-k="${k}" aria-label="${k === "⌫" ? "Borrar" : k}">${k === "⌫" ? ic("backspace") : k}</button>`
@@ -947,7 +969,7 @@ SCREENS.celular = (arg) => {
     ${reg ? `<div class="steps">Paso 2 de ${needsShopCode ? 4 : 3}</div>` : ""}
     <h1 id="q-tel">¿Cuál es tu número de celular?</h1>
     <p class="lead">Los 10 números de tu celular.</p>
-    <form id="f"><input class="field" id="tel" type="tel" inputmode="numeric" autocomplete="tel-national" maxlength="14" placeholder="Ej. 55 1234 5678" aria-labelledby="q-tel" value="${esc(arg.phone || "")}">
+    <form id="f"><input class="field" id="tel" type="tel" inputmode="numeric" autocomplete="tel-national" maxlength="20" placeholder="Ej. 55 1234 5678" aria-labelledby="q-tel" value="${esc(arg.phone || "")}">
     ${arg.error ? `<div class="err" role="alert">${ic("error")}<span>${esc(arg.error)}</span></div>` : ""}
     <button class="go btn btn--block" type="submit">Siguiente${ic("arrow_forward")}</button></form>${navHtml()}`;
   const tel = $("#tel");
@@ -959,9 +981,8 @@ SCREENS.celular = (arg) => {
   };
   $("#f").onsubmit = (e) => {
     e.preventDefault();
-    let d = tel.value.replace(/\D/g, "");
-    if (d.length === 12 && d.startsWith("52")) d = d.slice(2);
-    if (d.length !== 10) { go("celular", { ...arg, phone: tel.value, error: "Revisa tu número: deben ser 10 números." }, false); return; }
+    const d = phone10(tel.value);
+    if (!d) { go("celular", { ...arg, phone: tel.value, error: "Revisa tu número: deben ser 10 números." }, false); return; }
     if (reg) go(needsShopCode ? "codigo" : "nipNuevo", { ...arg, phone: d, error: null });
     else go("nip", { phone: d });
   };
@@ -971,7 +992,7 @@ SCREENS.nip = ({ phone, name, error }) => {
   app.innerHTML = `
     <h1>${name ? `Hola, ${esc(firstName(name))}` : "Escribe tu NIP"}</h1>
     <p class="lead">${name ? "Escribe tu NIP de 4 números." : `Celular ${esc(fmtPhone(phone))}`}</p>
-    ${error ? `<div class="err" role="alert">${ic("error")}<span>${esc(error)}</span></div>` : ""}
+    ${error ? `<div class="err" id="pin-err" role="alert">${ic("error")}<span>${esc(error)}</span></div>` : ""}
     <div id="pad"></div>
     <button class="link" type="button" id="forgot">Olvidé mi NIP</button>
     <button class="link" type="button" id="other">${name ? "No soy yo / usar otro celular" : "Cambiar de celular"}</button>
@@ -983,7 +1004,7 @@ SCREENS.nip = ({ phone, name, error }) => {
     if (r.ok) return signedIn(r.account, phone);
     if (r.status === 404) return go("noEncontrado", { phone }, false);
     go("nip", { phone, name, error: r.error || "No se pudo entrar." }, false);
-  }, { phone });
+  }, { phone, invalid: !!error });
   $("#forgot").onclick = () => go("olvide", null);
   $("#other").onclick = () => { store.set("cuadra.cuenta", ""); history_.length = 0; go("bienvenida", null, false); };
 };
@@ -1043,7 +1064,7 @@ SCREENS.nipNuevo = (arg) => {
     <div class="steps">Paso ${n} de ${n}</div>
     <h1>${arg.first ? "Escríbelo otra vez" : "Inventa un NIP de 4 números"}</h1>
     <p class="lead">${arg.first ? "Para estar seguros de que lo recuerdas." : "Lo vas a usar para entrar, como en el cajero. No uses 1234 ni 0000."}</p>
-    ${arg.error ? `<div class="err" role="alert">${ic("error")}<span>${esc(arg.error)}</span></div>` : ""}
+    ${arg.error ? `<div class="err" id="pin-err" role="alert">${ic("error")}<span>${esc(arg.error)}</span></div>` : ""}
     <div id="pad"></div>${navHtml()}`;
   pinPad($("#pad"), async (pin) => {
     if (!arg.first) {
@@ -1052,7 +1073,10 @@ SCREENS.nipNuevo = (arg) => {
       }
       go("nipNuevo", { ...arg, first: pin, error: null }); return;
     }
-    if (pin !== arg.first) { go("nipNuevo", { ...arg, first: null, error: "No coinciden. Vamos de nuevo: inventa tu NIP." }, false); return; }
+    if (pin !== arg.first) {
+      if (history_.at(-1)?.screen === "nipNuevo") history_.pop();
+      go("nipNuevo", { ...arg, first: null, error: "No coinciden. Vamos de nuevo: inventa tu NIP." }, false); return;
+    }
     app.querySelector("#pad").innerHTML = `<div class="wait"><div class="spin"></div>Creando tu cuenta…</div>`;
     let r;
     try { r = await authPost("/api/auth/register", { name: arg.name, phone: arg.phone, pin, ...(arg.code ? { shop_code: arg.code } : {}) }); }
@@ -1064,7 +1088,7 @@ SCREENS.nipNuevo = (arg) => {
     if (r.field === "phone") return go("celular", { ...base, mode: "registro", error: r.error }, false);
     if (r.field === "shop_code") return go("codigo", { ...base, code: "", error: r.error }, false);
     go("nipNuevo", { ...base, error: r.error || "No se pudo crear la cuenta." }, false);
-  }, { phone: arg.phone, nuevo: true });
+  }, { phone: arg.phone, nuevo: true, invalid: !!arg.error });
 };
 
 SCREENS.listo = ({ account, phone }) => {

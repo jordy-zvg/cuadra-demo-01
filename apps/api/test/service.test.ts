@@ -156,8 +156,10 @@ describe("fiado y cobro con pey", () => {
     await f.svc.handleMerchantMessage("Chela se llevó $50");
     await f.svc.confirm(await f.lastAction());
     await f.svc.handleMerchantMessage("Cóbrale a Chela");
-    await f.svc.confirm(await f.lastAction());
-    expect((await f.msgs()).at(-1)!.body).toMatch(/no ha aceptado recibir mensajes/);
+    // Sin permiso de mensajes ni siquiera se pregunta: se explica por qué no sale el cobro.
+    const last = (await f.msgs()).at(-1)!;
+    expect(last.body).toMatch(/no ha aceptado recibir mensajes/);
+    expect(last.actions?.some((a) => a.kind === "confirm") ?? false).toBe(false);
     expect((f.gw as FakePey).pushes).toHaveLength(0);
   });
 });
@@ -181,12 +183,45 @@ describe("clientes nuevos y montos con letra", () => {
   it("“Agrega a Rosa, 55…” da de alta con celular; si ya existe, lo dice", async () => {
     const f = await setup();
     await f.svc.handleMerchantMessage("Agrega a Rosa, 55 9876 5432");
-    expect((await f.msgs()).at(-1)!.body).toMatch(/Doy de alta a Rosa con celular 5598765432/);
+    expect((await f.msgs()).at(-1)!.body).toMatch(/Doy de alta a Rosa con celular 55 9876 5432/);
     await f.svc.confirm(await f.lastAction());
     const [rosa] = await f.db.select().from(schema.customers).where(eq(schema.customers.name, "Rosa"));
     expect(rosa!.phone).toBe("+525598765432");
     await f.svc.handleMerchantMessage("Agrega a Doña Lupe");
     expect((await f.msgs()).at(-1)!.body).toMatch(/Ya tengo a Doña Lupe/);
+  });
+
+  it("alta: solo el mismo nombre es duplicado; uno parecido se avisa y se puede agregar", async () => {
+    const f = await setup();
+    await f.svc.handleMerchantMessage("Agrega a Lupe Hernández, 5587650001");
+    expect((await f.msgs()).at(-1)!.body).toMatch(/Doy de alta a Lupe Hernández con celular 55 8765 0001\. Ya tienes a «Doña Lupe»: si es la misma persona, toca «No»\. ¿Confirmas\?/);
+    await f.svc.confirm(await f.lastAction());
+    expect(await f.db.select().from(schema.customers).where(eq(schema.customers.name, "Lupe Hernández"))).toHaveLength(1);
+    // El nombre se guarda como se escribió ("La Güera" no se vuelve "Güera") y no se acepta solo un trato.
+    await f.svc.handleMerchantMessage("Agrega a La Güera");
+    expect((await f.msgs()).at(-1)!.body).toMatch(/Doy de alta a La Güera/);
+    await f.svc.handleMerchantMessage("Agrega a La Doña");
+    expect((await f.msgs()).at(-1)!.body).toMatch(/Escribe el nombre de tu cliente, no solo «La Doña»/);
+  });
+
+  it("al confirmar un alta con fiado nunca se usa un cliente parecido (el fiado no se va a otra persona)", async () => {
+    const f = await setup();
+    await f.svc.handleMerchantMessage("Nico Zavala se llevó $30");
+    const nico = await f.lastAction();
+    await f.svc.handleMerchantMessage("Agrega a Paco Zavala");
+    await f.svc.confirm(await f.lastAction());
+    await f.svc.confirm(nico);
+    const [n] = await f.db.select().from(schema.customers).where(eq(schema.customers.name, "Nico Zavala"));
+    const [pz] = await f.db.select().from(schema.customers).where(eq(schema.customers.name, "Paco Zavala"));
+    expect(n).toBeDefined();
+    expect(await ledgerBalance(f.db, M, "1200", n!.id)).toBe(3000n);
+    expect(await ledgerBalance(f.db, M, "1200", pz!.id)).toBe(0n);
+    // Confirmar otra vez la misma pregunta no hace nada y lo dice.
+    await f.svc.confirm(nico);
+    expect((await f.msgs()).at(-1)!.body).toMatch(/Eso ya quedó hecho/);
+    expect(await ledgerBalance(f.db, M, "1200", n!.id)).toBe(3000n);
+    await f.svc.cancel(nico);
+    expect((await f.msgs()).at(-1)!.body).toMatch(/Ya no se puede cancelar: eso ya quedó hecho/);
   });
 
   it("QR o cobro a un desconocido: ofrece darlo de alta con un botón", async () => {
@@ -325,6 +360,22 @@ describe("modo simulado", () => {
     await f.svc.simulatePaid(ch!.providerChargeId!);
     await f.svc.simulatePaid(ch!.providerChargeId!);
     expect(await ledgerBalance(f.db, M, "1100")).toBe(18500n);
+  });
+
+  it("sin cuenta conectada, un cliente nuevo (sin permiso de mensajes) también recibe su cobro: no sale nada real", async () => {
+    const f = await setup((db) => new SimulatedGateway(db));
+    await f.svc.handleMerchantMessage("Agrega a Rosa, 5598765432");
+    await f.svc.confirm(await f.lastAction());
+    await f.svc.handleMerchantMessage("Rosa se llevó $40");
+    await f.svc.confirm(await f.lastAction());
+    await f.svc.handleMerchantMessage("Cóbrale a Rosa");
+    await f.svc.confirm(await f.lastAction());
+    const m = (await f.msgs()).at(-1)!;
+    expect(m.body).toMatch(/Preparé el cobro de \$40\.00 para Rosa/);
+    expect(m.body).not.toMatch(/simulad/i);
+    // A Rosa no se le manda ningún mensaje (no ha aceptado recibirlos).
+    const [rosa] = await f.db.select().from(schema.customers).where(eq(schema.customers.name, "Rosa"));
+    expect((await f.msgs(rosa!.id)).some((x) => x.actions?.some((a) => a.kind === "pay" && a.label === "Pagar como Rosa"))).toBe(true);
   });
 });
 

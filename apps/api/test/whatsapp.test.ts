@@ -55,7 +55,7 @@ class QrGateway extends SimulatedGateway {
   }
 }
 
-async function setup(o: { chargeOnFiado?: boolean } = {}) {
+async function setup(o: { chargeOnFiado?: boolean; now?: Date } = {}) {
   const { db } = await createTestDb();
   await seedDemo(db, NOW, { ownerPhone: "+525511112222", lupePhone: "+525512345678" });
   const wa = new FakeWhatsApp();
@@ -63,7 +63,7 @@ async function setup(o: { chargeOnFiado?: boolean } = {}) {
   const channel = new WhatsAppChannel({ db, client: wa, log: (r) => logs.push(r) });
   const svc = new CuadraService({
     db, merchantId: M, ownerId: DEMO.ownerId, interpreters: [new RuleInterpreter()],
-    gateway: new QrGateway(db), verify: async () => false, now: () => NOW, publicUrl: null,
+    gateway: new QrGateway(db), verify: async () => false, now: () => o.now ?? NOW, publicUrl: null,
     peyWebhookSecret: null, bankSim: false, udi: null, log: (r) => logs.push(r),
     channels: [channel],
     ...(o.chargeOnFiado ? { chargeOnFiado: true } : {}),
@@ -120,6 +120,12 @@ describe("canal WhatsApp", () => {
     const charges = await f.db.select().from(schema.charges).where(eq(schema.charges.customerId, "c_lupe"));
     expect(charges.filter((c) => c.channel === "codi_pn" && c.amountCents === 18500n)).toHaveLength(1);
     expect(f.wa.templates.find((t) => t.name === "cuadra_cobro_fiado")).toMatchObject({ to: "525512345678" });
+  });
+
+  it("con AUTO_COBRO_FIADO fuera del horario de cobros, la pregunta no promete el cobro", async () => {
+    const f = await setup({ chargeOnFiado: true, now: new Date("2026-11-14T22:30:00-06:00") });
+    await f.channel.handleInbound([f.text("Doña Lupe se llevó $185")], f.svc);
+    expect(f.wa.sent.at(-1)!.body).toMatch(/^Anoto \$185\.00 de fiado a Doña Lupe\. ¿Confirmas\?$/);
   });
 
   it("con AUTO_COBRO_FIADO y un cliente sin permiso de mensajes, el fiado queda y se explica por qué no se avisó", async () => {

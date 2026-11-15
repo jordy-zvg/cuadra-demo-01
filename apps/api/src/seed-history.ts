@@ -18,14 +18,14 @@ export async function seedHistory(db: Db, merchantId: string): Promise<void> {
   for (const [customer, amount] of hist) {
     i++;
     await postEntries(db, [
-      fiado({ merchant_id: merchantId, idempotency_key: `demo:hist:fiado:${i}`, amount, customer_id: customer, memo: "Historial de demo" }),
+      fiado({ merchant_id: merchantId, idempotency_key: `demo:hist:fiado:${i}`, amount, customer_id: customer, memo: "Historial" }),
       abonoIdentificado({
         merchant_id: merchantId,
         idempotency_key: `demo:hist:abono:${i}`,
         amount,
         customer_id: customer,
         customer_balance: amount,
-        memo: "Historial de demo (cobro simulado)",
+        memo: "Historial: abono CoDi",
       }),
     ]);
     await bankSimCredit(db, merchantId, `demo:hist:abono:${i}`, amount, "cobro");

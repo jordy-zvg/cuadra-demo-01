@@ -97,6 +97,9 @@ comercio puede reenviarla (solo la solicitud, sin otro mensaje) hasta 3 veces po
 haya una viva (pagaría doble) y nunca desde los recordatorios programados. Solo en desarrollo,
 `REMINDER_MIN_INTERVAL_MINUTES` baja las 72 h (p. ej. 0 para probar seguido) y `REMINDER_HOURS=0-24` quita el
 horario 09:00–20:00; con clientes reales no se definen.
+Opt-in (decisión 15-nov-2026): en tiendas sin cuenta conectada (cobro simulado) no sale ningún mensaje ni
+solicitud real, así que P05 no aplica ahí; el canal sigue sin escribirle a quien no aceptó. En la tienda en vivo
+P05 se exige siempre (el alta del permiso por el cliente es el componente #14).
 
 ## Conciliación de abonos (cascada)
 1. CLABE virtual del cliente (si el proveedor la ofrece).
