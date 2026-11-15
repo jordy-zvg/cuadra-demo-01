@@ -158,8 +158,6 @@ button:focus-visible,a:focus-visible,input:focus-visible{outline:3px solid var(-
 .err{background:var(--bad-bg);color:var(--bad);margin:.5rem 0;font-weight:700}
 
 /* Entrar / registrarse */
-.indep{display:flex;align-items:flex-start;justify-content:center;gap:.45rem;margin:1.8rem auto 0;max-width:23rem;color:var(--ink-2);font-size:.8rem;line-height:1.4}
-.indep .ico{width:1.25rem;height:1.25rem;flex:none;color:var(--glyph);margin-top:.05rem}
 .field{display:block;width:100%;font:inherit;font-family:var(--font-head);font-size:1.6rem;font-weight:600;letter-spacing:.06em;text-align:center;padding:.65rem;border-radius:var(--r-lg);border:2px solid var(--line-strong);background:var(--surface-plain);color:var(--ink);margin:.3rem 0 .2rem}
 .field.name{letter-spacing:0;font-size:1.3rem}
 .field::placeholder{color:var(--ink-2);opacity:.85}
@@ -790,7 +788,6 @@ SCREENS.bienvenida = () => {
     <button class="go btn btn--block" type="button" id="in">Entrar</button>
     <button class="go soft btn btn--outline btn--block" type="button" id="new">Soy nuevo, quiero registrarme</button>
     ${llaveMode === "demo" ? `<button class="go soft btn btn--outline btn--block" type="button" id="llave">${ic("key")}<span>Entrar con Llave CDMX <small style="font-weight:600">(demo)</small></span></button>` : ""}
-    <p class="indep">${ic("info")}<span>Cuadra es un proyecto independiente. No es un servicio del gobierno.</span></p>
     </div>`;
   const lb = $("#llave");
   if (lb) lb.onclick = async () => {
