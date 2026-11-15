@@ -296,7 +296,7 @@ export class CuadraService {
     const reasons = [
       "Los datos bancarios solo salen del sistema; no uso CLABEs escritas en el chat (R11).",
       ...decision.rules_failed.map((f) => `${f.reason} (${f.rule_id})`),
-      "Un beneficiario nuevo se da de alta con passkey y espera 24 h antes de recibir pagos (R04).",
+      "Para agregar un proveedor nuevo se necesita tu aprobación y esperar 24 horas (R04).",
     ];
     await this.recordBlock("CreatePayee", provenance, reasons);
     await this.say("comercio", `🛡️ No pago a esa cuenta.\n• ${[...new Set(reasons)].join("\n• ")}`);
@@ -478,7 +478,7 @@ export class CuadraService {
     const r = await this.resolve(await this.payees(), intent.payee_name);
     if (!r.ok) {
       await this.recordBlock("PayoutRequest", provenance, [`Beneficiario “${intent.payee_name}” no está en tu lista autorizada (R03).`]);
-      await this.say("comercio", `🛡️ “${intent.payee_name}” no está en tu lista de proveedores autorizados. Darlo de alta requiere passkey y 24 h de espera.`);
+      await this.say("comercio", `🛡️ “${intent.payee_name}” no está en tu lista de proveedores autorizados. Para agregar un proveedor nuevo se necesita tu aprobación y esperar 24 horas.`);
       return;
     }
     const p = await this.newProposal(
@@ -503,11 +503,11 @@ export class CuadraService {
     await setProposalStatus(this.d.db, p.id, "awaiting_passkey", decision);
     await this.recordBlock("PayoutRequest", provenance, reasons);
     const actions: MessageAction[] = this.d.publicUrl
-      ? [{ kind: "approve", label: "Aprobar con passkey", url: `${this.d.publicUrl}/aprobar/${p.id}`, proposal_id: p.id }]
+      ? [{ kind: "approve", label: "Aprobar el pago", url: `${this.d.publicUrl}/aprobar/${p.id}`, proposal_id: p.id }]
       : [];
     await this.say(
       "comercio",
-      `🔐 Para enviar ${amount} a ${r.row.alias} necesito tu aprobación con passkey (un "sí" en el chat no basta):\n• ${reasons.join("\n• ")}`,
+      `🔐 Para enviar ${amount} a ${r.row.alias} necesito tu aprobación (un «sí» en el chat no basta):\n• ${reasons.join("\n• ")}`,
       actions,
       p.id,
     );

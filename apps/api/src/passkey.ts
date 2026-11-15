@@ -41,7 +41,7 @@ async function describe(db: Db, p: Proposal): Promise<string> {
     (await db.select({ a: schema.payees.alias }).from(schema.payees).where(eq(schema.payees.id, id)))[0]?.a ?? id;
   if (p.type === "CreateMandate") {
     const per = { day: "día", week: "semana", month: "mes" }[p.period];
-    return `Mandato para ${await payeeName(p.payee_id)}: hasta ${formatMXN(p.per_op_cap_cents)} por pago y ${formatMXN(p.period_cap_cents)} por ${per}, vigente ${p.valid_days} días.`;
+    return `Permiso para pagarle a ${await payeeName(p.payee_id)}: hasta ${formatMXN(p.per_op_cap_cents)} por pago y ${formatMXN(p.period_cap_cents)} por ${per}, vigente ${p.valid_days} días.`;
   }
   if (p.type === "CreateTanda") {
     const per = { week: "semana", biweek: "quincena", month: "mes" }[p.period];
@@ -69,6 +69,7 @@ export function registerPasskeyRoutes(app: FastifyInstance, o: PasskeyOpts): voi
 
   app.get("/aprobar/:id", (_req, reply) => reply.sendFile("aprobar.html"));
   app.get("/mandato", (_req, reply) => reply.sendFile("aprobar.html"));
+  app.get("/permiso", (_req, reply) => reply.sendFile("aprobar.html")); // el mismo formulario, con la palabra que ve el comercio
   app.get("/tanda", (_req, reply) => reply.sendFile("tanda.html"));
 
   const TandaBody = z.object({
@@ -140,7 +141,7 @@ export function registerPasskeyRoutes(app: FastifyInstance, o: PasskeyOpts): voi
     if (!st) return noSession(reply);
     const pending = regChallenges.get(st.ownerId);
     regChallenges.delete(st.ownerId);
-    if (!pending || Date.now() - pending.at > CHALLENGE_TTL_MS) return reply.code(400).send({ error: "Reto vencido; intenta de nuevo." });
+    if (!pending || Date.now() - pending.at > CHALLENGE_TTL_MS) return reply.code(400).send({ error: "Pasó mucho tiempo. Intenta otra vez." });
     try {
       const v = await verifyRegistrationResponse({
         response: json(req.body) as Parameters<typeof verifyRegistrationResponse>[0]["response"],
@@ -149,7 +150,7 @@ export function registerPasskeyRoutes(app: FastifyInstance, o: PasskeyOpts): voi
         expectedRPID: o.rpID,
         requireUserVerification: true,
       });
-      if (!v.verified) return reply.code(400).send({ error: "No se pudo verificar la passkey." });
+      if (!v.verified) return reply.code(400).send({ error: "No se pudo activar la aprobación en este dispositivo. Intenta otra vez." });
       const c = v.registrationInfo.credential;
       await o.db
         .insert(schema.passkeyCredentials)
@@ -157,7 +158,9 @@ export function registerPasskeyRoutes(app: FastifyInstance, o: PasskeyOpts): voi
         .onConflictDoNothing();
       return { ok: true };
     } catch (e) {
-      return reply.code(400).send({ error: e instanceof Error ? e.message : "Registro inválido" });
+      // El detalle técnico (en inglés, de la librería) va al log; al comercio, en palabras simples.
+      req.log.warn({ reason: e instanceof Error ? e.message : String(e) }, "passkey_register_invalid");
+      return reply.code(400).send({ error: "No se pudo activar la aprobación en este dispositivo. Intenta otra vez." });
     }
   });
 
@@ -172,7 +175,7 @@ export function registerPasskeyRoutes(app: FastifyInstance, o: PasskeyOpts): voi
     const st = await o.storeOf(req);
     if (!st) return noSession(reply);
     const b = MandateBody.safeParse(json(req.body));
-    if (!b.success) return reply.code(400).send({ error: "Datos del mandato inválidos" });
+    if (!b.success) return reply.code(400).send({ error: "Revisa los topes y la vigencia del permiso." });
     // Solo proveedores de tu tienda.
     const [payee] = await o.db
       .select({ id: schema.payees.id })
@@ -198,7 +201,7 @@ export function registerPasskeyRoutes(app: FastifyInstance, o: PasskeyOpts): voi
 
   app.get("/api/proposal/:id", async (req, reply) => {
     const found = await loadProposal(String((req.params as { id: string }).id).slice(0, 64));
-    if (!found) return reply.code(404).send({ error: "No existe" });
+    if (!found) return reply.code(404).send({ error: "No encontramos esta operación. Pide un enlace nuevo en el chat." });
     const { row } = found;
     const p = Proposal.parse(row.payload);
     return { id: row.id, type: row.type, status: row.status, hash: row.proposalHash, provenance: row.provenance, summary: await describe(o.db, p), decision: row.decision };
@@ -210,12 +213,12 @@ export function registerPasskeyRoutes(app: FastifyInstance, o: PasskeyOpts): voi
 
   app.post("/api/approve/options", async (req, reply) => {
     const b = ApproveBody.safeParse(json(req.body));
-    if (!b.success) return reply.code(400).send({ error: "inválido" });
+    if (!b.success) return reply.code(400).send({ error: "Solicitud inválida." });
     const found = await loadProposal(b.data.proposal_id);
-    if (!found || !approvable(found.row.status, found.row.type)) return reply.code(409).send({ error: "Esta propuesta ya no se puede aprobar." });
+    if (!found || !approvable(found.row.status, found.row.type)) return reply.code(409).send({ error: "Esto ya no se puede aprobar." });
     const { row, store } = found;
     const creds = await credentials(store.ownerId);
-    if (creds.length === 0) return reply.code(409).send({ error: "Primero registra tu passkey." });
+    if (creds.length === 0) return reply.code(409).send({ error: "Primero activa la aprobación en este dispositivo." });
     // El challenge son los bytes del hash de la propuesta: la firma queda ligada a ella.
     return generateAuthenticationOptions({
       rpID: o.rpID,
@@ -228,23 +231,23 @@ export function registerPasskeyRoutes(app: FastifyInstance, o: PasskeyOpts): voi
   const VerifyBody = z.object({ proposal_id: z.string().min(1).max(64), response: z.object({ id: z.string() }).passthrough() });
   app.post("/api/approve/verify", async (req, reply) => {
     const b = VerifyBody.safeParse(json(req.body));
-    if (!b.success) return reply.code(400).send({ error: "inválido" });
+    if (!b.success) return reply.code(400).send({ error: "Solicitud inválida." });
     const found = await loadProposal(b.data.proposal_id);
-    if (!found || !approvable(found.row.status, found.row.type)) return reply.code(409).send({ error: "Esta propuesta ya no se puede aprobar." });
+    if (!found || !approvable(found.row.status, found.row.type)) return reply.code(409).send({ error: "Esto ya no se puede aprobar." });
     const { row, store } = found;
     // Solo firma la passkey del dueño de la tienda de esta propuesta.
     const [cred] = await o.db
       .select()
       .from(schema.passkeyCredentials)
       .where(and(eq(schema.passkeyCredentials.id, b.data.response.id), eq(schema.passkeyCredentials.merchantUserId, store.ownerId)));
-    if (!cred) return reply.code(400).send({ error: "Passkey desconocida." });
+    if (!cred) return reply.code(400).send({ error: "Esa llave de acceso no es de esta tienda. Usa el dispositivo donde activaste la aprobación." });
     const ok = await verifyProposalAssertion({
       assertion: b.data.response,
       proposalHash: row.proposalHash,
       credential: { id: cred.id, publicKey: cred.publicKey, counter: cred.counter },
       config: { rpID: o.rpID, origins: o.origins },
     });
-    if (!ok) return reply.code(400).send({ error: "La firma no corresponde a esta propuesta." });
+    if (!ok) return reply.code(400).send({ error: "La aprobación no corresponde a esta operación. Ábrela otra vez desde el enlace del chat." });
 
     const now = o.now();
     const approvalId = `ap_${randomUUID().replace(/-/g, "").slice(0, 16)}`;
@@ -273,16 +276,16 @@ export function registerPasskeyRoutes(app: FastifyInstance, o: PasskeyOpts): voi
         }
       }
       await say(
-        `✍️ Tanda firmada con passkey. ${await describe(o.db, p)}` +
+        `✍️ Listo, quedó firmada. ${await describe(o.db, p)}` +
           (pending ? ` ${pending} cuenta(s) quedan en alta con Banxico (hasta 5 días hábiles).` : " Todas las cuentas están listas: escribe “cobra la tanda”."),
       );
     } else if (p.type === "CreateMandate") {
       await createMandateFromApproval(o.db, { mandateId: `md_${row.id}`, proposalId: row.id, approvalId, now, verify });
-      await say(`✍️ Mandato firmado con passkey. ${await describe(o.db, p)}`);
+      await say(`✍️ Listo, quedó firmado. ${await describe(o.db, p)}`);
     } else if (PayoutRequest.safeParse(p).success) {
       // El executor revalida todo, incluida esta firma, antes de enviar.
       await setProposalStatus(o.db, row.id, "queued");
-      await say(`🔐 Aprobado con passkey: ${await describe(o.db, p)} Enviando…`);
+      await say(`✅ Aprobado. ${await describe(o.db, p)} Enviando…`);
     }
     return { ok: true, summary: await describe(o.db, p) };
   });

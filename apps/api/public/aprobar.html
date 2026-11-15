@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>Aprobar con passkey</title>
+<title>Aprobar · Cuadra</title>
 <link rel="stylesheet" href="/assets/cuadra.css">
 <script src="/assets/red.js" defer></script>
 <link rel="icon" href="/logo.svg" type="image/svg+xml">
@@ -29,6 +29,19 @@ button:disabled{opacity:.5}
 .msg{align-items:flex-start;gap:8px}
 .msg.ok,.msg.bad{display:flex}
 .msg .ico{width:20px;height:20px;flex:none;margin-top:1px}
+/* Aviso que hay que leer antes de aprobar: va arriba del botón, en ámbar y con ícono. */
+.warn{display:flex;align-items:flex-start;gap:8px;border-radius:10px;padding:10px;margin:0 0 4px;background:var(--warn-bg);color:var(--warn)}
+.warn[hidden]{display:none}
+.warn .ico{width:20px;height:20px;flex:none;margin-top:1px}
+/* Primera vez en este dispositivo: un paso antes de poder aprobar. */
+.activate{border:1px dashed var(--chip-line);border-radius:12px;padding:12px;margin-top:14px}
+.activate p{margin:0}
+.activate p + p{margin-top:8px}
+.activate button{margin-top:12px}
+/* El código de la operación existe para quien lo quiera revisar, sin estorbar. */
+details.tech{margin-top:12px;font-size:13px;color:var(--muted)}
+details.tech summary{cursor:pointer;padding:10px 0}
+details.tech p{margin:4px 0}
 /* Táctil: botones y campos de al menos 44 px, sin espera de doble toque. */
 button,input,select{min-height:44px;touch-action:manipulation}
 button:disabled{cursor:default}
@@ -50,8 +63,8 @@ input,select{border-color:var(--line-strong)}
 </head>
 <body>
 <div class="card">
-  <h1 id="title">Aprobar con passkey</h1>
-  <p class="muted">Al aprobar, tu teléfono firma exactamente lo que ves abajo. Si algo cambia, la firma deja de valer.</p>
+  <h1 id="title">Aprobar</h1>
+  <p class="muted" id="lead">Al aprobar, tu teléfono firma exactamente lo que ves abajo. Si algo cambia, la firma deja de valer.</p>
 
   <div class="cargando" id="loading" role="status">Cargando…</div>
   <button id="retry" type="button" class="ghost" hidden>Intentar otra vez</button>
@@ -66,16 +79,25 @@ input,select{border-color:var(--line-strong)}
       <label>Periodo<select id="period"><option value="week">Semana</option><option value="day">Día</option><option value="month">Mes</option></select></label>
       <label>Vigencia (días)<input id="days" type="number" min="1" max="365" value="90"></label>
     </div>
-    <button id="prepare" type="button" class="ghost">Revisar mandato</button>
+    <button id="prepare" type="button" class="ghost">Revisar permiso</button>
   </div>
 
   <div id="review" hidden>
     <div class="what" id="summary"></div>
-    <p class="hash">hash: <span id="hash"></span></p>
-    <button id="sign" type="button">Firmar con passkey</button>
+    <p class="warn" id="warn" hidden><svg class="ico" aria-hidden="true"><use href="/assets/icons.svg#i-warning"/></svg><span>Ojo: esta instrucción vino de una foto, documento o mensaje reenviado. Revisa bien a quién y cuánto antes de aprobar.</span></p>
+    <div class="activate" id="activate" hidden>
+      <p><strong>Primero activa la aprobación en este dispositivo.</strong> Solo se hace una vez.</p>
+      <p class="muted">Tu celular te pedirá guardar una llave de acceso para Cuadra. Se abre con tu huella, tu rostro o tu bloqueo de pantalla; Cuadra no los ve ni los guarda.</p>
+      <button id="register" type="button" class="ghost">Activar en este dispositivo</button>
+    </div>
+    <button id="sign" type="button">Aprobar</button>
+    <details class="tech">
+      <summary>Detalle técnico</summary>
+      <p>Tu aprobación queda ligada a este código. Si la operación cambia, el código cambia y la aprobación ya no vale.</p>
+      <p class="hash" id="hash"></p>
+    </details>
   </div>
 
-  <button id="register" type="button" class="ghost" hidden>Registrar mi passkey en este dispositivo</button>
   <div id="out" class="msg" role="status" aria-live="polite"></div>
 </div>
 <script src="https://unpkg.com/@simplewebauthn/browser@13.3.0/dist/bundle/index.umd.min.js"></script>
@@ -83,6 +105,16 @@ input,select{border-color:var(--line-strong)}
 const { startRegistration, startAuthentication } = SimpleWebAuthnBrowser;
 const $ = (s) => document.querySelector(s);
 let proposalId = location.pathname.startsWith("/aprobar/") ? decodeURIComponent(location.pathname.split("/")[2]) : null;
+let ready = false;      // el dueño de la tienda ya activó la aprobación (tiene una llave de acceso)
+let approvable = false; // la operación sigue esperando aprobación
+let kind = "";          // tipo de la operación que se muestra
+
+// Palabras según lo que se aprueba: un pago, un permiso de pago o una tanda.
+const TITLE = { PayoutRequest: "Aprobar pago", CreateMandate: "Firmar permiso de pago", CreateTanda: "Firmar tanda" };
+const ACTION = { PayoutRequest: "Aprobar pago", CreateMandate: "Firmar permiso", CreateTanda: "Firmar tanda" };
+const DONE = { PayoutRequest: "Listo, aprobaste el pago.", CreateMandate: "Listo, firmaste el permiso.", CreateTanda: "Listo, firmaste la tanda." };
+const LEAD_SIGN = "Al aprobar, tu teléfono firma exactamente lo que ves abajo. Si algo cambia, la firma deja de valer.";
+const LEAD_MANDATE = "Con este permiso, los pagos a ese proveedor que queden dentro de los topes ya no te piden aprobación cada vez.";
 
 // Mensaje con ícono y texto (nunca solo color).
 const say = (t, ok) => {
@@ -91,6 +123,7 @@ const say = (t, ok) => {
   o.querySelector("span").textContent = t;
   o.className = "msg " + (ok ? "ok" : "bad");
 };
+const setTitle = (t) => { $("#title").textContent = t; document.title = t + " · Cuadra"; };
 // Desactiva el botón mientras trabaja para que no se mande dos veces.
 async function busy(btn, fn) { btn.disabled = true; try { await fn(); } finally { btn.disabled = false; } }
 async function api(url, body) {
@@ -101,31 +134,70 @@ async function api(url, body) {
   return j;
 }
 
-async function ensurePasskey() {
-  // La passkey que cuenta es la del dueño de la tienda de esta propuesta.
+// Lo que dice el navegador al usar la llave de acceso viene en inglés: aquí, en palabras simples.
+function deviceError(e, step) {
+  const name = (e && e.name) || "", code = (e && e.code) || "";
+  if (!window.PublicKeyCredential) return "Este navegador no puede aprobar. Abre el enlace en Chrome o Safari.";
+  if (name === "InvalidStateError") return "Este dispositivo ya estaba activado. Ya puedes aprobar.";
+  if (name === "ConstraintError") return "Pon un bloqueo de pantalla en tu dispositivo (huella, rostro o PIN) y vuelve a intentar.";
+  if (name === "SecurityError") return "Abre el enlace desde la dirección de Cuadra para poder aprobar.";
+  if (name === "NotAllowedError" || name === "AbortError" || code === "ERROR_CEREMONY_ABORTED") {
+    return step === "activar"
+      ? "No se activó: se canceló o pasó el tiempo. Intenta otra vez."
+      : "No se aprobó: se canceló o pasó el tiempo. Intenta otra vez desde el dispositivo donde activaste la aprobación.";
+  }
+  return step === "activar" ? "Tu dispositivo no pudo activar la aprobación. Intenta otra vez." : "Tu dispositivo no pudo completar la aprobación. Intenta otra vez.";
+}
+
+// Firmar solo se puede si la operación sigue abierta y la aprobación ya está activada.
+function refresh() {
+  $("#activate").hidden = ready || !approvable; // activar solo hace falta si hay algo que aprobar
+  $("#sign").hidden = !approvable;              // ya aprobada, cancelada o vencida: no queda nada que firmar
+  $("#sign").disabled = !(approvable && ready);
+}
+async function checkDevice() {
+  // Cuenta la llave de acceso del dueño de la tienda de esta operación.
   const s = await api("/api/passkey/status" + (proposalId ? "?proposal=" + encodeURIComponent(proposalId) : ""));
-  $("#register").hidden = s.registered;
-  return s.registered;
+  ready = s.registered;
+  refresh();
+  return ready;
 }
 $("#register").onclick = () => busy($("#register"), async () => {
   try {
     const opts = await api("/api/passkey/register/options", {});
-    const resp = await startRegistration({ optionsJSON: opts });
+    let resp;
+    try { resp = await startRegistration({ optionsJSON: opts }); } catch (e) {
+      if (e && e.name === "InvalidStateError") await checkDevice().catch(() => {});
+      throw new Error(deviceError(e, "activar"));
+    }
     await api("/api/passkey/register/verify", resp);
-    say("Passkey registrada. Ya puedes firmar.", true);
-    $("#register").hidden = true;
+    ready = true;
+    say("Listo, este dispositivo ya puede aprobar.", true);
   } catch (e) { say(e.message || String(e)); }
+  finally { refresh(); }
 });
+
+// Por qué ya no se puede aprobar, sin códigos internos. Lo ya aprobado es buena noticia (verde).
+function closedMsg(status) {
+  if (status === "done") return ["Esto ya se aprobó y quedó hecho.", true];
+  if (status === "queued" || status === "executing") return ["Esto ya se aprobó y se está enviando.", true];
+  if (status === "rejected") return ["Esto se canceló o se rechazó y ya no se puede aprobar. Si todavía lo necesitas, pídelo otra vez en el chat.", false];
+  return ["Esto ya no se puede aprobar.", false];
+}
 
 async function showProposal(id) {
   const p = await api("/api/proposal/" + encodeURIComponent(id));
-  $("#title").textContent = p.type === "CreateMandate" ? "Firmar mandato" : p.type === "CreateTanda" ? "Firmar tanda" : "Aprobar pago";
+  kind = p.type;
+  setTitle(TITLE[p.type] || "Aprobar");
+  $("#lead").textContent = LEAD_SIGN;
+  $("#sign").textContent = ACTION[p.type] || "Aprobar";
   $("#summary").textContent = p.summary;
   $("#hash").textContent = p.hash;
   $("#review").hidden = false;
-  if (p.provenance === "third_party_content") say("Ojo: esta instrucción vino de una foto, documento o mensaje reenviado. Revísala bien.");
-  const okStatus = ((p.type === "CreateMandate" || p.type === "CreateTanda") && p.status === "pending") || (p.type === "PayoutRequest" && p.status === "awaiting_passkey");
-  if (!okStatus) { $("#sign").disabled = true; say("Esta propuesta ya no se puede aprobar (estado: " + p.status + ")."); }
+  approvable = ((p.type === "CreateMandate" || p.type === "CreateTanda") && p.status === "pending") || (p.type === "PayoutRequest" && p.status === "awaiting_passkey");
+  $("#warn").hidden = !(approvable && p.provenance === "third_party_content");
+  refresh();
+  if (!approvable) say(...closedMsg(p.status));
 }
 
 $("#prepare").onclick = () => busy($("#prepare"), async () => {
@@ -146,26 +218,31 @@ $("#prepare").onclick = () => busy($("#prepare"), async () => {
 $("#sign").onclick = async () => {
   $("#sign").disabled = true;
   try {
-    if (!(await ensurePasskey())) { say("Primero registra tu passkey."); $("#sign").disabled = false; return; }
+    if (!(await checkDevice())) { say("Primero activa la aprobación en este dispositivo."); return; }
     const opts = await api("/api/approve/options", { proposal_id: proposalId });
-    const resp = await startAuthentication({ optionsJSON: opts });
-    const r = await api("/api/approve/verify", { proposal_id: proposalId, response: resp });
-    say("Firmado. " + r.summary + " Ya puedes volver al chat.", true);
-  } catch (e) { say(e.message || String(e)); $("#sign").disabled = false; }
+    let resp;
+    try { resp = await startAuthentication({ optionsJSON: opts }); } catch (e) { throw new Error(deviceError(e, "aprobar")); }
+    await api("/api/approve/verify", { proposal_id: proposalId, response: resp });
+    approvable = false;
+    $("#warn").hidden = true;
+    say((DONE[kind] || "Listo.") + " Ya puedes volver al chat.", true);
+  } catch (e) { say(e.message || String(e)); }
+  finally { refresh(); }
 };
 
 // Carga inicial: "Cargando…" mientras llegan los datos; si falla, el motivo y un botón para reintentar.
 async function boot() {
   $("#loading").hidden = false; $("#retry").hidden = true; $("#out").className = "msg";
   try {
-    await ensurePasskey();
+    await checkDevice();
     if (proposalId) await showProposal(proposalId);
     else {
       const payees = await api("/api/payees");
       const esc = (v) => String(v ?? "").replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
       $("#payee").innerHTML = payees.map((p) => `<option value="${esc(p.id)}">${esc(p.alias)} (CLABE ••••${esc(p.clabe_last4)})</option>`).join("");
-      $("#title").textContent = "Nuevo mandato";
-      if (!payees.length) say("Todavía no tienes proveedores autorizados. Agrégalos desde el chat de Cuadra.");
+      setTitle("Nuevo permiso de pago");
+      $("#lead").textContent = LEAD_MANDATE;
+      if (!payees.length) say("Todavía no tienes proveedores autorizados. Cuando tengas uno, aquí podrás darle un permiso de pago.");
       $("#mandate-form").hidden = !payees.length;
     }
   } catch (e) {

@@ -1,3 +1,4 @@
+import { readFileSync } from "node:fs";
 import { RuleInterpreter } from "@cuadra/agents";
 import { DEMO, schema, seedDemo } from "@cuadra/db";
 import { createTestDb } from "@cuadra/db/testing";
@@ -88,7 +89,7 @@ describe("readCookie", () => {
 describe("isPublicPath", () => {
   it("lo privado exige sesión", () => {
     for (const [p, m] of [
-      ["/api/state", "GET"], ["/api/chat", "POST"], ["/panel", "GET"], ["/index.html", "GET"], ["/tanda", "GET"], ["/mandato", "GET"],
+      ["/api/state", "GET"], ["/api/chat", "POST"], ["/panel", "GET"], ["/index.html", "GET"], ["/tanda", "GET"], ["/mandato", "GET"], ["/permiso", "GET"],
       ["/api/passkey/register/options", "POST"], ["/api/payees", "GET"],
     ] as const) expect(isPublicPath(p, m), `${m} ${p}`).toBe(false);
   });
@@ -294,6 +295,23 @@ describe("login del portal (servidor)", () => {
     expect((await server.inject({ url: "/aprobar/abc" })).statusCode).not.toBe(401);
     expect((await server.inject({ method: "POST", url: "/api/approve/options", payload: { proposal_id: "x" } })).statusCode).not.toBe(401);
     expect((await server.inject({ method: "POST", url: "/api/passkey/register/options", payload: {} })).statusCode).toBe(401);
+  });
+
+  it("la pantalla de aprobación habla de «aprobación» y «permiso»; el código va en el detalle técnico", async () => {
+    const { server } = await app();
+    const page = (await server.inject({ url: "/aprobar/abc" })).body;
+    // Solo las rutas de la API y el estado interno conservan el nombre técnico; nada que lea el comercio dice passkey o mandato.
+    expect(page.replaceAll("/api/passkey/", "").replaceAll("awaiting_passkey", "")).not.toMatch(/passkey|mandato/i);
+    expect(page).toContain("Primero activa la aprobación en este dispositivo.");
+    expect(page).toContain("Revisar permiso");
+    expect(page).toMatch(/<details class="tech">\s*<summary>Detalle técnico<\/summary>/);
+    expect(page).not.toContain("hash:");
+  });
+
+  it("el panel ya no dice «simulado» y firma permisos en /permiso", async () => {
+    const panel = readFileSync(new URL("../public/index.html", import.meta.url), "utf8");
+    expect(panel).not.toMatch(/simulad|simular|mandato/i);
+    expect(panel).toContain('href="/permiso"');
   });
 });
 

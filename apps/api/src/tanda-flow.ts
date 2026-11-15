@@ -62,7 +62,7 @@ export class TandaFlow {
     await this.d.db.update(schema.tandas).set({ status: "frozen" }).where(eq(schema.tandas.id, t.id));
     await this.d.say(
       "comercio",
-      `🛡️ La tanda “${t.name}” no coincide con lo que firmaste con tu passkey (integrantes, CLABEs u orden). La congelé y no cobré nada.`,
+      `🛡️ La tanda “${t.name}” no coincide con lo que firmaste (integrantes, CLABEs u orden). La congelé y no cobré nada.`,
     );
     this.d.log({ msg: "tanda_integrity_failed", merchant_id: this.d.merchantId, tanda_id: t.id });
     return false;
@@ -71,7 +71,7 @@ export class TandaFlow {
   async startRound(): Promise<void> {
     const t = await this.activeTanda();
     if (!t) {
-      await this.d.say("comercio", "No tienes una tanda activa. Créala en “Crear tanda” y fírmala con tu passkey.");
+      await this.d.say("comercio", "No tienes una tanda activa. Créala en “Crear tanda” y fírmala.");
       return;
     }
     if (!(await this.checkIntegrity(t))) return;

@@ -140,13 +140,13 @@ button,.chip,select,a.btn{touch-action:manipulation}
   <nav class="links" aria-label="Otras pantallas">
     <a class="btn btn--on-band" href="/login" target="_blank"><svg class="ico" aria-hidden="true"><use href="/assets/icons.svg#i-phone_iphone"/></svg>Portal sencillo</a>
     <a class="btn btn--on-band" href="/tanda" target="_blank"><svg class="ico" aria-hidden="true"><use href="/assets/icons.svg#i-diversity_3"/></svg>Crear tanda</a>
-    <a class="btn btn--on-band" href="/mandato" target="_blank"><svg class="ico" aria-hidden="true"><use href="/assets/icons.svg#i-edit_note"/></svg>Firmar mandato</a>
+    <a class="btn btn--on-band" href="/permiso" target="_blank"><svg class="ico" aria-hidden="true"><use href="/assets/icons.svg#i-edit_note"/></svg>Firmar permiso</a>
   </nav>
 </header>
 <main>
   <div class="cargando boot" id="boot" role="status">Cargando la consola…</div>
   <section class="col">
-    <h2><span class="ttl"><span class="ic-circle"><svg class="ico" aria-hidden="true"><use href="/assets/icons.svg#i-forum"/></svg></span><span class="tt">WhatsApp del comercio</span></span> <span class="badge">chat web simulado</span></h2>
+    <h2><span class="ttl"><span class="ic-circle"><svg class="ico" aria-hidden="true"><use href="/assets/icons.svg#i-forum"/></svg></span><span class="tt">WhatsApp del comercio</span></span> <span class="badge">chat web</span></h2>
     <div id="t-comercio" class="thread"></div>
     <div class="composer">
     <div class="chips" id="chips"></div>
@@ -245,13 +245,13 @@ document.body.addEventListener("click", (e) => {
 function bubbles(list) {
   return list.map((m) => `<div class="msg ${m.direction}">${esc(m.body)}${
     m.actions && m.actions.length ? `<div class="acts">${m.actions.map((a, i) => a.kind === "qr"
-      ? (a.url ? `<img class="qr" alt="QR CoDi" src="${esc(a.url)}">` : `<div class="qr sim">QR CoDi<br><small>(simulado)</small></div>`)
+      ? (a.url ? `<img class="qr" alt="QR CoDi" src="${esc(a.url)}">` : `<div class="qr sim">Código QR</div>`)
       : `<button ${i ? 'class="ghost"' : ""} data-act='${esc(JSON.stringify(a))}'>${esc(a.label)}</button>`).join("")}</div>` : ""}</div>`).join("");
 }
 function render(s) {
   const live = !s.simulated;
   $("#mode").className = "badge " + (live ? "live" : "sim");
-  $("#mode").textContent = live ? "CoDi en vivo vía pey" : "CoDi simulado (sin llave de pey)";
+  $("#mode").textContent = live ? "CoDi en vivo vía pey" : "CoDi sin cuenta conectada";
   $("#merchant").textContent = s.merchant.name + (s.risk.kill_switch ? " · ⛔ freno de emergencia" : "") + (s.risk.frozen ? " · ❄️ salidas congeladas" : "");
 
   customers = s.customers;
@@ -283,7 +283,7 @@ function render(s) {
     : r ? (r.ok ? "✓ 100%" : `✗ ${mxn(r.difference)}`) : "—";
   $("#k-rec").title = pr
     ? `Última conciliación con pey: ${new Date(pr.at).toLocaleTimeString("es-MX")}${pr.recovered ? ` · ${pr.recovered} recuperado(s)` : ""}`
-    : "Ledger 1100 contra la cuenta operativa simulada";
+    : "Ledger 1100 contra el saldo de la cuenta operativa";
   $("#k-blk .v").textContent = `${s.blocks.count} · 0 salidas indebidas`;
   const n2 = s.n2bis;
   $("#k-n2").className = "kpi " + (!n2 ? "" : n2.level === "ok" ? "ok" : "bad");
@@ -298,7 +298,7 @@ function render(s) {
     $("#tanda").innerHTML = `<tr><th>#</th><th>Integrante</th><th>Cuenta</th><th>Ronda</th></tr>` + td.members.map((m) =>
       `<tr><td>${m.position}</td><td>${esc(m.name)}</td><td>••••${esc(m.clabe_last4)} ${m.account === "ACTIVE" ? "" : `<span class="muted">(${esc(m.account)})</span>`}</td><td>${icon[m.state] || esc(m.state)}</td></tr>`).join("");
     $("#tanda-acts").innerHTML = s.simulated && td.members.some((m) => m.state === "falta")
-      ? `<button class="ghost" data-act='${esc(JSON.stringify({ kind: "pay", url: "/api/sim/tanda/pay-all" }))}'>Simular que pagan todos</button>` : "";
+      ? `<button class="ghost" data-act='${esc(JSON.stringify({ kind: "pay", url: "/api/sim/tanda/pay-all" }))}'>Pagar como los que faltan</button>` : "";
   }
   const im = s.impact;
   if (im) $("#impact").innerHTML = `<b>${mxn(im.cobrado_digital)}</b> de fiado cobrado por CoDi, sin perseguir a nadie ni revisar capturas · ` +
