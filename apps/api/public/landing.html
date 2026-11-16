@@ -127,6 +127,13 @@ a{color:var(--accent)}
 /* Secciones */
 .sec{padding:clamp(72px,9vw,128px) 0}
 .sec.soft{background:var(--bg-soft)}
+/* Por qué importa: tres cifras con fuente */
+.stats{padding:clamp(40px,5vw,64px) 0;border-top:1px solid var(--line);border-bottom:1px solid var(--line)}
+.stats ul{list-style:none;margin:0;padding:0;display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:clamp(20px,3vw,40px)}
+.stats b{display:block;font-family:var(--font-head);font-weight:800;font-size:clamp(36px,4.5vw,52px);line-height:1;color:var(--accent-strong)}
+.stats li span{display:block;margin-top:10px;font-size:17px;line-height:1.45;color:var(--ink-2)}
+.stats .src{margin:24px 0 0;font-size:15px;color:var(--ink-2)}
+@media (max-width:720px){.stats ul{grid-template-columns:1fr}}
 .eyebrow{display:inline-flex;align-items:center;gap:10px;font-family:var(--font-head);font-weight:700;font-size:16px;letter-spacing:.1em;text-transform:uppercase;color:var(--accent)}
 .eyebrow::before{content:"";width:28px;height:3px;border-radius:2px;background:var(--gold)}
 .sec h2{margin-top:16px;font-size:clamp(32px,4vw,50px);font-weight:800;max-width:20ch;text-wrap:balance}
@@ -307,6 +314,18 @@ footer{padding:56px 0 40px;font-size:16px;color:var(--ink-2)}
     </div>
   </section>
 
+  <!-- Por qué importa -->
+  <section class="stats" aria-label="Por qué importa">
+    <div class="wrap">
+      <ul>
+        <li><b>55.1&nbsp;%</b><span>del empleo en México es informal: la confianza de barrio mueve la economía.</span></li>
+        <li><b>29&nbsp;%</b><span>de los adultos tuvo crédito informal, como el fiado de la tiendita.</span></li>
+        <li><b>20&nbsp;%</b><span>participa en tandas, que hoy se llevan en un grupo de WhatsApp.</span></li>
+      </ul>
+      <p class="src">Fuentes: INEGI, segundo trimestre de 2026 (empleo informal) y ENIF 2024 (crédito informal y tandas).</p>
+    </div>
+  </section>
+
   <!-- Cómo funciona -->
   <section class="sec soft" id="como-funciona" aria-labelledby="t-como">
     <div class="wrap">
@@ -390,6 +409,7 @@ footer{padding:56px 0 40px;font-size:16px;color:var(--ink-2)}
       </div>
       <div class="faq">
         <details><summary>¿Cuadra guarda mi dinero?</summary><p class="a">No. Lo que te pagan llega a tu cuenta, no a Cuadra. Cuadra solo anota quién te debe, quién te pagó y a quién le pagaste.</p></details>
+        <details><summary>¿Cuadra me presta dinero o le da crédito a mis clientes?</summary><p class="a">No. Cuadra no presta ni da crédito. El fiado es la cuenta que tú ya llevas con tus clientes de confianza; Cuadra solo la anota y te ayuda a cobrarla. Cada pago va de banco a banco, directo a tu cuenta, y en las tandas, a la cuenta de quien le toca.</p></details>
         <details><summary>¿Mis clientes tienen que instalar algo?</summary><p class="a">No. Pagan desde la app de su banco: con la solicitud que les llega al celular o escaneando tu QR. No se registran en Cuadra.</p></details>
         <details><summary>¿Qué es CoDi?</summary><p class="a">Es el cobro digital de cuenta a cuenta. A tu cliente le llega una solicitud en la app de su banco que dura 6 minutos; al aceptarla, el dinero pasa a tu cuenta. Si vence, se la reenvías.</p></details>
         <details><summary>¿Qué pasa si me equivoco al anotar?</summary><p class="a">Antes de anotar, Cuadra siempre te pregunta «¿Está bien así?». Si algo está mal, tocas «No, cancelar» y no se anota nada.</p></details>
