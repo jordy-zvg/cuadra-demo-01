@@ -48,6 +48,7 @@ const Message = z
     type: z.string(),
     text: z.object({ body: z.string() }).optional(),
     audio: z.object({ id: z.string(), mime_type: z.string().optional() }).passthrough().optional(),
+    image: z.object({ id: z.string(), mime_type: z.string().optional(), caption: z.string().optional() }).passthrough().optional(),
     interactive: z
       .object({ type: z.string(), button_reply: z.object({ id: z.string(), title: z.string() }).optional() })
       .optional(),
@@ -73,6 +74,7 @@ export type WhatsAppInbound =
   | { kind: "text"; id: string; from: string; text: string; forwarded: boolean }
   | { kind: "button"; id: string; from: string; button_id: string }
   | { kind: "audio"; id: string; from: string; media_id: string; forwarded: boolean }
+  | { kind: "image"; id: string; from: string; media_id: string; forwarded: boolean }
   | { kind: "unsupported"; id: string; from: string; type: string };
 
 /** Mensajes entrantes del webhook (ignora estados de entrega y otros campos). */
@@ -89,6 +91,8 @@ export function parseWhatsAppWebhook(body: unknown): WhatsAppInbound[] {
           out.push({ kind: "text", id: m.id, from: m.from, text: m.text.body, forwarded });
         } else if (m.type === "audio" && m.audio) {
           out.push({ kind: "audio", id: m.id, from: m.from, media_id: m.audio.id, forwarded });
+        } else if (m.type === "image" && m.image) {
+          out.push({ kind: "image", id: m.id, from: m.from, media_id: m.image.id, forwarded });
         } else if (m.type === "interactive" && m.interactive?.button_reply) {
           out.push({ kind: "button", id: m.id, from: m.from, button_id: m.interactive.button_reply.id });
         } else {

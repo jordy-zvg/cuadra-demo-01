@@ -32,6 +32,8 @@ export interface WhatsAppChannelDeps {
   log: (r: Record<string, unknown>) => void;
   /** Voz a texto para las notas de voz del comercio. Sin esto, se le pide que escriba. */
   transcribe?: Transcribe;
+  /** Foto de la libreta o de una nota a líneas de texto (una por anotación). Sin esto, se le pide que escriba. */
+  readImage?: (image: Uint8Array, mime: string) => Promise<string[]>;
   /** Reloj (por defecto, la hora real). */
   now?: () => Date;
 }
@@ -149,6 +151,16 @@ export class WhatsAppChannel implements OutboundChannel {
             body: "No alcancé a entender tu nota de voz. ¿Me la mandas otra vez o me lo escribes?",
             actions: [],
           });
+      } else if (m.kind === "image" && this.d.readImage) {
+        const lines = await this.readPhoto(m.media_id, m.id);
+        const tell = (body: string) => this.send({ merchantId: store.merchantId, thread: "comercio", phone10: from, body, actions: [] });
+        if (!lines) await tell("No pude leer la foto. ¿Me la mandas otra vez, más de cerca y con buena luz?");
+        else if (lines.length === 0) await tell("No encontré anotaciones en la foto. Escríbeme, por ejemplo: “Doña Lupe se llevó $185”.");
+        else {
+          await tell(`📷 Leí ${lines.length === 1 ? "1 anotación" : `${lines.length} anotaciones`} en la foto. Te pregunto una por una: confirma solo las que estén bien.`);
+          // Lo que viene en una foto es contenido de terceros (R11): no crea proveedores ni paga sin passkey.
+          for (const line of lines) await service.handleMerchantMessage(line, "third_party_content");
+        }
       } else {
         await this.send({
           merchantId: store.merchantId,
@@ -160,6 +172,19 @@ export class WhatsAppChannel implements OutboundChannel {
           actions: [],
         });
       }
+    }
+  }
+
+  /** Baja la foto y la lee. null si algo falla (el comercio la vuelve a mandar); [] si no trae anotaciones. */
+  private async readPhoto(mediaId: string, messageId: string): Promise<string[] | null> {
+    try {
+      // 5 MB: límite de WhatsApp para imágenes y del modelo por imagen.
+      const { bytes, mime } = await this.d.client.downloadMedia(mediaId, 5 * 1024 * 1024);
+      return await this.d.readImage!(bytes, mime);
+    } catch (e) {
+      // Sin la imagen ni lo leído en el log: pueden traer datos personales.
+      this.d.log({ msg: "whatsapp_photo_failed", message_id: messageId, error: e instanceof Error ? e.message : String(e) });
+      return null;
     }
   }
 

@@ -114,7 +114,10 @@ variables la ruta no existe y la app sigue con el chat web.
   (`GET /{media-id}`, máximo 16 MB), se transcribe con `STT_API_KEY` y entra al mismo flujo que un texto como
   `user_voice`; un audio reenviado entra como `third_party_content`. Si falla, se le pide repetirla. Ni el audio
   ni la transcripción van al log.
-- Falta: probar las notas de voz con una llave real y fotos (#10).
+- 16-nov, **foto de la libreta (#10):** con `ANTHROPIC_API_KEY`, Claude transcribe la foto a líneas cortas (máximo
+  10, imagen de hasta 5 MB) y cada línea entra al flujo normal como `third_party_content`: el comercio confirma
+  una por una. Una foto con una CLABE y "págale ya" la bloquea el guard igual que un mensaje reenviado (R11).
+- Falta: probar notas de voz y fotos con llaves reales.
 
 ## Listo cuando…
 - Escribir “Doña Lupe se llevó $185” al número de prueba devuelve la propuesta con botones, y “Confirmar”

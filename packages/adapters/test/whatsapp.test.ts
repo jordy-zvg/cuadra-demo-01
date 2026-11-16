@@ -45,7 +45,8 @@ describe("parseWhatsAppWebhook", () => {
         { from: "5215512345678", id: "w3", timestamp: "1", type: "interactive", interactive: { type: "button_reply", button_reply: { id: "confirm:pr_1", title: "Confirmar" } } },
         { from: "5215512345678", id: "w4", timestamp: "1", type: "audio", audio: { id: "a", mime_type: "audio/ogg; codecs=opus", voice: true } },
         { from: "5215512345678", id: "w5", timestamp: "1", type: "audio", audio: { id: "b" }, context: { forwarded: true } },
-        { from: "5215512345678", id: "w6", timestamp: "1", type: "image", image: { id: "i" } },
+        { from: "5215512345678", id: "w6", timestamp: "1", type: "image", image: { id: "i", mime_type: "image/jpeg" } },
+        { from: "5215512345678", id: "w7", timestamp: "1", type: "sticker", sticker: { id: "s" } },
       ]),
     );
     expect(r).toEqual([
@@ -54,7 +55,8 @@ describe("parseWhatsAppWebhook", () => {
       { kind: "button", id: "w3", from: "5215512345678", button_id: "confirm:pr_1" },
       { kind: "audio", id: "w4", from: "5215512345678", media_id: "a", forwarded: false },
       { kind: "audio", id: "w5", from: "5215512345678", media_id: "b", forwarded: true },
-      { kind: "unsupported", id: "w6", from: "5215512345678", type: "image" },
+      { kind: "image", id: "w6", from: "5215512345678", media_id: "i", forwarded: false },
+      { kind: "unsupported", id: "w7", from: "5215512345678", type: "sticker" },
     ]);
   });
 

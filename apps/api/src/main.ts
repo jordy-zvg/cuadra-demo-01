@@ -1,6 +1,6 @@
 import { PeyClient, WhatsAppClient, createTranscriber, verifyProposalAssertion } from "@cuadra/adapters";
 import { parseHourRange, parseUdiValue } from "@cuadra/core";
-import { AnthropicInterpreter, FallbackInterpreter, type Interpreter, RuleInterpreter } from "@cuadra/agents";
+import { AnthropicInterpreter, ClaudeImageReader, FallbackInterpreter, type Interpreter, RuleInterpreter } from "@cuadra/agents";
 import { connectPostgres, migratePostgres } from "@cuadra/db/node";
 import { assignAccountStores, schema, seedDemo } from "@cuadra/db";
 import { eq } from "drizzle-orm";
@@ -55,6 +55,7 @@ async function main(): Promise<void> {
   const interpreters: Interpreter[] = env("ANTHROPIC_API_KEY")
     ? [1, 2, 3].map(() => new FallbackInterpreter(new AnthropicInterpreter(), rules))
     : [rules];
+  const photoReader = env("ANTHROPIC_API_KEY") ? new ClaudeImageReader() : null;
 
   // WhatsApp Cloud API: se activa solo con las cuatro variables; si no, queda el chat web.
   const waToken = env("WHATSAPP_TOKEN");
@@ -82,6 +83,8 @@ async function main(): Promise<void> {
                   }),
                 }
               : {}),
+            // Foto de la libreta: la lee Claude, con la misma llave del intérprete.
+            ...(photoReader ? { readImage: (img: Uint8Array, mime: string) => photoReader.read(img, mime) } : {}),
           }),
           appSecret: waSecret,
           verifyToken: waVerify,

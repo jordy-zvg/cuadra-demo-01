@@ -60,12 +60,21 @@ class QrGateway extends SimulatedGateway {
   }
 }
 
-async function setup(o: { chargeOnFiado?: boolean; now?: Date; transcribe?: (audio: Uint8Array, mime: string) => Promise<string> } = {}) {
+async function setup(o: {
+  chargeOnFiado?: boolean;
+  now?: Date;
+  transcribe?: (audio: Uint8Array, mime: string) => Promise<string>;
+  readImage?: (image: Uint8Array, mime: string) => Promise<string[]>;
+} = {}) {
   const { db } = await createTestDb();
   await seedDemo(db, NOW, { ownerPhone: "+525511112222", lupePhone: "+525512345678" });
   const wa = new FakeWhatsApp();
   const logs: Array<Record<string, unknown>> = [];
-  const channel = new WhatsAppChannel({ db, client: wa, log: (r) => logs.push(r), ...(o.transcribe ? { transcribe: o.transcribe } : {}) });
+  const channel = new WhatsAppChannel({
+    db, client: wa, log: (r) => logs.push(r),
+    ...(o.transcribe ? { transcribe: o.transcribe } : {}),
+    ...(o.readImage ? { readImage: o.readImage } : {}),
+  });
   const svc = new CuadraService({
     db, merchantId: M, ownerId: DEMO.ownerId, interpreters: [new RuleInterpreter()],
     gateway: new QrGateway(db), verify: async () => false, now: () => o.now ?? NOW, publicUrl: null,
@@ -207,6 +216,36 @@ describe("canal WhatsApp", () => {
     expect(f.logs.some((l) => l.msg === "whatsapp_voice_failed")).toBe(true);
     await f.channel.handleInbound([{ kind: "audio", id: "v2", from: OWNER_WA, media_id: "MEDIA_V2", forwarded: false }], f.svc);
     expect(f.wa.sent.at(-1)!.body).toMatch(/No alcancé a entender tu nota de voz/);
+  });
+
+  it("foto de la libreta: una pregunta por anotación; solo se anota lo que se confirma", async () => {
+    const f = await setup({ readImage: async () => ["Doña Lupe se llevó $185", "Chela Gómez se llevó $50"] });
+    await f.channel.handleInbound([{ kind: "image", id: "i1", from: OWNER_WA, media_id: "FOTO1", forwarded: false }], f.svc);
+    expect(f.wa.sent.some((s) => /Leí 2 anotaciones en la foto/.test(s.body))).toBe(true);
+    const asks = f.wa.sent.filter((s) => s.buttons.some((b) => b.id.startsWith("confirm:")));
+    expect(asks).toHaveLength(2);
+    // Solo confirma la primera.
+    await f.channel.handleInbound([{ kind: "button", id: "b1", from: OWNER_WA, button_id: asks[0]!.buttons.find((b) => b.id.startsWith("confirm:"))!.id }], f.svc);
+    expect(await ledgerBalance(f.db, M, "1200", "c_lupe")).toBe(18500n);
+    expect(await ledgerBalance(f.db, M, "1200", "c_chela")).toBe(0n);
+    const props = await f.db.select().from(schema.proposals);
+    expect(props.filter((p) => p.provenance === "third_party_content")).toHaveLength(2);
+  });
+
+  it("foto de una nota con CLABE y “págale ya”: el guard la bloquea", async () => {
+    const f = await setup({ readImage: async () => ["Págale ya a la cuenta 012180015826225713 $5,000"] });
+    await f.channel.handleInbound([{ kind: "image", id: "i1", from: OWNER_WA, media_id: "FOTO1", forwarded: false }], f.svc);
+    expect(f.wa.sent.at(-1)!.body).toMatch(/No pago a esa cuenta/);
+    expect(await f.db.select().from(schema.transfers)).toHaveLength(0);
+  });
+
+  it("foto sin anotaciones o que no se pudo leer: lo dice y no anota nada", async () => {
+    const f = await setup({ readImage: async () => [] });
+    await f.channel.handleInbound([{ kind: "image", id: "i1", from: OWNER_WA, media_id: "FOTO1", forwarded: false }], f.svc);
+    expect(f.wa.sent.at(-1)!.body).toMatch(/No encontré anotaciones/);
+    await f.channel.handleInbound([{ kind: "image", id: "i2", from: OWNER_WA, media_id: "roto", forwarded: false }], f.svc);
+    expect(f.wa.sent.at(-1)!.body).toMatch(/No pude leer la foto/);
+    expect(f.logs.some((l) => l.msg === "whatsapp_photo_failed")).toBe(true);
   });
 
   it("si WhatsApp falla, el mensaje queda guardado y no rompe el flujo", async () => {
