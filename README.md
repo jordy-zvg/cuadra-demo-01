@@ -36,7 +36,10 @@ WhatsApp y manda notas de voz:
   enmascaradas y un mensaje que trae una CLABE se bloquea antes de pasar por el modelo de IA.
 - **La IA propone, la persona decide:** ninguna instrucción del modelo mueve dinero; cada rechazo se explica en
   español claro y cita la regla.
-- **Sin custodia:** Cuadra no guarda el dinero de nadie.
+- **Sin custodia y sin crédito:** Cuadra no presta dinero ni da crédito. El fiado es la cuenta que el propio
+  negocio lleva con sus clientes de confianza; Cuadra solo la anota y la cobra. Cada pago va de banco a banco:
+  los cobros llegan directo a la cuenta del negocio y las aportaciones de una tanda, a la cuenta de quien le toca.
+  Cuadra nunca recibe, guarda ni junta el dinero de nadie.
 
 **Frente a lo que ya existe:** las libretas de fiado te recuerdan quién te debe y las terminales cobran sin saber
 qué. Cuadra le cobra al cliente exactamente esa deuda por CoDi y la cierra sola cuando paga. Comparación con

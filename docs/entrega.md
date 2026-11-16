@@ -9,7 +9,9 @@ solicitud de cobro CoDi vía pey directo a la app de su banco. El cliente aprueb
 nada, el pago se concilia solo contra la deuda correcta y ambos reciben su recibo. Para pagar a proveedores, el
 comercio firma con su huella un mandato con topes; fuera de eso, un guard determinista bloquea y explica cada
 intento (CLABEs en mensajes reenviados, beneficiarios nuevos, montos fuera de tope). También vigila el tope
-mensual de la nueva cuenta Nivel 2 Bis de Banxico. Cuadra nunca custodia dinero.
+mensual de la nueva cuenta Nivel 2 Bis de Banxico. Cuadra no presta dinero ni da crédito (el fiado es la
+cuenta que el negocio ya lleva con sus clientes) y nunca recibe, guarda ni junta dinero: cada pago va de banco a
+banco, directo a la cuenta de quien recibe.
 
 **Descripción (una línea):**
 El agente que cobra el fiado por CoDi, concilia solo y protege cada peso de la tiendita.
