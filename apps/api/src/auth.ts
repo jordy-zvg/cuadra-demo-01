@@ -122,7 +122,7 @@ export function readCookie(header: string | undefined, name: string): string | n
 export function isPublicPath(path: string, method: string): boolean {
   if (path === "/" || path === "/health" || path === "/privacidad" || path.startsWith("/webhooks/")) return true; // "/" = landing
   if (path === "/login" || path === "/portal" || path === "/sw.js" || path === "/manifest.webmanifest") return true;
-  if (path === "/logo.svg" || path.startsWith("/icons/")) return true;
+  if (path === "/logo.svg" || path === "/favicon.ico" || path.startsWith("/icons/")) return true;
   // Diseño compartido (hoja de estilos, tipografías e íconos): no contiene datos. Solo nombres
   // simples, sin ".." ni caracteres codificados, para que no sirva de atajo a otras páginas.
   if (/^\/assets\/[A-Za-z0-9_\-./]+$/.test(path) && !path.includes("..")) return true;

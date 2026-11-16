@@ -89,6 +89,8 @@ export function buildServer(o: ServerOpts): FastifyInstance {
   app.get("/", async (_req, reply) => reply.type("text/html; charset=utf-8").sendFile("landing.html"));
   app.get("/panel", async (_req, reply) => reply.type("text/html; charset=utf-8").sendFile("index.html"));
   app.get("/privacidad", async (_req, reply) => reply.type("text/html; charset=utf-8").sendFile("privacidad.html"));
+  // Algunos navegadores piden /favicon.ico por su cuenta (sin leer el <link rel="icon">): el logo de Cuadra.
+  app.get("/favicon.ico", async (_req, reply) => reply.redirect("/logo.svg"));
   // Portal sencillo para el comercio (letra grande, un paso por pantalla). Usa la misma API que el chat.
   for (const path of ["/login", "/portal"]) {
     app.get(path, async (_req, reply) => reply.type("text/html; charset=utf-8").sendFile("portal.html"));
