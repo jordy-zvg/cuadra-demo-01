@@ -90,8 +90,8 @@ describe("aprobación de un pago (rutas)", () => {
     const t = await saveProposal(f.db, { id: "pr_tanda", actorId: DEMO.ownerId, proposal: tanda });
     expect((await sign("pr_tanda", t.proposalHash)).statusCode).toBe(200);
     const chat = await f.chat();
-    expect(chat).toContainEqual(expect.stringMatching(/^✍️ Listo, quedó firmado\. Permiso para pagarle a .+: hasta \$1,500\.00 por pago y \$3,000\.00 por semana, vigente 90 días\.$/));
-    expect(chat).toContainEqual(expect.stringMatching(/^✍️ Listo, quedó firmada\. Tanda “Tanda del mercado”: \$500\.00 por semana cada quien, 3 integrantes\./));
+    expect(chat).toContainEqual(expect.stringMatching(/^Listo, quedó firmado\. Permiso para pagarle a .+: hasta \$1,500\.00 por pago y \$3,000\.00 por semana, vigente 90 días\.$/));
+    expect(chat).toContainEqual(expect.stringMatching(/^Listo, quedó firmada\. Tanda “Tanda del mercado”: \$500\.00 por semana cada quien, 3 integrantes\./));
     expect(chat.join("\n")).not.toMatch(/passkey|mandato/i);
   });
 });

@@ -520,7 +520,7 @@ export class CuadraService {
       const b = await ledgerBalance(this.d.db, this.d.merchantId, "1200", c.id);
       if (b > 0n) lines.push(`• ${c.name}: ${formatMXN(b)}`);
     }
-    await this.say("comercio", lines.length ? `Te deben:\n${lines.join("\n")}` : "Nadie te debe. 🎉");
+    await this.say("comercio", lines.length ? `Te deben:\n${lines.join("\n")}` : "Nadie te debe.");
   }
 
   private async proposePayout(intent: Extract<Intent, { kind: "payout" }>, provenance: Provenance): Promise<void> {
@@ -607,7 +607,7 @@ export class CuadraService {
       await setProposalStatus(this.d.db, p.id, "done");
       const [c] = await this.d.db.select().from(schema.customers).where(eq(schema.customers.id, parsed.customer_id));
       const bal = await ledgerBalance(this.d.db, this.d.merchantId, "1200", parsed.customer_id);
-      await this.say("comercio", `📒 Listo. ${c?.name} te debe ${formatMXN(bal)}.`);
+      await this.say("comercio", `Listo. ${c?.name} te debe ${formatMXN(bal)}.`);
       if (parsed.charge_now || this.d.chargeOnFiado) await this.chargeAfterFiado(parsed.customer_id, parsed.provenance);
       return;
     }
@@ -642,9 +642,9 @@ export class CuadraService {
       await this.say(
         "comercio",
         existing
-          ? `👤 Ya tenías a ${existing.name} en tus clientes.` + (parsed.credit_cents ? ` 📒 Le anoté ${formatMXN(parsed.credit_cents)}: te debe ${formatMXN(bal)}.` : "")
-          : `👤 Listo, di de alta a ${parsed.name}.` +
-              (parsed.credit_cents ? ` 📒 Te debe ${formatMXN(bal)}.` : "") +
+          ? `Ya tenías a ${existing.name} en tus clientes.` + (parsed.credit_cents ? ` Le anoté ${formatMXN(parsed.credit_cents)}: te debe ${formatMXN(bal)}.` : "")
+          : `Listo, di de alta a ${parsed.name}.` +
+              (parsed.credit_cents ? ` Te debe ${formatMXN(bal)}.` : "") +
               (parsed.phone ? "" : ` Sin celular, cóbrale con “QR para ${parsed.name}”.`),
       );
       return;
@@ -677,8 +677,8 @@ export class CuadraService {
       this.d.log({ msg: "cash_payment_recorded", merchant_id: this.d.merchantId, proposal_id: p.id, idempotency_key: `proposal:${p.id}:efectivo` });
       await this.say(
         "comercio",
-        `💵 Listo, anoté ${formatMXN(parsed.amount_cents)} en efectivo de ${name}. ` +
-          (out.balance > 0n ? `Te debe ${formatMXN(out.balance)}.` : `Ya no te debe nada. 🎉`),
+        `Listo, anoté ${formatMXN(parsed.amount_cents)} en efectivo de ${name}. ` +
+          (out.balance > 0n ? `Te debe ${formatMXN(out.balance)}.` : `Ya no te debe nada.`),
       );
     }
   }
@@ -732,7 +732,7 @@ export class CuadraService {
       }
       if (unknown) parts.push(`con ${unknown} pey no respondió y puede que sí les haya llegado (te avisé arriba)`);
       if (failed) parts.push(`${failed} fallaron por un error; inténtalo desde el chat`);
-      await this.say("comercio", `🔔 Recordatorios programados: ${parts.join("; ")}.`);
+      await this.say("comercio", `Recordatorios programados: ${parts.join("; ")}.`);
     }
     return { sent, skipped, ...(unknown ? { unknown } : {}), ...(failed ? { failed } : {}) };
   }

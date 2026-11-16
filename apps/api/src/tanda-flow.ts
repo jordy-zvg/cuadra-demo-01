@@ -111,7 +111,7 @@ export class TandaFlow {
       if (m.position === recipient.position) {
         await this.d.say(
           memberThread(t.id, m.position),
-          `🎉 ${m.name}, esta ronda de “${t.name}” te toca a ti: ${formatMXN(pot)} llegarán directo a tu cuenta ${maskClabe(m.clabe)} conforme paguen los demás.`,
+          `${m.name}, esta ronda de “${t.name}” te toca a ti: ${formatMXN(pot)} llegarán directo a tu cuenta ${maskClabe(m.clabe)} conforme paguen los demás.`,
           undefined,
           { name: "cuadra_tanda_turno", params: [m.name, t.name, formatMXN(pot), maskClabe(m.clabe)] },
         );
@@ -175,7 +175,7 @@ export class TandaFlow {
     }
     if (!(await this.checkIntegrity(t))) return;
     if (st.complete) {
-      await this.d.say("comercio", "Ya aportaron todos en esta ronda. 🎉");
+      await this.d.say("comercio", "Ya aportaron todos en esta ronda.");
       return;
     }
     const members = await tandaMembersOf(this.d.db, t.id);
@@ -219,7 +219,7 @@ export class TandaFlow {
     return (
       `“${t.name}”, ronda ${st.round} de ${t.membersCount}: recibe ${name(st.recipient)}.\n` +
       (st.paid.length ? `✅ Ya pagaron: ${st.paid.map(name).join(", ")}\n` : "") +
-      (st.pending.length ? `⏳ Faltan: ${st.pending.map(name).join(", ")}` : "🎉 Ronda completa.")
+      (st.pending.length ? `⏳ Faltan: ${st.pending.map(name).join(", ")}` : "Ronda completa.")
     );
   }
 
@@ -251,7 +251,7 @@ export class TandaFlow {
     const name = (p: number) => members[p - 1]?.name ?? `#${p}`;
     if (out.status.complete) {
       const pot = potCents(charge.amountCents, members.length);
-      await this.d.say("comercio", `🎉 ¡Pozo completo! ${formatMXN(pot)} llegaron directo a la cuenta de ${recipient.name} (${maskClabe(recipient.clabe)}). Ronda ${charge.round} cerrada.`);
+      await this.d.say("comercio", `Ronda completa: ${formatMXN(pot)} llegaron directo a la cuenta de ${recipient.name} (${maskClabe(recipient.clabe)}). Ronda ${charge.round} cerrada.`);
       for (const m of members) {
         const mine = m.position === recipient.position;
         const aviso = mine
@@ -260,7 +260,7 @@ export class TandaFlow {
         await this.d.say(
           memberThread(charge.tandaId, m.position),
           mine
-            ? `🎉 ${m.name}, ya te llegaron los ${formatMXN(pot)} de tu ronda. ¡Felicidades!`
+            ? `${m.name}, ya te llegaron los ${formatMXN(pot)} de tu ronda.`
             : `✅ La ronda ${charge.round} de “${t?.name}” se completó: ${recipient.name} ya recibió su pozo.`,
           undefined,
           { name: "cuadra_tanda_aviso", params: [t?.name ?? "tu tanda", aviso] },

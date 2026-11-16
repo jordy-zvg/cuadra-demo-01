@@ -128,7 +128,7 @@ export async function reconcileWithProvider(d: ReconDeps): Promise<ReconResult> 
     await d.say(`🚨 La conciliación con pey encontró ${discrepancies.length} diferencia(s); congelé las salidas hasta revisarlo.\n• ${discrepancies.map((x) => x.detail).join("\n• ")}`);
   }
   if (recovered.length) {
-    await d.say(`🔄 Conciliación con pey: recuperé ${recovered.length} pago(s) que pey cobró y no habían llegado por webhook.`);
+    await d.say(`Conciliación con pey: recuperé ${recovered.length} pago(s) que pey cobró y no habían llegado por webhook.`);
   }
   d.log({ msg: "provider_reconciliation", merchant_id: merchantId, provider: gateway.name, checked: paid.length, recovered: recovered.length, discrepancies: discrepancies.length });
   return { skipped: false, checked: paid.length, recovered, discrepancies, ok };

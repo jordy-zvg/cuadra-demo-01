@@ -80,7 +80,7 @@ describe("tanda sin pozo", () => {
     expect(await f.last()).toMatch(/aportó a la ronda 1\. Faltan: (Bety|Caro)/);
     await f.pay("TX1"); // reintento del webhook: no duplica
     await f.pay("TX2");
-    expect(await f.last()).toMatch(/Pozo completo! \$1,000\.00 llegaron directo a la cuenta de Ana/);
+    expect(await f.last()).toMatch(/Ronda completa: \$1,000\.00 llegaron directo a la cuenta de Ana/);
     // Cuadra no tocó el dinero: el ledger del comercio no se mueve.
     expect(await ledgerBalance(f.db, M, "1100")).toBe(0n);
 

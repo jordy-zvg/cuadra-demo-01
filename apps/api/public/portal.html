@@ -621,7 +621,7 @@ SCREENS.perfil = async () => {
         ? `<input class="field name" id="pf-store" type="text" autocomplete="organization" autocapitalize="words" maxlength="60" value="${esc(p.store_name || "")}"><small class="hint">Así te ven tus clientes en sus avisos de WhatsApp.</small>`
         : `<p class="ro" id="pf-store">${esc(p.store_name || "—")}</p><small class="hint">Solo quien es dueño de la tienda puede cambiar su nombre.</small>`}
       <p class="lbl">Tu celular</p>
-      <p class="ro">•••• ${esc(p.phone_last4)}</p><small class="hint">Con tu celular entras a Cuadra; no se cambia aquí.</small>
+      <p class="ro">•••• ${esc(p.phone_last4)}</p><small class="hint">Es con el que entras a Cuadra, por eso no se cambia aquí.</small>
       <div class="err" id="pf-err" role="alert" hidden></div>
       <button class="go btn btn--block" type="submit" id="pf-save">${ic("check_circle")}Guardar cambios</button>
     </form>

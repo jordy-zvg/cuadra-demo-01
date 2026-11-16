@@ -459,7 +459,7 @@ describe("abonos en efectivo", () => {
     expect(await ledgerBalance(f.db, M, "1200", "c_lupe")).toBe(18500n); // nada sin el «Sí»
     const pid = await f.lastAction();
     await f.svc.confirm(pid);
-    expect(await body(f)).toBe("💵 Listo, anoté $100.00 en efectivo de Doña Lupe. Te debe $85.00.");
+    expect(await body(f)).toBe("Listo, anoté $100.00 en efectivo de Doña Lupe. Te debe $85.00.");
     expect(await ledgerBalance(f.db, M, "1200", "c_lupe")).toBe(8500n);
     expect(await ledgerBalance(f.db, M, "1050")).toBe(caja + 10000n);
     expect(await ledgerBalance(f.db, M, "1100")).toBe(operativa);
@@ -471,7 +471,7 @@ describe("abonos en efectivo", () => {
     await f.svc.handleMerchantMessage("Doña Lupe me pagó $85 en efectivo");
     expect(await body(f)).toMatch(/Con eso queda sin deuda\. ¿Confirmas\?$/);
     await f.svc.confirm(await f.lastAction());
-    expect(await body(f)).toBe("💵 Listo, anoté $85.00 en efectivo de Doña Lupe. Ya no te debe nada. 🎉");
+    expect(await body(f)).toBe("Listo, anoté $85.00 en efectivo de Doña Lupe. Ya no te debe nada.");
   });
 
   it("más de lo que debe o sin deuda: no se anota y se explica", async () => {

@@ -285,12 +285,12 @@ export function registerPasskeyRoutes(app: FastifyInstance, o: PasskeyOpts): voi
         }
       }
       await say(
-        `✍️ Listo, quedó firmada. ${await describe(o.db, p)}` +
+        `Listo, quedó firmada. ${await describe(o.db, p)}` +
           (pending ? ` ${pending} cuenta(s) quedan en alta con Banxico (hasta 5 días hábiles).` : " Todas las cuentas están listas: escribe “cobra la tanda”."),
       );
     } else if (p.type === "CreateMandate") {
       await createMandateFromApproval(o.db, { mandateId: `md_${row.id}`, proposalId: row.id, approvalId, now, verify });
-      await say(`✍️ Listo, quedó firmado. ${await describe(o.db, p)}`);
+      await say(`Listo, quedó firmado. ${await describe(o.db, p)}`);
     } else if (PayoutRequest.safeParse(p).success) {
       // El executor revalida todo, incluida esta firma, antes de enviar.
       await setProposalStatus(o.db, row.id, "queued");
