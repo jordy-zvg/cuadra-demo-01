@@ -907,3 +907,76 @@ describe("código por WhatsApp: Cuadra lo manda y se escribe en el portal", () =
     expect(f.calls()).toBe(0);
   });
 });
+
+describe("perfil: cambios básicos de la cuenta", () => {
+  it("sin sesión o sin verificar el celular, 401", async () => {
+    const { server } = await app();
+    expect((await server.inject({ url: "/api/auth/profile" })).statusCode).toBe(401);
+    expect((await server.inject({ method: "POST", url: "/api/auth/pin", payload: { current: "2580", next: "1357" } })).statusCode).toBe(401);
+    const w = await app({ verification: "whatsapp" });
+    const cookie = cookieOf(await reg(w.server));
+    expect((await w.server.inject({ url: "/api/auth/profile", headers: { cookie } })).statusCode).toBe(401);
+    expect((await w.server.inject({ method: "POST", url: "/api/auth/profile", headers: { cookie }, payload: { name: "Otra" } })).statusCode).toBe(401);
+  });
+
+  it("lee y cambia el nombre y el de su tienda", async () => {
+    const { server } = await app();
+    const cookie = cookieOf(await reg(server));
+    const p = (await server.inject({ url: "/api/auth/profile", headers: { cookie } })).json().profile;
+    expect(p).toMatchObject({ name: "Lupe", phone_last4: "5678", can_rename_store: true, has_pin: true, llave: false });
+    const r = await server.inject({ method: "POST", url: "/api/auth/profile", headers: { cookie }, payload: { name: "  Guadalupe   Ruiz ", store_name: "Abarrotes Lupita" } });
+    expect(r.statusCode).toBe(200);
+    expect(r.json().profile).toMatchObject({ name: "Guadalupe Ruiz", store_name: "Abarrotes Lupita" });
+    expect((await server.inject({ url: "/api/auth/me", headers: { cookie } })).json().account.name).toBe("Guadalupe Ruiz");
+    expect((await server.inject({ url: "/api/state", headers: { cookie } })).json().merchant.name).toBe("Abarrotes Lupita");
+  });
+
+  it("rechaza nombres vacíos o muy largos sin cambiar nada", async () => {
+    const { server } = await app();
+    const cookie = cookieOf(await reg(server));
+    const bad = await server.inject({ method: "POST", url: "/api/auth/profile", headers: { cookie }, payload: { name: " " } });
+    expect(bad.statusCode).toBe(400);
+    expect(bad.json().field).toBe("name");
+    expect((await server.inject({ method: "POST", url: "/api/auth/profile", headers: { cookie }, payload: { store_name: "x".repeat(61) } })).json().field).toBe("store_name");
+    expect((await server.inject({ method: "POST", url: "/api/auth/profile", headers: { cookie }, payload: {} })).statusCode).toBe(400);
+    expect((await server.inject({ url: "/api/auth/profile", headers: { cookie } })).json().profile.name).toBe("Lupe");
+  });
+
+  it("solo el dueño de la tienda le cambia el nombre", async () => {
+    const { server, db } = await app();
+    const cookie = cookieOf(await reg(server));
+    // Esta cuenta queda en la tienda de la demo, que es de otro celular.
+    await db.update(schema.portalAccounts).set({ merchantId: DEMO.merchantId }).where(eq(schema.portalAccounts.phone, "5512345678"));
+    expect((await server.inject({ url: "/api/auth/profile", headers: { cookie } })).json().profile.can_rename_store).toBe(false);
+    const r = await server.inject({ method: "POST", url: "/api/auth/profile", headers: { cookie }, payload: { store_name: "Mía" } });
+    expect(r.statusCode).toBe(403);
+    const [m] = await db.select().from(schema.merchants).where(eq(schema.merchants.id, DEMO.merchantId));
+    expect(m!.name).not.toBe("Mía");
+  });
+
+  it("cambiar el NIP pide el actual, cuenta intentos y cierra las otras sesiones", async () => {
+    const { server } = await app();
+    const cookie = cookieOf(await reg(server));
+    const other = cookieOf(await login(server, "2580"));
+    const pin = (current: string, next: string) => server.inject({ method: "POST", url: "/api/auth/pin", headers: { cookie }, payload: { current, next } });
+    const wrong = await pin("1357", "2468");
+    expect(wrong.statusCode).toBe(403);
+    expect(wrong.json().error).toMatch(/quedan 4 intentos/);
+    expect((await pin("2580", "1111")).json().field).toBe("next");
+    expect((await pin("2580", "2580")).json().field).toBe("next");
+    expect((await pin("2580", "1357")).statusCode).toBe(200);
+    expect((await login(server, "2580")).statusCode).toBe(401);
+    expect((await login(server, "1357")).statusCode).toBe(200);
+    expect((await server.inject({ url: "/api/state", headers: { cookie } })).statusCode).toBe(200);
+    expect((await server.inject({ url: "/api/state", headers: { cookie: other } })).statusCode).toBe(401);
+  });
+
+  it("con 5 NIP actuales equivocados la cuenta se bloquea", async () => {
+    const { server } = await app();
+    const cookie = cookieOf(await reg(server));
+    const pin = (current: string) => server.inject({ method: "POST", url: "/api/auth/pin", headers: { cookie }, payload: { current, next: "1357" } });
+    for (let i = 0; i < 4; i++) expect((await pin("9753")).statusCode).toBe(403);
+    expect((await pin("9753")).json().error).toMatch(/espera 15 minutos/);
+    expect((await pin("2580")).statusCode).toBe(429);
+  });
+});

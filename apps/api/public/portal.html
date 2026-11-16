@@ -46,15 +46,19 @@ header .who b{display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertic
 header .who span{display:block;font-size:.75rem;color:var(--on-brand-accent);margin-top:2px}
 header :focus-visible,header button:focus-visible{outline-color:#fff}
 /* Letra grande: solo el ícono, discreto (sin borde ni texto); el nombre va en aria-label y title. */
-/* Avisos: campana junto a Letra grande, con el número de avisos nuevos. Solo con sesión. */
-.bell{position:relative;flex:none;display:inline-grid;place-items:center;width:44px;height:44px;margin-left:auto;padding:0;border:0;border-radius:50%;background:transparent;color:#fff;opacity:.85;cursor:pointer}
-.bell .ico{width:24px;height:24px;vertical-align:0}
-.bell:hover{background:var(--on-brand-soft);opacity:1}
-.bell[aria-current="page"]{background:var(--on-brand-soft);opacity:1}
-.bell .badge-n{position:absolute;top:4px;right:2px;min-width:20px;height:20px;padding:0 5px;border-radius:999px;background:#FFFFFF;color:var(--c-deep);font-family:var(--font-body);font-size:12px;font-weight:800;line-height:20px;text-align:center;box-shadow:0 0 0 2px var(--c-deep)}
-.bell[hidden],.bell .badge-n[hidden]{display:none}
-body.auth .bell{display:none}
-.bell + .size{margin-left:0}
+/* Botones del encabezado con sesión: Inicio, Avisos (con el número de nuevos), Perfil y Letra grande.
+   Solo ícono (el nombre va en aria-label y title); la pantalla en la que estás queda marcada. */
+.hacts{display:flex;align-items:center;gap:2px;margin-left:auto;flex:none}
+.hbtn{position:relative;flex:none;display:inline-grid;place-items:center;width:44px;height:44px;padding:0;border:0;border-radius:50%;background:transparent;color:#fff;opacity:.85;cursor:pointer;touch-action:manipulation}
+.hbtn .ico{width:24px;height:24px;vertical-align:0}
+.hbtn:hover{background:var(--on-brand-soft);opacity:1}
+.hbtn[aria-current="page"]{background:var(--on-brand-soft);opacity:1}
+.hbtn .badge-n{position:absolute;top:4px;right:2px;min-width:20px;height:20px;padding:0 5px;border-radius:999px;background:#FFFFFF;color:var(--c-deep);font-family:var(--font-body);font-size:12px;font-weight:800;line-height:20px;text-align:center;box-shadow:0 0 0 2px var(--c-deep)}
+.hbtn[hidden],.hbtn .badge-n[hidden]{display:none}
+body.auth .hbtn{display:none}
+.hacts .size{margin-left:0}
+/* Celular muy angosto: el logo cede espacio a los botones. */
+@media (max-width:379px){header .wrap{gap:6px}header .logo{display:none}}
 .size{flex:none;display:inline-grid;place-items:center;width:44px;height:44px;margin-left:auto;padding:0;border:0;border-radius:50%;background:transparent;color:#fff;opacity:.85;cursor:pointer}
 .size::before{content:"";width:24px;height:24px;background:currentColor;-webkit-mask:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24'%3E%3Cpath d='M9 4v3h5v12h3V7h5V4H9zm-6 8h3v7h3v-7h3V9H3v3z'/%3E%3C/svg%3E") center/contain no-repeat;mask:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24'%3E%3Cpath d='M9 4v3h5v12h3V7h5V4H9zm-6 8h3v7h3v-7h3V9H3v3z'/%3E%3C/svg%3E") center/contain no-repeat}
 .size:hover{background:var(--on-brand-soft);opacity:1}
@@ -186,6 +190,17 @@ button:focus-visible,a:focus-visible,input:focus-visible{outline:3px solid var(-
 .field{display:block;width:100%;font:inherit;font-family:var(--font-head);font-size:1.6rem;font-weight:600;letter-spacing:.06em;text-align:center;padding:.65rem;border-radius:var(--r-lg);border:2px solid var(--line-strong);background:var(--surface-plain);color:var(--ink);margin:.3rem 0 .2rem}
 .field.name{letter-spacing:0;font-size:1.3rem}
 .field::placeholder{color:var(--ink-2);opacity:.85;font-weight:400;letter-spacing:0}
+/* Perfil: tarjetas con la etiqueta arriba de cada campo y una ayuda corta abajo. */
+.card.perfil{padding:1rem 1.1rem 1.2rem;margin-top:1rem}
+.card.perfil .sec-title{margin:.1rem 0 .4rem}
+.perfil .lbl{display:block;margin:.9rem 0 .1rem;font-weight:700;color:var(--ink)}
+.perfil .field{text-align:left}
+.perfil .field[aria-invalid="true"]{border-color:var(--bad)}
+.perfil .ro{margin:.2rem 0 .1rem;font-family:var(--font-head);font-weight:600;font-size:1.15rem;color:var(--ink)}
+.perfil .hint{display:block;color:var(--ink-2);font-size:.8rem;line-height:1.35}
+.perfil .err{display:flex}
+.perfil .err[hidden]{display:none}
+#pf-out{margin-top:1.4rem}
 .field:focus,.field:focus-visible{border-color:var(--primary);outline:3px solid var(--focus);outline-offset:2px}
 .dots{display:flex;justify-content:center;gap:1.1rem;margin:.6rem 0 1.2rem}
 .pin-field{display:block;width:min(100%,13rem);margin:.5rem auto 1.1rem;padding:.35rem .2rem .35rem .75rem;border:2px solid var(--line-strong);border-radius:var(--r-lg);background:var(--surface-plain);color:var(--ink);font-family:var(--font-head);font-size:2.1rem;font-weight:700;letter-spacing:.55em;text-align:center}
@@ -282,8 +297,12 @@ button,.opt,.keys button{touch-action:manipulation}
     <a class="home-link" href="/" aria-label="Página principal de Cuadra" title="Página principal"><svg class="ico" aria-hidden="true"><use href="/assets/icons.svg#i-home"/></svg></a>
     <img class="logo" src="/logo.svg" alt="">
     <div class="who"><b id="shop">Cuadra</b><span>Tu libreta de fiado, segura</span></div>
-    <button class="bell" id="bell" type="button" aria-label="Avisos" title="Avisos" hidden><svg class="ico" aria-hidden="true"><use href="/assets/icons.svg#i-notifications"/></svg><span class="badge-n" id="bell-n" hidden></span></button>
-    <button class="size" id="size" type="button" aria-pressed="false" aria-label="Letra grande" title="Letra grande"></button>
+    <div class="hacts">
+      <button class="hbtn" id="homeBtn" type="button" aria-label="Inicio" title="Inicio" hidden><svg class="ico" aria-hidden="true"><use href="/assets/icons.svg#i-home"/></svg></button>
+      <button class="hbtn" id="bell" type="button" aria-label="Avisos" title="Avisos" hidden><svg class="ico" aria-hidden="true"><use href="/assets/icons.svg#i-notifications"/></svg><span class="badge-n" id="bell-n" hidden></span></button>
+      <button class="hbtn" id="perfilBtn" type="button" aria-label="Mi perfil" title="Mi perfil" hidden><svg class="ico" aria-hidden="true"><use href="/assets/icons.svg#i-person"/></svg></button>
+      <button class="size" id="size" type="button" aria-pressed="false" aria-label="Letra grande" title="Letra grande"></button>
+    </div>
   </div>
 </header>
 <aside class="auth-aside" aria-label="Cuadra">
@@ -564,17 +583,94 @@ const avisos = () => chat().filter((m) => m.direction === "out" && !(m.actions |
 const seenKey = "cuadra.avisos.vistos";
 function renderBell() {
   const b = $("#bell"); if (!b || !state) return;
-  b.hidden = false;
+  // Con sesión aparecen Inicio, Avisos y Perfil; el de la pantalla actual queda marcado.
+  for (const [id, scr] of [["#homeBtn", "home"], ["#bell", "avisos"], ["#perfilBtn", "perfil"]]) {
+    const el = $(id); el.hidden = false;
+    if (current?.screen === scr) el.setAttribute("aria-current", "page"); else el.removeAttribute("aria-current");
+  }
   const seen = Number(store.get(seenKey) || 0);
   const n = avisos().filter((m) => m.id > seen).length;
   const badge = $("#bell-n");
   badge.hidden = n === 0 || current?.screen === "avisos";
   badge.textContent = n > 9 ? "9+" : String(n);
   b.setAttribute("aria-label", n && current?.screen !== "avisos" ? `Avisos, ${n} ${n === 1 ? "nuevo" : "nuevos"}` : "Avisos");
-  b.toggleAttribute("aria-current", current?.screen === "avisos");
-  if (current?.screen === "avisos") b.setAttribute("aria-current", "page");
 }
 $("#bell").onclick = () => { if (current?.screen !== "avisos") go("avisos"); };
+$("#homeBtn").onclick = () => home();
+$("#perfilBtn").onclick = () => { if (current?.screen !== "perfil") go("perfil"); };
+
+// ---------- perfil: cambios básicos de la cuenta ----------
+// Tu nombre, el de tu tienda (si eres el dueño) y tu NIP. El celular no se cambia aquí.
+SCREENS.perfil = async () => {
+  app.innerHTML = loadingHtml();
+  let p;
+  try {
+    const r = await fetch("/api/auth/profile", { cache: "no-store" }); checkAuth(r);
+    if (!r.ok) throw new Error("perfil " + r.status);
+    p = (await r.json()).profile;
+  } catch (e) { if (!(e instanceof NeedLogin)) offline(() => go("perfil", null, false)); return; }
+  renderBell();
+  app.innerHTML = `<h1>${ic("person")}Mi perfil</h1>
+    <p class="lead">Revisa y cambia tus datos.</p>
+    <form class="card perfil" id="pf" novalidate>
+      <h2 class="sec-title">Tus datos</h2>
+      <label class="lbl" for="pf-name">Tu nombre</label>
+      <input class="field name" id="pf-name" type="text" autocomplete="name" autocapitalize="words" maxlength="60" value="${esc(p.name)}">
+      <label class="lbl" for="pf-store">Nombre de tu tienda</label>
+      ${p.can_rename_store
+        ? `<input class="field name" id="pf-store" type="text" autocomplete="organization" autocapitalize="words" maxlength="60" value="${esc(p.store_name || "")}"><small class="hint">Así te ven tus clientes en sus avisos de WhatsApp.</small>`
+        : `<p class="ro" id="pf-store">${esc(p.store_name || "—")}</p><small class="hint">Solo quien es dueño de la tienda puede cambiar su nombre.</small>`}
+      <p class="lbl">Tu celular</p>
+      <p class="ro">•••• ${esc(p.phone_last4)}</p><small class="hint">Con tu celular entras a Cuadra; no se cambia aquí.</small>
+      <div class="err" id="pf-err" role="alert" hidden></div>
+      <button class="go btn btn--block" type="submit" id="pf-save">${ic("check_circle")}Guardar cambios</button>
+    </form>
+    ${p.has_pin ? `<form class="card perfil" id="pn" novalidate>
+      <h2 class="sec-title">Cambiar NIP</h2>
+      <label class="lbl" for="pn-cur">NIP actual</label>
+      <input class="field" id="pn-cur" type="password" inputmode="numeric" autocomplete="current-password" maxlength="4">
+      <label class="lbl" for="pn-new">NIP nuevo (4 números)</label>
+      <input class="field" id="pn-new" type="password" inputmode="numeric" autocomplete="new-password" maxlength="4">
+      <small class="hint">Al cambiarlo se cierra tu sesión en otros teléfonos.</small>
+      <div class="err" id="pn-err" role="alert" hidden></div>
+      <button class="go btn btn--block" type="submit" id="pn-save">${ic("lock")}Cambiar NIP</button>
+    </form>` : `<div class="tip">${ic("lock")}<span>Entras con Llave CDMX, así que tu cuenta no tiene NIP.</span></div>`}
+    <button class="go soft btn btn--outline btn--block" type="button" id="pf-out">${ic("logout")}Salir de mi cuenta</button>
+    ${navHtml()}`;
+  $("#pf-out").onclick = logout;
+  const fail = (box, input, msg) => {
+    const el = $(box); el.hidden = false; el.innerHTML = `${ic("error")}<span></span>`; el.lastChild.textContent = msg;
+    if (input) { input.setAttribute("aria-invalid", "true"); input.focus(); }
+  };
+  const send = async (url, body, btn) => {
+    btn.disabled = true;
+    try {
+      const r = await fetch(url, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify(body) });
+      // Solo 401 saca de la sesión; un 403 aquí (NIP actual equivocado, tienda ajena) es un error del formulario.
+      if (r.status === 401) { signedOut(); throw new NeedLogin(); }
+      return { ok: r.ok, ...(await r.json().catch(() => ({}))) };
+    } catch (e) { if (e instanceof NeedLogin) throw e; return { ok: false, error: "No hay conexión. Revisa tu internet y vuelve a intentar." }; }
+    finally { btn.disabled = false; }
+  };
+  const clear = (form) => { $(form + "-err").hidden = true; app.querySelectorAll(`#${form.slice(1)} [aria-invalid]`).forEach((x) => x.removeAttribute("aria-invalid")); };
+  $("#pf").onsubmit = async (e) => {
+    e.preventDefault(); clear("#pf");
+    const body = { name: $("#pf-name").value };
+    if (p.can_rename_store) body.store_name = $("#pf-store").value;
+    const r = await send("/api/auth/profile", body, $("#pf-save"));
+    if (!r.ok) return fail("#pf-err", r.field === "store_name" ? $("#pf-store") : r.field === "name" ? $("#pf-name") : null, r.error || "No se pudo guardar.");
+    p = r.profile; if (me) me.name = p.name;
+    if (p.store_name) $("#shop").textContent = p.store_name;
+    window.cuadraNet?.toast("Listo, guardamos tus cambios.", true);
+  };
+  if (p.has_pin) $("#pn").onsubmit = async (e) => {
+    e.preventDefault(); clear("#pn");
+    const r = await send("/api/auth/pin", { current: $("#pn-cur").value, next: $("#pn-new").value }, $("#pn-save"));
+    if (!r.ok) return fail("#pn-err", r.field === "next" ? $("#pn-new") : $("#pn-cur"), r.error || "No se pudo cambiar el NIP.");
+    $("#pn-cur").value = ""; $("#pn-new").value = "";
+    window.cuadraNet?.toast("Listo, tu NIP cambió.", true);
+  };
+};
 SCREENS.avisos = async () => {
   if (!(await needState())) return;
   app.innerHTML = `<h1>${ic("notifications")}Avisos</h1><p class="lead">Lo que Cuadra te ha escrito, lo más nuevo primero.</p><div id="avisos" class="avisos"></div>${navHtml()}`;

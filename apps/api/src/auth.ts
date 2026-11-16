@@ -3,7 +3,7 @@ import { promisify } from "node:util";
 import type { FastifyInstance, FastifyReply, FastifyRequest } from "fastify";
 import { z } from "zod";
 import type { Db } from "@cuadra/db";
-import { realPhone10, schema, storeForPerson } from "@cuadra/db";
+import { realPhone10, schema, storeForPerson, storeOwner } from "@cuadra/db";
 import { and, desc, eq, gt, isNotNull, isNull, lt, lte, notInArray, or, sql } from "drizzle-orm";
 
 /**
@@ -743,6 +743,91 @@ export class PortalAuth {
       });
       if (res.status === 200) o.log?.({ msg: "phone_verified", merchant_id: a.merchantId, account_id: a.id, method: "code_to_phone" });
       return reply.code(res.status).send(res.body);
+    });
+
+    // ---------- perfil: cambios básicos de la cuenta ----------
+    // Nombre de la persona, nombre de la tienda (solo quien es dueño de esa tienda) y NIP (pidiendo el
+    // actual, con el mismo bloqueo por intentos que la entrada). El celular no se cambia aquí: identifica
+    // a la persona en todo Cuadra y cambiarlo exige verificar el nuevo.
+    const last10 = (p: string) => p.replace(/\D/g, "").slice(-10);
+    const profileOf = async (a: PortalAccount) => {
+      const [acc] = await o.db.select({ pinHash: schema.portalAccounts.pinHash, llaveSub: schema.portalAccounts.llaveSub }).from(schema.portalAccounts).where(eq(schema.portalAccounts.id, a.id));
+      const [store] = await o.db.select({ name: schema.merchants.name }).from(schema.merchants).where(eq(schema.merchants.id, a.merchantId));
+      const owner = await storeOwner(o.db, a.merchantId);
+      return {
+        name: a.name,
+        phone_last4: a.phone.slice(-4),
+        store_name: store?.name ?? null,
+        can_rename_store: !!owner && last10(owner.phone) === last10(a.phone),
+        has_pin: !!acc?.pinHash,
+        llave: !!acc?.llaveSub,
+      };
+    };
+    const verifiedAccount = async (req: FastifyRequest, reply: FastifyReply) => {
+      const a = await this.accountFromRequest(req);
+      if (!a || !a.verified) { void reply.code(401).send({ error: "Entra a tu cuenta para continuar." }); return null; }
+      return a;
+    };
+
+    app.get("/api/auth/profile", async (req, reply) => {
+      const a = await verifiedAccount(req, reply); if (!a) return reply;
+      return { profile: await profileOf(a) };
+    });
+
+    const ProfileBody = z.object({ name: z.string().max(200).optional(), store_name: z.string().max(200).optional() });
+    app.post("/api/auth/profile", async (req, reply) => {
+      const a = await verifiedAccount(req, reply); if (!a) return reply;
+      const b = ProfileBody.safeParse(json(req.body));
+      if (!b.success || (b.data.name === undefined && b.data.store_name === undefined)) return reply.code(400).send({ error: "Faltan datos." });
+      const name = b.data.name === undefined ? undefined : cleanName(b.data.name);
+      if (name === null) return reply.code(400).send({ field: "name", error: "Tu nombre debe tener de 2 a 60 letras." });
+      const storeName = b.data.store_name === undefined ? undefined : cleanName(b.data.store_name);
+      if (storeName === null) return reply.code(400).send({ field: "store_name", error: "El nombre de la tienda debe tener de 2 a 60 letras." });
+      if (storeName !== undefined && !(await profileOf(a)).can_rename_store) {
+        return reply.code(403).send({ field: "store_name", error: "Solo quien es dueño de la tienda puede cambiar su nombre." });
+      }
+      if (name !== undefined) await o.db.update(schema.portalAccounts).set({ name }).where(eq(schema.portalAccounts.id, a.id));
+      if (storeName !== undefined) await o.db.update(schema.merchants).set({ name: storeName }).where(eq(schema.merchants.id, a.merchantId));
+      o.log?.({ msg: "profile_updated", merchant_id: a.merchantId, account_id: a.id, name: name !== undefined, store_name: storeName !== undefined });
+      return { ok: true, profile: await profileOf({ ...a, ...(name !== undefined ? { name } : {}) }) };
+    });
+
+    const PinBody = z.object({ current: z.string().max(10), next: z.string().max(10) });
+    app.post("/api/auth/pin", async (req, reply) => {
+      const a = await verifiedAccount(req, reply); if (!a) return reply;
+      const b = PinBody.safeParse(json(req.body));
+      if (!b.success) return reply.code(400).send({ error: "Faltan datos." });
+      const t = schema.portalAccounts;
+      const [acc] = await o.db.select().from(t).where(eq(t.id, a.id));
+      if (!acc?.pinHash) return reply.code(409).send({ error: "Tu cuenta entra con Llave CDMX y no tiene NIP." });
+      const now = o.now();
+      if (acc.lockedUntil && acc.lockedUntil > now) {
+        const mins = Math.max(1, Math.ceil((acc.lockedUntil.getTime() - now.getTime()) / 60_000));
+        return reply.code(429).send({ field: "current", error: `Por seguridad, espera ${mins} minuto${mins === 1 ? "" : "s"} y vuelve a intentar.` });
+      }
+      if (!(await verifyPin(b.data.current, acc.pinHash))) {
+        // Mismo conteo que la entrada: al llegar al tope, la cuenta se bloquea unos minutos.
+        const reaches = sql`${t.failedAttempts} + 1 >= ${MAX_FAILED}`;
+        const [row] = await o.db.update(t).set({
+          failedAttempts: sql`CASE WHEN ${reaches} THEN 0 ELSE ${t.failedAttempts} + 1 END`,
+          lockedUntil: sql`CASE WHEN ${reaches} THEN ${new Date(now.getTime() + LOCK_MINUTES * 60_000).toISOString()}::timestamptz ELSE ${t.lockedUntil} END`,
+        }).where(eq(t.id, a.id)).returning({ failed: t.failedAttempts, lockedUntil: t.lockedUntil });
+        const locked = !!row?.lockedUntil && row.lockedUntil > now;
+        const left = MAX_FAILED - (row?.failed ?? 0);
+        // 403 y no 401: la sesión sigue abierta (el portal entiende 401 como "vuelve a entrar").
+        return reply.code(403).send({
+          field: "current",
+          error: locked ? `NIP equivocado. Por seguridad, espera ${LOCK_MINUTES} minutos y vuelve a intentar.` : `Tu NIP actual no es ese. Te quedan ${left} intento${left === 1 ? "" : "s"}.`,
+        });
+      }
+      const bad = pinProblem(b.data.next);
+      if (bad) return reply.code(400).send({ field: "next", error: bad });
+      if (b.data.next === b.data.current) return reply.code(400).send({ field: "next", error: "El NIP nuevo debe ser distinto del actual." });
+      await o.db.update(t).set({ pinHash: await hashPin(b.data.next), failedAttempts: 0, lockedUntil: null }).where(eq(t.id, a.id));
+      // Con el NIP nuevo se cierran las sesiones de otros aparatos; esta sigue abierta.
+      await o.db.delete(schema.portalSessions).where(and(eq(schema.portalSessions.accountId, a.id), sql`${schema.portalSessions.tokenHash} <> ${a.session}`));
+      o.log?.({ msg: "pin_changed", merchant_id: a.merchantId, account_id: a.id });
+      return { ok: true };
     });
 
     app.post("/api/auth/logout", async (req, reply) => {
