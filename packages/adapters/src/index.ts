@@ -7,3 +7,4 @@ export * from "./pey/money.js";
 export * from "./pey/client.js";
 export * from "./pey/webhooks.js";
 export * from "./whatsapp/cloud.js";
+export * from "./stt/transcribe.js";

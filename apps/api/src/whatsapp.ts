@@ -3,6 +3,7 @@
  * que usa el chat web (entrada). Solo el teléfono del comercio puede darle instrucciones (R02).
  */
 import {
+  type Transcribe,
   type WhatsAppButton,
   type WhatsAppClient,
   type WhatsAppInbound,
@@ -27,8 +28,10 @@ export function senderPhone10(from: string): string | null {
 
 export interface WhatsAppChannelDeps {
   db: Db;
-  client: Pick<WhatsAppClient, "sendText" | "sendButtons" | "sendTemplate" | "uploadMedia" | "sendImage">;
+  client: Pick<WhatsAppClient, "sendText" | "sendButtons" | "sendTemplate" | "uploadMedia" | "sendImage" | "downloadMedia">;
   log: (r: Record<string, unknown>) => void;
+  /** Voz a texto para las notas de voz del comercio. Sin esto, se le pide que escriba. */
+  transcribe?: Transcribe;
   /** Reloj (por defecto, la hora real). */
   now?: () => Date;
 }
@@ -134,15 +137,42 @@ export class WhatsAppChannel implements OutboundChannel {
         else if (sep > 0 && arg && action === "cancel") await service.cancel(arg);
         // Sugerencia: se procesa como si el comercio la hubiera escrito.
         else if (sep > 0 && arg && action === "say") await service.handleMerchantMessage(arg, "user_direct");
+      } else if (m.kind === "audio" && this.d.transcribe) {
+        const text = await this.transcribeVoice(m.media_id, m.id);
+        // Un audio reenviado es de otra persona: contenido de terceros, igual que un texto reenviado.
+        if (text) await service.handleMerchantMessage(text, m.forwarded ? "third_party_content" : "user_voice");
+        else
+          await this.send({
+            merchantId: store.merchantId,
+            thread: "comercio",
+            phone10: from,
+            body: "No alcancé a entender tu nota de voz. ¿Me la mandas otra vez o me lo escribes?",
+            actions: [],
+          });
       } else {
         await this.send({
           merchantId: store.merchantId,
           thread: "comercio",
           phone10: from,
-          body: "Por ahora solo leo mensajes de texto. Escríbeme, por ejemplo: “Doña Lupe se llevó $185”.",
+          body: this.d.transcribe
+            ? "Por ahora leo mensajes de texto y notas de voz. Escríbeme o dime, por ejemplo: “Doña Lupe se llevó $185”."
+            : "Por ahora solo leo mensajes de texto. Escríbeme, por ejemplo: “Doña Lupe se llevó $185”.",
           actions: [],
         });
       }
+    }
+  }
+
+  /** Baja la nota de voz y la pasa a texto. Si algo falla, null (el comercio la vuelve a mandar). */
+  private async transcribeVoice(mediaId: string, messageId: string): Promise<string | null> {
+    try {
+      const { bytes, mime } = await this.d.client.downloadMedia(mediaId);
+      const text = await this.d.transcribe!(bytes, mime);
+      return text || null;
+    } catch (e) {
+      // Sin el contenido del audio ni la transcripción en el log: pueden traer datos personales.
+      this.d.log({ msg: "whatsapp_voice_failed", message_id: messageId, error: e instanceof Error ? e.message : String(e) });
+      return null;
     }
   }
 }

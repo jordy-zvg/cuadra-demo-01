@@ -22,6 +22,7 @@ class FakeWhatsApp {
   async sendTemplate(to: string, name: string) { this.sent.push({ to, body: `plantilla:${name}` }); return "w"; }
   async uploadMedia() { return "m"; }
   async sendImage(to: string, _m: string, caption?: string) { this.sent.push({ to, body: caption ?? "" }); return "w"; }
+  async downloadMedia(): Promise<{ bytes: Uint8Array; mime: string }> { throw new Error("sin audios en esta prueba"); }
 }
 
 type StateJson = {

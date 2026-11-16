@@ -43,14 +43,18 @@ describe("parseWhatsAppWebhook", () => {
         { from: "5215512345678", id: "w1", timestamp: "1", type: "text", text: { body: "Doña Lupe se llevó $185" } },
         { from: "5215512345678", id: "w2", timestamp: "1", type: "text", text: { body: "págale" }, context: { forwarded: true } },
         { from: "5215512345678", id: "w3", timestamp: "1", type: "interactive", interactive: { type: "button_reply", button_reply: { id: "confirm:pr_1", title: "Confirmar" } } },
-        { from: "5215512345678", id: "w4", timestamp: "1", type: "audio", audio: { id: "a" } },
+        { from: "5215512345678", id: "w4", timestamp: "1", type: "audio", audio: { id: "a", mime_type: "audio/ogg; codecs=opus", voice: true } },
+        { from: "5215512345678", id: "w5", timestamp: "1", type: "audio", audio: { id: "b" }, context: { forwarded: true } },
+        { from: "5215512345678", id: "w6", timestamp: "1", type: "image", image: { id: "i" } },
       ]),
     );
     expect(r).toEqual([
       { kind: "text", id: "w1", from: "5215512345678", text: "Doña Lupe se llevó $185", forwarded: false },
       { kind: "text", id: "w2", from: "5215512345678", text: "págale", forwarded: true },
       { kind: "button", id: "w3", from: "5215512345678", button_id: "confirm:pr_1" },
-      { kind: "unsupported", id: "w4", from: "5215512345678", type: "audio" },
+      { kind: "audio", id: "w4", from: "5215512345678", media_id: "a", forwarded: false },
+      { kind: "audio", id: "w5", from: "5215512345678", media_id: "b", forwarded: true },
+      { kind: "unsupported", id: "w6", from: "5215512345678", type: "image" },
     ]);
   });
 
@@ -154,6 +158,31 @@ describe("WhatsAppClient", () => {
     expect(form.get("type")).toBe("image/png");
     expect((form.get("file") as Blob).size).toBe(3);
     expect(JSON.parse(String(calls[1]!.init.body))).toMatchObject({ type: "image", image: { id: "MEDIA1", caption: "QR de $185.00" } });
+  });
+
+  it("baja una nota de voz: pide la URL temporal y la descarga con el mismo token", async () => {
+    const calls: Array<{ url: string; init: RequestInit }> = [];
+    const responses = [
+      new Response(JSON.stringify({ url: "https://lookaside.example/a", mime_type: "audio/ogg", file_size: 3 }), { status: 200 }),
+      new Response(new Uint8Array([7, 8, 9]), { status: 200 }),
+    ];
+    const fn = (async (url: string | URL, init?: RequestInit) => {
+      calls.push({ url: String(url), init: init ?? {} });
+      return responses.shift()!;
+    }) as typeof fetch;
+    const r = await new WhatsAppClient({ token: "t", phoneNumberId: "PN1", fetch: fn }).downloadMedia("MID");
+    expect(calls[0]!.url).toBe("https://graph.facebook.com/v25.0/MID");
+    expect(calls[1]!.url).toBe("https://lookaside.example/a");
+    expect((calls[1]!.init.headers as Record<string, string>).Authorization).toBe("Bearer t");
+    expect([...r.bytes]).toEqual([7, 8, 9]);
+    expect(r.mime).toBe("audio/ogg");
+  });
+
+  it("no baja archivos más grandes que el límite", async () => {
+    const f = fake(new Response(JSON.stringify({ url: "https://x/a", mime_type: "audio/ogg", file_size: 99 }), { status: 200 }));
+    const e = await new WhatsAppClient({ token: "t", phoneNumberId: "PN1", fetch: f.fn }).downloadMedia("MID", 10).catch((x: unknown) => x);
+    expect(e).toBeInstanceOf(WhatsAppApiError);
+    expect(f.calls).toHaveLength(1);
   });
 
   it("propaga el error de Meta con su código", async () => {

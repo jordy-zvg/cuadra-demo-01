@@ -47,6 +47,7 @@ const Message = z
     id: z.string(),
     type: z.string(),
     text: z.object({ body: z.string() }).optional(),
+    audio: z.object({ id: z.string(), mime_type: z.string().optional() }).passthrough().optional(),
     interactive: z
       .object({ type: z.string(), button_reply: z.object({ id: z.string(), title: z.string() }).optional() })
       .optional(),
@@ -71,6 +72,7 @@ const Payload = z.object({
 export type WhatsAppInbound =
   | { kind: "text"; id: string; from: string; text: string; forwarded: boolean }
   | { kind: "button"; id: string; from: string; button_id: string }
+  | { kind: "audio"; id: string; from: string; media_id: string; forwarded: boolean }
   | { kind: "unsupported"; id: string; from: string; type: string };
 
 /** Mensajes entrantes del webhook (ignora estados de entrega y otros campos). */
@@ -82,9 +84,11 @@ export function parseWhatsAppWebhook(body: unknown): WhatsAppInbound[] {
     for (const c of e.changes) {
       if (c.field !== "messages") continue;
       for (const m of c.value.messages ?? []) {
+        const forwarded = Boolean(m.context?.forwarded || m.context?.frequently_forwarded);
         if (m.type === "text" && m.text) {
-          const forwarded = Boolean(m.context?.forwarded || m.context?.frequently_forwarded);
           out.push({ kind: "text", id: m.id, from: m.from, text: m.text.body, forwarded });
+        } else if (m.type === "audio" && m.audio) {
+          out.push({ kind: "audio", id: m.id, from: m.from, media_id: m.audio.id, forwarded });
         } else if (m.type === "interactive" && m.interactive?.button_reply) {
           out.push({ kind: "button", id: m.id, from: m.from, button_id: m.interactive.button_reply.id });
         } else {
@@ -121,6 +125,8 @@ export interface WhatsAppConfig {
 }
 
 export const WHATSAPP_TIMEOUT_MS = 15_000;
+/** Límite de WhatsApp para audios (16 MB); también protege la memoria del servidor. */
+export const WHATSAPP_MAX_MEDIA_BYTES = 16 * 1024 * 1024;
 
 export interface WhatsAppButton {
   id: string;
@@ -198,6 +204,25 @@ export class WhatsAppClient {
     const json = (await res.json().catch(() => null)) as { display_phone_number?: string } | null;
     const digits = json?.display_phone_number?.replace(/\D/g, "") ?? "";
     return res.ok && digits.length >= 10 ? digits : null;
+  }
+
+  /**
+   * Baja un archivo que mandaron por WhatsApp (nota de voz, foto): GET /{media-id} da una URL
+   * temporal y esa URL se descarga con el mismo token. Rechaza archivos de más de maxBytes.
+   */
+  async downloadMedia(mediaId: string, maxBytes = WHATSAPP_MAX_MEDIA_BYTES): Promise<{ bytes: Uint8Array; mime: string }> {
+    const auth = { Authorization: `Bearer ${this.cfg.token}` };
+    const timeout = () => AbortSignal.timeout(this.cfg.timeoutMs ?? WHATSAPP_TIMEOUT_MS);
+    const metaUrl = `${this.cfg.baseUrl ?? WHATSAPP_GRAPH_URL}/${this.cfg.version ?? WHATSAPP_GRAPH_VERSION}/${encodeURIComponent(mediaId)}`;
+    const res = await this.http(metaUrl, { headers: auth, signal: timeout() });
+    const meta = (await res.json().catch(() => null)) as { url?: string; mime_type?: string; file_size?: number; error?: { message?: string; code?: number } } | null;
+    if (!res.ok || !meta?.url) throw new WhatsAppApiError(res.status, meta?.error?.code ?? null, meta?.error?.message ?? `WhatsApp media ${res.status}`);
+    if ((meta.file_size ?? 0) > maxBytes) throw new WhatsAppApiError(413, null, "Archivo demasiado grande");
+    const file = await this.http(meta.url, { headers: auth, signal: timeout() });
+    if (!file.ok) throw new WhatsAppApiError(file.status, null, `WhatsApp descarga ${file.status}`);
+    const bytes = new Uint8Array(await file.arrayBuffer());
+    if (bytes.byteLength > maxBytes) throw new WhatsAppApiError(413, null, "Archivo demasiado grande");
+    return { bytes, mime: meta.mime_type ?? file.headers.get("content-type") ?? "application/octet-stream" };
   }
 
   async uploadMedia(bytes: Uint8Array, mime: "image/png" | "image/jpeg"): Promise<string> {

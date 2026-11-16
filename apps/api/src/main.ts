@@ -1,4 +1,4 @@
-import { PeyClient, WhatsAppClient, verifyProposalAssertion } from "@cuadra/adapters";
+import { PeyClient, WhatsAppClient, createTranscriber, verifyProposalAssertion } from "@cuadra/adapters";
 import { parseHourRange, parseUdiValue } from "@cuadra/core";
 import { AnthropicInterpreter, FallbackInterpreter, type Interpreter, RuleInterpreter } from "@cuadra/agents";
 import { connectPostgres, migratePostgres } from "@cuadra/db/node";
@@ -67,7 +67,25 @@ async function main(): Promise<void> {
       : null;
   const whatsapp =
     waClient && waSecret && waVerify
-      ? { channel: new WhatsAppChannel({ db, client: waClient, log }), appSecret: waSecret, verifyToken: waVerify }
+      ? {
+          channel: new WhatsAppChannel({
+            db,
+            client: waClient,
+            log,
+            // Notas de voz: STT_API_KEY de un servicio compatible con la API de OpenAI (OpenAI, Groq).
+            ...(env("STT_API_KEY")
+              ? {
+                  transcribe: createTranscriber({
+                    apiKey: env("STT_API_KEY")!,
+                    ...(env("STT_BASE_URL") ? { baseUrl: env("STT_BASE_URL")! } : {}),
+                    ...(env("STT_MODEL") ? { model: env("STT_MODEL")! } : {}),
+                  }),
+                }
+              : {}),
+          }),
+          appSecret: waSecret,
+          verifyToken: waVerify,
+        }
       : undefined;
   // Verificación del celular: con WhatsApp, cada persona manda desde su celular el código del portal.
   // PHONE_VERIFICATION=off la apaga (solo para una emergencia en la demo: abre "Lo que debo" y las

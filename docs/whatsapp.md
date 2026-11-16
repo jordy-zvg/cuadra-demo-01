@@ -94,6 +94,8 @@ Tokens y secretos de Meta van como variables de entorno; nunca en el repo ni en 
 | `WHATSAPP_VERIFY_TOKEN` | Texto que inventamos y pegamos igual en Meta al registrar el webhook |
 | `WHATSAPP_WABA_ID` | Solo para `pnpm --filter @cuadra/api templates:create` |
 | `DEMO_OWNER_PHONE` | Celular real del comercio: el único que da instrucciones por WhatsApp |
+| `STT_API_KEY` | Opcional: llave del servicio que pasa las notas de voz a texto (API compatible con OpenAI) |
+| `STT_BASE_URL`, `STT_MODEL` | Opcionales: por defecto OpenAI y `whisper-1`; para Groq, `https://api.groq.com/openai/v1` y `whisper-large-v3-turbo` |
 
 Webhook en Meta: `<PUBLIC_URL>/webhooks/whatsapp`, suscrito al campo `messages`. Sin las cuatro primeras
 variables la ruta no existe y la app sigue con el chat web.
@@ -108,7 +110,11 @@ variables la ruta no existe y la app sigue con el chat web.
   (migración 0017) cerró que un código rechazado sirviera mientras Meta contestaba y que registrarse de nuevo
   reiniciara los topes. La segunda revisión (migración 0018) hizo que comprobar el celular cuente solo para la
   sesión que lo comprobó y que el tope de 10 equivocados se cumpla con peticiones a la vez.
-- Falta: probar contra Meta con llaves reales, aprobación de plantillas, notas de voz (#9) y fotos (#10).
+- 16-nov: las 7 plantillas de cobro y tanda ya están aprobadas. **Notas de voz:** el audio del comercio se baja
+  (`GET /{media-id}`, máximo 16 MB), se transcribe con `STT_API_KEY` y entra al mismo flujo que un texto como
+  `user_voice`; un audio reenviado entra como `third_party_content`. Si falla, se le pide repetirla. Ni el audio
+  ni la transcripción van al log.
+- Falta: probar las notas de voz con una llave real y fotos (#10).
 
 ## Listo cuando…
 - Escribir “Doña Lupe se llevó $185” al número de prueba devuelve la propuesta con botones, y “Confirmar”
