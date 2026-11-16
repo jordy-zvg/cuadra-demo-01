@@ -46,6 +46,15 @@ header .who b{display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertic
 header .who span{display:block;font-size:.75rem;color:var(--on-brand-accent);margin-top:2px}
 header :focus-visible,header button:focus-visible{outline-color:#fff}
 /* Letra grande: solo el ícono, discreto (sin borde ni texto); el nombre va en aria-label y title. */
+/* Avisos: campana junto a Letra grande, con el número de avisos nuevos. Solo con sesión. */
+.bell{position:relative;flex:none;display:inline-grid;place-items:center;width:44px;height:44px;margin-left:auto;padding:0;border:0;border-radius:50%;background:transparent;color:#fff;opacity:.85;cursor:pointer}
+.bell .ico{width:24px;height:24px;vertical-align:0}
+.bell:hover{background:var(--on-brand-soft);opacity:1}
+.bell[aria-current="page"]{background:var(--on-brand-soft);opacity:1}
+.bell .badge-n{position:absolute;top:4px;right:2px;min-width:20px;height:20px;padding:0 5px;border-radius:999px;background:#FFFFFF;color:var(--c-deep);font-family:var(--font-body);font-size:12px;font-weight:800;line-height:20px;text-align:center;box-shadow:0 0 0 2px var(--c-deep)}
+.bell[hidden],.bell .badge-n[hidden]{display:none}
+body.auth .bell{display:none}
+.bell + .size{margin-left:0}
 .size{flex:none;display:inline-grid;place-items:center;width:44px;height:44px;margin-left:auto;padding:0;border:0;border-radius:50%;background:transparent;color:#fff;opacity:.85;cursor:pointer}
 .size::before{content:"";width:24px;height:24px;background:currentColor;-webkit-mask:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24'%3E%3Cpath d='M9 4v3h5v12h3V7h5V4H9zm-6 8h3v7h3v-7h3V9H3v3z'/%3E%3C/svg%3E") center/contain no-repeat;mask:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24'%3E%3Cpath d='M9 4v3h5v12h3V7h5V4H9zm-6 8h3v7h3v-7h3V9H3v3z'/%3E%3C/svg%3E") center/contain no-repeat}
 .size:hover{background:var(--on-brand-soft);opacity:1}
@@ -212,6 +221,9 @@ button,.opt,.keys button{touch-action:manipulation}
   .hero:not(.hero--hello){padding-left:var(--gut-wide);padding-right:var(--gut-wide)}
   #app > .hero + .sheet--home{display:grid;grid-template-columns:minmax(0,1.15fr) minmax(0,1fr);gap:0 3rem;align-items:start;padding-left:var(--gut-wide);padding-right:var(--gut-wide)}
   .home-side{position:sticky;top:1rem}
+  /* Sin "Lo que debo", el Inicio queda en una sola columna centrada (los avisos tienen su pantalla). */
+  #app > .hero + .sheet--home:has(#debo:empty){grid-template-columns:minmax(0,1fr);max-width:calc(720px + 2 * var(--gut-wide));margin:0 auto;width:100%}
+  #app > .hero + .sheet--home:has(#debo:empty) .home-side{position:static}
   .home-side #debo .sec-title:first-child,.home-side #debo:empty + .sec-title{margin-top:0}
 }
 /* ---------- Entrada: bienvenida, celular, NIP, registro y verificación ----------
@@ -270,6 +282,7 @@ button,.opt,.keys button{touch-action:manipulation}
     <a class="home-link" href="/" aria-label="Página principal de Cuadra" title="Página principal"><svg class="ico" aria-hidden="true"><use href="/assets/icons.svg#i-home"/></svg></a>
     <img class="logo" src="/logo.svg" alt="">
     <div class="who"><b id="shop">Cuadra</b><span>Tu libreta de fiado, segura</span></div>
+    <button class="bell" id="bell" type="button" aria-label="Avisos" title="Avisos" hidden><svg class="ico" aria-hidden="true"><use href="/assets/icons.svg#i-notifications"/></svg><span class="badge-n" id="bell-n" hidden></span></button>
     <button class="size" id="size" type="button" aria-pressed="false" aria-label="Letra grande" title="Letra grande"></button>
   </div>
 </header>
@@ -341,6 +354,7 @@ async function load() {
   checkAuth(r);
   if (!r.ok) throw new Error("estado " + r.status);
   state = await r.json();
+  renderBell();
   return state;
 }
 let payeesCache = null;
@@ -518,17 +532,14 @@ SCREENS.home = async () => {
     </div>
     <div class="home-side">
     <div id="debo"></div>
-    <h2 class="sec-title">Últimos avisos</h2>
-    <div id="avisos"></div>
     <button class="go soft btn btn--outline btn--block" type="button" id="logout">${ic("logout")}Salir de mi cuenta</button>
     </div>
     </div>`;
   $("#logout").onclick = logout;
   app.querySelectorAll("[data-go]").forEach((b) => (b.onclick = () => go(b.dataset.go)));
   renderDebo();
-  renderAvisos();
   showInstall();
-  pollTimer = setInterval(async () => { try { await load(); renderAvisos(); window.cuadraNet?.ok(); } catch { window.cuadraNet?.fail(); } }, 4000);
+  pollTimer = setInterval(async () => { try { await load(); window.cuadraNet?.ok(); } catch { window.cuadraNet?.fail(); } }, 4000);
 };
 // "Lo que debo": tiendas que te tienen como cliente con tu celular. Solo lectura: cada tienda ve su
 // propia libreta y tú solo ves tu deuda con cada una.
@@ -547,12 +558,38 @@ async function renderDebo() {
 }
 // Los avisos ya llevan su ícono: se quitan los emojis del texto que viene del chat de WhatsApp.
 const noEmoji = (s) => String(s).replace(/[\p{Extended_Pictographic}️‍]+\s?/gu, "");
+// Avisos: lo que Cuadra te escribió (sin las preguntas de confirmar). Pantalla propia, se abre con la
+// campana del encabezado; el número son los que llegaron desde la última vez que la abriste en este teléfono.
+const avisos = () => chat().filter((m) => m.direction === "out" && !(m.actions || []).some((a) => a.kind === "confirm"));
+const seenKey = "cuadra.avisos.vistos";
+function renderBell() {
+  const b = $("#bell"); if (!b || !state) return;
+  b.hidden = false;
+  const seen = Number(store.get(seenKey) || 0);
+  const n = avisos().filter((m) => m.id > seen).length;
+  const badge = $("#bell-n");
+  badge.hidden = n === 0 || current?.screen === "avisos";
+  badge.textContent = n > 9 ? "9+" : String(n);
+  b.setAttribute("aria-label", n && current?.screen !== "avisos" ? `Avisos, ${n} ${n === 1 ? "nuevo" : "nuevos"}` : "Avisos");
+  b.toggleAttribute("aria-current", current?.screen === "avisos");
+  if (current?.screen === "avisos") b.setAttribute("aria-current", "page");
+}
+$("#bell").onclick = () => { if (current?.screen !== "avisos") go("avisos"); };
+SCREENS.avisos = async () => {
+  if (!(await needState())) return;
+  app.innerHTML = `<h1>${ic("notifications")}Avisos</h1><p class="lead">Lo que Cuadra te ha escrito, lo más nuevo primero.</p><div id="avisos" class="avisos"></div>${navHtml()}`;
+  renderAvisos();
+  pollTimer = setInterval(async () => { try { await load(); renderAvisos(); window.cuadraNet?.ok(); } catch { window.cuadraNet?.fail(); } }, 4000);
+};
 function renderAvisos() {
   const el = $("#avisos"); if (!el) return;
-  const out = chat().filter((m) => m.direction === "out" && !(m.actions || []).some((a) => a.kind === "confirm")).slice(-3).reverse();
+  const all = avisos();
+  const out = all.slice(-30).reverse();
+  if (all.length) store.set(seenKey, String(all[all.length - 1].id));
+  renderBell();
   el.innerHTML = out.length
     ? out.map((m) => `<div class="aviso card"><span class="ic-circle" aria-hidden="true">${ic("notifications")}</span><div class="txt">${esc(noEmoji(m.body))}<small>${esc(new Date(m.at).toLocaleString("es-MX", { weekday: "long", hour: "numeric", minute: "2-digit" }))}</small></div></div>`).join("")
-    : `<p class="empty">Todavía no hay avisos.</p>`;
+    : `<p class="empty">Todavía no hay avisos. Aquí te contamos cuando alguien te pague o haya algo que revisar.</p>`;
 }
 
 // Elegir cliente (para fiado o cobro)
@@ -804,13 +841,13 @@ const plain = (body) => String(body).replace(/\s*\(R\d{2}\)/g, "");
 SCREENS.respuesta = ({ pending, replies, error, done, cancelled } = {}) => {
   if (pending) { app.innerHTML = `<div class="wait"><div class="spin"></div>Un momento, Cuadra está revisando…</div>${navHtml(false)}`; return; }
   if (error) {
-    app.innerHTML = `<h1 class="t-bad">${ic("error")}Algo salió mal</h1><p class="lead">No pudimos confirmar tu mensaje. Antes de repetirlo, revisa “Últimos avisos” en el inicio para no anotarlo dos veces.</p>${navHtml(false)}`;
+    app.innerHTML = `<h1 class="t-bad">${ic("error")}Algo salió mal</h1><p class="lead">No pudimos confirmar tu mensaje. Antes de repetirlo, revisa tus avisos (la campana de arriba) para no anotarlo dos veces.</p>${navHtml(false)}`;
     return;
   }
   if (!replies || !replies.length) {
     app.innerHTML = done
       ? `<h1 class="${cancelled ? "t-ask" : "t-ok"}">${cancelled ? ic("cancel") + "Cancelado" : ic("check_circle") + "Listo"}</h1><p class="lead">${cancelled ? "No se hizo nada." : "Te avisaremos aquí mismo cuando haya novedades."}</p>${navHtml(false)}`
-      : `<h1>Cuadra está tardando</h1><p class="lead">Tu mensaje sí llegó. Revisa “Últimos avisos” en el inicio en un momento.</p>${navHtml(false)}`;
+      : `<h1>Cuadra está tardando</h1><p class="lead">Tu mensaje sí llegó. En un momento revisa tus avisos (la campana de arriba).</p>${navHtml(false)}`;
     return;
   }
   const actions = [];
