@@ -39,7 +39,7 @@ input,select{border-color:var(--line-strong)}
 <div class="top"><a class="back" href="/login"><svg class="ico" aria-hidden="true"><use href="/assets/icons.svg#i-arrow_back"/></svg>Ir a Cuadra</a></div>
 <main>
 <h1>Aviso de privacidad de Cuadra</h1>
-<p class="muted">Última actualización: 14 de noviembre de 2026. Versión 1.</p>
+<p class="muted">Última actualización: 16 de noviembre de 2026. Versión 2: fotos de la libreta y notas de voz.</p>
 
 <p>Cuadra es un prototipo creado para el Cursor Hackatón México 2026: un asistente de WhatsApp que ayuda a comercios
 de barrio a llevar el fiado, cobrar por CoDi y conciliar pagos. Este aviso explica qué datos personales tratamos, para
@@ -52,8 +52,9 @@ Particulares.</p>
 
 <h2>Datos que tratamos</h2>
 <ul>
-<li><strong>Del comercio:</strong> nombre del negocio, número de celular, mensajes que envía a Cuadra y llave pública
-de su passkey (nunca su huella ni su rostro, que no salen de su teléfono).</li>
+<li><strong>Del comercio:</strong> nombre del negocio, número de celular, mensajes que envía a Cuadra (texto, notas
+de voz y fotos de su libreta o de una nota) y llave pública de su passkey (nunca su huella ni su rostro, que no salen
+de su teléfono). Las fotos y notas de voz pueden mostrar nombres y montos de sus clientes.</li>
 <li><strong>De sus clientes:</strong> nombre, número de celular, montos de fiado, saldo y si aceptaron recibir mensajes.</li>
 <li><strong>De los pagos:</strong> monto, referencia, fecha, CLABE del ordenante y clave de rastreo que informa el
 proveedor de cobro.</li>
@@ -65,6 +66,9 @@ custodia dinero.</p>
 <h2>Para qué los usamos</h2>
 <ul>
 <li>Registrar fiados y saldos que el comercio confirma.</li>
+<li>Leer las fotos de la libreta y las notas de voz para convertirlas en anotaciones. Cada anotación se confirma por
+separado antes de guardarse, y lo que viene en una foto nunca da de alta proveedores ni hace pagos sin la aprobación
+del comercio.</li>
 <li>Enviar solicitudes de cobro CoDi, recordatorios y recibos.</li>
 <li>Conciliar cada pago con la deuda correcta y avisar al comercio.</li>
 <li>Coordinar las aportaciones y turnos de una tanda.</li>
@@ -77,7 +81,10 @@ custodia dinero.</p>
 <li><strong>Meta (WhatsApp Business):</strong> para enviar y recibir mensajes de WhatsApp.</li>
 <li><strong>pey:</strong> para generar solicitudes y códigos QR de cobro CoDi y confirmar pagos.</li>
 <li><strong>Anthropic (Claude):</strong> para interpretar el texto de los mensajes del comercio (por ejemplo, nombre y monto
-de un fiado). El modelo solo propone; las decisiones las toma el código de Cuadra.</li>
+de un fiado) y para leer las fotos de la libreta o de notas que manda por WhatsApp. El modelo solo propone; las
+decisiones las toma el código de Cuadra.</li>
+<li><strong>Servicio de voz a texto (OpenAI o Groq, según el que esté configurado):</strong> para convertir en texto las
+notas de voz que el comercio manda por WhatsApp.</li>
 <li><strong>Railway:</strong> para alojar la aplicación y su base de datos.</li>
 </ul>
 <p>Solo compartimos lo necesario para cada finalidad. Fuera de estos casos, únicamente entregaríamos datos por
@@ -85,7 +92,8 @@ requerimiento de una autoridad competente.</p>
 
 <h2>Cuánto tiempo los guardamos</h2>
 <p>Mientras dure el prototipo o hasta que pidas su eliminación. Los registros contables se conservan sin modificarse
-(cualquier corrección se hace con un asiento de reverso) para que las cuentas cuadren.</p>
+(cualquier corrección se hace con un asiento de reverso) para que las cuentas cuadren. Cuadra no guarda las fotos ni
+las notas de voz: las lee en el momento y solo conserva el texto de las anotaciones que el comercio confirma.</p>
 
 <h2>Tus derechos (ARCO)</h2>
 <p>Puedes pedir acceso, rectificación, cancelación u oposición al tratamiento de tus datos, o revocar tu
