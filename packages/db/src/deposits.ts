@@ -1,6 +1,7 @@
 import {
   type Deposit,
   type MatchResult,
+  abonoEfectivo,
   abonoIdentificado,
   abonoSinIdentificar,
   identificarAbono,
@@ -9,7 +10,7 @@ import {
 import { and, eq, gte, isNull, sql } from "drizzle-orm";
 import type { Db } from "./client.js";
 import { ledgerBalance, postEntries } from "./ledger-repo.js";
-import { charges, customerOrderingClabes, customers, deposits } from "./schema.js";
+import { charges, customerOrderingClabes, customers, deposits, journalEntries } from "./schema.js";
 import { lockMerchant } from "./transfers.js";
 
 export interface DepositOutcome {
@@ -23,6 +24,44 @@ async function closePaidCharges(tx: Db, merchantId: string, customerId: string):
     .update(charges)
     .set({ status: "paid" })
     .where(and(eq(charges.merchantId, merchantId), eq(charges.customerId, customerId), eq(charges.status, "open")));
+}
+
+export type CashPaymentOutcome =
+  | { status: "posted" | "duplicate"; balance: bigint }
+  | { status: "over_balance"; balance: bigint };
+
+/**
+ * Abono de fiado en efectivo: D 1050 / H 1200, solo hasta el saldo del cliente. El saldo se vuelve a
+ * leer con la tienda bloqueada (un pago por CoDi pudo llegar entre la pregunta y el «Sí»).
+ * Idempotente por `idempotency_key`. Si el cliente queda sin deuda, sus cobros abiertos se cierran.
+ */
+export async function recordCashPayment(
+  db: Db,
+  merchantId: string,
+  p: { customer_id: string; amount: bigint; idempotency_key: string; memo?: string },
+): Promise<CashPaymentOutcome> {
+  return db.transaction(async (tx) => {
+    await lockMerchant(tx, merchantId);
+    const balance = await ledgerBalance(tx, merchantId, "1200", p.customer_id);
+    const [prev] = await tx
+      .select({ id: journalEntries.id })
+      .from(journalEntries)
+      .where(eq(journalEntries.idempotencyKey, p.idempotency_key));
+    if (prev) return { status: "duplicate", balance };
+    if (p.amount > balance) return { status: "over_balance", balance };
+    await postEntries(tx, [
+      abonoEfectivo({
+        merchant_id: merchantId,
+        idempotency_key: p.idempotency_key,
+        amount: p.amount,
+        customer_id: p.customer_id,
+        customer_balance: balance,
+        ...(p.memo ? { memo: p.memo } : {}),
+      }),
+    ]);
+    await closePaidCharges(tx, merchantId, p.customer_id);
+    return { status: "posted", balance: balance - p.amount };
+  });
 }
 
 /** Registra un SPEI entrante: idempotente por clave_rastreo, concilia por cascada. */

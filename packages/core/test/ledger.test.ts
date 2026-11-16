@@ -183,3 +183,19 @@ describe("propiedades del ledger", () => {
     expect(accountBalance(next, "1200", "otro")).toBe(0n);
   });
 });
+
+describe("abono en efectivo", () => {
+  it("D 1050 / H 1200, solo hasta el saldo y nunca toca 1100", async () => {
+    const { abonoEfectivo, accountBalance, LedgerError: LE } = await import("../src/ledger.js");
+    const base = { merchant_id: "m1", idempotency_key: "k-cash" };
+    const e = abonoEfectivo({ ...base, amount: 10000n, customer_id: "c1", customer_balance: 18500n });
+    expect(e.kind).toBe("abono_efectivo");
+    expect(e.lines).toEqual([
+      { account: "1050", debit: 10000n, credit: 0n },
+      { account: "1200", subaccount: "c1", debit: 0n, credit: 10000n },
+    ]);
+    expect(accountBalance([e], "1100")).toBe(0n);
+    expect(() => abonoEfectivo({ ...base, amount: 18501n, customer_id: "c1", customer_balance: 18500n })).toThrow(LE);
+    expect(() => abonoEfectivo({ ...base, amount: 0n, customer_id: "c1", customer_balance: 18500n })).toThrow(LE);
+  });
+});

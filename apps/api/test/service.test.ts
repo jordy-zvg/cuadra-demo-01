@@ -442,3 +442,66 @@ describe("canales de salida", () => {
     expect(sent.some((m) => m.thread === "c_lupe" && m.phone10 === "5512345678" && /Te saludamos/.test(m.body))).toBe(true);
   });
 });
+
+describe("abonos en efectivo", () => {
+  const body = async (f: Awaited<ReturnType<typeof setup>>) => (await f.msgs()).at(-1)!.body;
+  const entries = async (f: Awaited<ReturnType<typeof setup>>) =>
+    (await f.db.select().from(schema.journalEntries)).filter((e) => e.kind === "abono_efectivo");
+
+  it("«me pagó $100 en efectivo»: se confirma, baja la deuda y queda en 1050 (no en la cuenta operativa)", async () => {
+    const f = await setup();
+    await f.svc.handleMerchantMessage("Doña Lupe se llevó $185");
+    await f.svc.confirm(await f.lastAction());
+    const caja = await ledgerBalance(f.db, M, "1050");
+    const operativa = await ledgerBalance(f.db, M, "1100");
+    await f.svc.handleMerchantMessage("Doña Lupe me pagó $100 en efectivo");
+    expect(await body(f)).toBe("Anoto $100.00 en efectivo de Doña Lupe. Te quedaría debiendo $85.00. ¿Confirmas?");
+    expect(await ledgerBalance(f.db, M, "1200", "c_lupe")).toBe(18500n); // nada sin el «Sí»
+    const pid = await f.lastAction();
+    await f.svc.confirm(pid);
+    expect(await body(f)).toBe("💵 Listo, anoté $100.00 en efectivo de Doña Lupe. Te debe $85.00.");
+    expect(await ledgerBalance(f.db, M, "1200", "c_lupe")).toBe(8500n);
+    expect(await ledgerBalance(f.db, M, "1050")).toBe(caja + 10000n);
+    expect(await ledgerBalance(f.db, M, "1100")).toBe(operativa);
+    // Un segundo clic no lo anota dos veces.
+    await f.svc.confirm(pid);
+    expect(await ledgerBalance(f.db, M, "1200", "c_lupe")).toBe(8500n);
+    expect(await entries(f)).toHaveLength(1);
+    // Liquidar el resto.
+    await f.svc.handleMerchantMessage("Doña Lupe me pagó $85 en efectivo");
+    expect(await body(f)).toMatch(/Con eso queda sin deuda\. ¿Confirmas\?$/);
+    await f.svc.confirm(await f.lastAction());
+    expect(await body(f)).toBe("💵 Listo, anoté $85.00 en efectivo de Doña Lupe. Ya no te debe nada. 🎉");
+  });
+
+  it("más de lo que debe o sin deuda: no se anota y se explica", async () => {
+    const f = await setup();
+    await f.svc.handleMerchantMessage("Doña Lupe se llevó $50");
+    await f.svc.confirm(await f.lastAction());
+    await f.svc.handleMerchantMessage("Doña Lupe me pagó $100 en efectivo");
+    expect(await body(f)).toBe("Doña Lupe te debe $50.00. Si te dio $100.00, anota $50.00 y el resto es su cambio.");
+    expect((await f.msgs()).at(-1)!.actions ?? []).toHaveLength(0);
+    await f.svc.handleMerchantMessage("Doña Lupe me pagó $50 en efectivo");
+    await f.svc.confirm(await f.lastAction());
+    await f.svc.handleMerchantMessage("Doña Lupe me pagó $10 en efectivo");
+    expect(await body(f)).toBe("Doña Lupe no te debe nada, así que no anoto ese efectivo.");
+    expect(await entries(f)).toHaveLength(1);
+  });
+
+  it("con una solicitud CoDi viva no se anota (pagaría doble); si llega un pago entre la pregunta y el «Sí», se revisa otra vez", async () => {
+    const f = await setup();
+    await f.svc.handleMerchantMessage("Doña Lupe se llevó $100");
+    await f.svc.confirm(await f.lastAction());
+    // Se pregunta por el efectivo y, antes del «Sí», sale un cobro al celular.
+    await f.svc.handleMerchantMessage("Doña Lupe me pagó $100 en efectivo");
+    const cashPid = await f.lastAction();
+    await f.svc.handleMerchantMessage("Cóbrale a Doña Lupe");
+    await f.svc.confirm(await f.lastAction());
+    await f.svc.confirm(cashPid);
+    expect(await body(f)).toMatch(/^No lo anoté\. Doña Lupe tiene un cobro por CoDi que todavía puede pagar \(vence en \d+ min\)\. Para que no pague doble, anota el efectivo cuando venza\.$/);
+    expect(await ledgerBalance(f.db, M, "1200", "c_lupe")).toBe(10000n);
+    await f.svc.handleMerchantMessage("Doña Lupe me pagó $100 en efectivo");
+    expect(await body(f)).toMatch(/tiene un cobro por CoDi que todavía puede pagar/);
+    expect(await entries(f)).toHaveLength(0);
+  });
+});

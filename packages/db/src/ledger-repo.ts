@@ -1,5 +1,6 @@
 import { createHash } from "node:crypto";
 import {
+  ACCOUNTS,
   type AccountCode,
   type Centavos,
   type JournalEntry,
@@ -94,7 +95,10 @@ export async function getEntry(db: Db, idempotencyKey: string): Promise<JournalE
   return entry;
 }
 
-const NORMAL_DEBIT: ReadonlySet<string> = new Set(["1100", "1200", "5100", "5900"]);
+// Naturaleza de cada cuenta: sale del catálogo (core), así una cuenta nueva nunca queda con el signo al revés.
+const NORMAL_DEBIT: ReadonlySet<string> = new Set(
+  (Object.keys(ACCOUNTS) as AccountCode[]).filter((code) => ACCOUNTS[code].normal === "debit"),
+);
 
 /** Saldo de una cuenta (o subcuenta) según su naturaleza. */
 export async function ledgerBalance(

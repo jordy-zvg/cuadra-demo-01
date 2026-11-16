@@ -599,9 +599,11 @@ SCREENS.como = (c) => {
     <div class="list">
       <button class="opt opt--choice" type="button" id="cel"><span class="av" aria-hidden="true">${ic("smartphone")}</span><span class="t">Mandarle el cobro a su celular<small>Le llega a su banco y paga desde ahí</small></span>${ic("chevron_right")}</button>
       <button class="opt opt--choice" type="button" id="qr"><span class="av" aria-hidden="true">${ic("qr_code_2")}</span><span class="t">Mostrarle un código QR aquí<small>Si está en la tienda contigo</small></span>${ic("chevron_right")}</button>
+      <button class="opt opt--choice" type="button" id="cash"><span class="av" aria-hidden="true">${ic("payments")}</span><span class="t">Ya me pagó en efectivo<small>Lo anoto para que su cuenta quede al día</small></span>${ic("chevron_right")}</button>
     </div>${navHtml()}`;
   $("#cel").onclick = () => send(`Cóbrale a ${c.name}`);
   $("#qr").onclick = () => send(`QR para ${c.name}`);
+  $("#cash").onclick = () => go("monto", { mode: "efectivo", who: c });
 };
 
 SCREENS.pagar = async () => {
@@ -658,11 +660,11 @@ SCREENS.celCliente = (arg) => {
 
 SCREENS.monto = (arg) => {
   const { mode, who } = arg;
-  const name = mode === "fiado" ? who.name : who.alias;
+  const name = mode === "pago" ? who.alias : who.name;
   let v = arg.v || "";
   app.innerHTML = `
-    <h1>${mode === "fiado" ? `¿Cuánto se llevó ${esc(name)}?` : `¿Cuánto le pagas a ${esc(name)}?`}</h1>
-    <p class="lead">Escribe la cantidad en pesos.</p>
+    <h1>${mode === "fiado" ? `¿Cuánto se llevó ${esc(name)}?` : mode === "efectivo" ? `¿Cuánto te pagó ${esc(name)} en efectivo?` : `¿Cuánto le pagas a ${esc(name)}?`}</h1>
+    <p class="lead">${mode === "efectivo" && who.owes ? `Te debe ${esc(mxn(who.owes))}. Escribe la cantidad en pesos.` : "Escribe la cantidad en pesos."}</p>
     <div class="amount" id="amt" role="status" aria-live="polite"></div>
     <div class="keys" id="keys">${["1","2","3","4","5","6","7","8","9",".","0","⌫"].map((k) =>
       `<button type="button" data-k="${k}" aria-label="${k === "⌫" ? "Borrar" : k === "." ? "punto para centavos" : k}">${k === "⌫" ? ic("backspace") : k}</button>`).join("")}</div>
@@ -691,7 +693,7 @@ SCREENS.monto = (arg) => {
   $("#ok").onclick = () => {
     const cents = toCents(v); if (!(cents > 0)) return;
     const amount = mxnPlain(cents);
-    send(mode === "fiado" ? `${name} se llevó ${amount}` : `Paga a ${name} ${amount}`);
+    send(mode === "fiado" ? `${name} se llevó ${amount}` : mode === "efectivo" ? `${name} me pagó ${amount} en efectivo` : `Paga a ${name} ${amount}`);
   };
   show();
 };

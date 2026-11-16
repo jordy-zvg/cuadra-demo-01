@@ -2,6 +2,8 @@ import { type Centavos, minCentavos } from "./money.js";
 
 /** Catálogo de cuentas por comercio. */
 export const ACCOUNTS = {
+  /** Efectivo que el comercio recibió en mano (abonos de fiado). Nunca entra a la cuenta operativa. */
+  "1050": { name: "Efectivo en caja", normal: "debit" },
   "1100": { name: "Cuenta operativa", normal: "debit" },
   "1200": { name: "CxC clientes", normal: "debit" },
   "1300": { name: "SPEI por identificar", normal: "credit" },
@@ -28,6 +30,7 @@ export type EntryKind =
   | "abono_identificado"
   | "abono_sin_identificar"
   | "abono_identificacion"
+  | "abono_efectivo"
   | "pago_proveedor_creado"
   | "pago_confirmado"
   | "tanda_aportacion"
@@ -111,6 +114,18 @@ export function abonoIdentificado(
     [D("1100", b.amount), H("1200", toCxC, b.customer_id), H("2100", excess, b.customer_id)],
     "Abono por SPEI",
   );
+}
+
+/**
+ * Abono en efectivo: D 1050 / H 1200. Solo hasta el saldo del cliente: el efectivo de más se lo
+ * regresa el comercio en mano, no queda como saldo a favor. No toca 1100 (la cuenta operativa sigue
+ * siendo el espejo del proveedor) ni cuenta para el saldo disponible de las salidas (R08).
+ */
+export function abonoEfectivo(b: Base & { customer_id: string; customer_balance: Centavos }): JournalEntry {
+  if (b.amount > b.customer_balance) {
+    throw new LedgerError("Un abono en efectivo no puede pasar del saldo del cliente");
+  }
+  return build(b, "abono_efectivo", [D("1050", b.amount), H("1200", b.amount, b.customer_id)], "Abono en efectivo");
 }
 
 /** Abono sin identificar: D 1100 / H 1300 */

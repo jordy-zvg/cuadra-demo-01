@@ -42,6 +42,7 @@ import {
   newChargeReference,
   postEntries,
   realPhone10,
+  recordCashPayment,
   recordProviderPayment,
   saveProposal,
   schema,
@@ -325,7 +326,7 @@ export class CuadraService {
         );
         return;
       case "register_cash_payment":
-        await this.say("comercio", "Por ahora solo registro pagos por CoDi/SPEI, que se concilian solos. El efectivo aún no está habilitado.");
+        await this.proposeCashPayment(intent, provenance);
         return;
       case "query_balance":
         await this.answerBalance(intent.customer_name);
@@ -451,6 +452,54 @@ export class CuadraService {
         await this.proposePayout(intent, provenance);
         return;
     }
+  }
+
+  /**
+   * Abono en efectivo («Doña Lupe me pagó $100 en efectivo»): se anota con un «Sí» del comercio, solo
+   * hasta lo que debe. Si tiene una solicitud CoDi viva, no: podría pagarla también y pagaría doble.
+   */
+  private async proposeCashPayment(intent: Extract<Intent, { kind: "register_cash_payment" }>, provenance: Provenance): Promise<void> {
+    const r = await this.resolve(await this.customers(), intent.customer_name);
+    if (!r.ok) {
+      await this.unknownCustomer(intent.customer_name, r.options);
+      return;
+    }
+    const amount = BigInt(intent.amount_cents);
+    const problem = await this.cashProblem(r.row.id, r.row.name, amount);
+    if (problem) {
+      await this.say("comercio", problem);
+      return;
+    }
+    const balance = await ledgerBalance(this.d.db, this.d.merchantId, "1200", r.row.id);
+    const p = await this.newProposal({ type: "RegisterCashPayment", customer_id: r.row.id, amount_cents: intent.amount_cents }, provenance);
+    const rest = balance - amount;
+    await this.say(
+      "comercio",
+      `Anoto ${formatMXN(amount)} en efectivo de ${r.row.name}. ` +
+        (rest > 0n ? `Te quedaría debiendo ${formatMXN(rest)}.` : "Con eso queda sin deuda.") +
+        " ¿Confirmas?",
+      confirmButtons(p.id),
+      p.id,
+    );
+  }
+
+  /** Por qué no se puede anotar ese efectivo ahora (o null si sí se puede). */
+  private async cashProblem(customerId: string, name: string, amount: bigint): Promise<string | null> {
+    const balance = await ledgerBalance(this.d.db, this.d.merchantId, "1200", customerId);
+    if (balance <= 0n) return `${name} no te debe nada, así que no anoto ese efectivo.`;
+    if (amount > balance) {
+      return `${name} te debe ${formatMXN(balance)}. Si te dio ${formatMXN(amount)}, anota ${formatMXN(balance)} y el resto es su cambio.`;
+    }
+    const live = await this.openCharge(customerId, undefined, { payableOnly: true });
+    if (live) {
+      const mins = live.expiresAt ? Math.max(1, Math.ceil((live.expiresAt.getTime() - this.d.now().getTime()) / 60_000)) : null;
+      return (
+        `${name} tiene un cobro por CoDi que todavía puede pagar` +
+        (mins ? ` (vence en ${mins} min)` : "") +
+        `. Para que no pague doble, anota el efectivo cuando venza.`
+      );
+    }
+    return null;
   }
 
   private async answerBalance(name?: string): Promise<void> {
@@ -603,6 +652,34 @@ export class CuadraService {
     if (parsed.type === "SendReminder") {
       await this.sendReminder(p.id, parsed.customer_id);
       return;
+    }
+    if (parsed.type === "RegisterCashPayment") {
+      const [c] = await this.d.db.select().from(schema.customers).where(eq(schema.customers.id, parsed.customer_id));
+      const name = c?.name ?? "El cliente";
+      // Entre la pregunta y el «Sí» pudo salir un cobro o llegar un pago: se revisa otra vez.
+      const problem = await this.cashProblem(parsed.customer_id, name, parsed.amount_cents);
+      if (problem) {
+        await setProposalStatus(this.d.db, p.id, "rejected", { reason: "cash_check_failed" });
+        await this.say("comercio", `No lo anoté. ${problem}`);
+        return;
+      }
+      const out = await recordCashPayment(this.d.db, this.d.merchantId, {
+        customer_id: parsed.customer_id,
+        amount: parsed.amount_cents,
+        idempotency_key: `proposal:${p.id}:efectivo`,
+      });
+      if (out.status === "over_balance") {
+        await setProposalStatus(this.d.db, p.id, "rejected", { reason: "over_balance" });
+        await this.say("comercio", `No lo anoté: ${name} ya solo te debe ${formatMXN(out.balance)}.`);
+        return;
+      }
+      await setProposalStatus(this.d.db, p.id, "done");
+      this.d.log({ msg: "cash_payment_recorded", merchant_id: this.d.merchantId, proposal_id: p.id, idempotency_key: `proposal:${p.id}:efectivo` });
+      await this.say(
+        "comercio",
+        `💵 Listo, anoté ${formatMXN(parsed.amount_cents)} en efectivo de ${name}. ` +
+          (out.balance > 0n ? `Te debe ${formatMXN(out.balance)}.` : `Ya no te debe nada. 🎉`),
+      );
     }
   }
 

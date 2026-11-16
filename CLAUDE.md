@@ -47,6 +47,7 @@ AddCredit (fiado) · RegisterCashPayment · SendReminder · CreateCustomer · Cr
 CreateMandate · RevokeMandate · CreateTanda · TandaContribution · TandaPayout · RefundCredit · Query (solo lectura)
 
 ## Catálogo de cuentas (por comercio)
+1050 Efectivo en caja (abonos en efectivo; nunca entra a 1100)
 1100 Cuenta operativa (espejo del saldo del proveedor)
 1200 CxC clientes (subcuenta por cliente)
 1300 SPEI por identificar
@@ -60,6 +61,8 @@ CreateMandate · RevokeMandate · CreateTanda · TandaContribution · TandaPayou
 ## Asientos (generados solo por código)
 - Fiado: D 1200 / H 4100
 - Abono identificado: D 1100 / H 1200 (hasta el saldo) ; excedente H 2100
+- Abono en efectivo (16-nov-2026): D 1050 / H 1200, solo hasta el saldo del cliente (el excedente es su cambio,
+  no saldo a favor). No se anota si el cliente tiene una solicitud CoDi viva (pagaría doble).
 - Abono sin identificar: D 1100 / H 1300 → al identificar: D 1300 / H 1200
 - Pago a proveedor creado: D 5100 / H 2400 → confirmado: D 2400 / H 1100 → fallido: reverso
 - Tanda **sin pozo** (decisión 14-nov-2026): cada aportación se cobra por CoDi (pey) directo a la cuenta
@@ -87,8 +90,9 @@ R12 Estado de riesgo: kill switch, cuenta congelada, conciliación descuadrada o
 Resultado: `allow` | `require_passkey` | `deny`, con `rules_failed[]`.
 
 ## Backlog acordado
-- Registrar pagos en efectivo (RegisterCashPayment): requiere cuenta de caja en el catálogo; sirve para medir
-  la parte no digital del tope Nivel 2 Bis (≤ 3,000 de 15,000 UDIs).
+- Hecho (16-nov-2026): pagos en efectivo (RegisterCashPayment, cuenta 1050). Por decidir: si cuentan para la parte
+  no digital del tope Nivel 2 Bis (≤ 3,000 de 15,000 UDIs). Hoy no cuentan: el tope mide lo que entra a esa cuenta,
+  y el efectivo en mano solo entra si el comercio lo deposita.
 
 ## Política de recordatorios (separada del guard)
 Saldo en ledger > 0 · monto = saldo · máx. 1 por cliente cada 72 h · horario 09:00–20:00 · cliente con opt-in · tono dentro de plantilla aprobada.

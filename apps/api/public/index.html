@@ -185,7 +185,7 @@ const esc = (s) => String(s ?? "").replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<
 // Presentación: ícono del sprite y estado con ícono + texto (nunca solo color).
 const ic = (n) => `<svg class="ico" aria-hidden="true"><use href="/assets/icons.svg#i-${n}"/></svg>`;
 const pill = (tone, icon, text) => `<span class="st${tone ? " st--" + tone : ""}">${ic(icon)}${text}</span>`;
-const NAMES = { "1100":"Cuenta operativa","1200":"CxC clientes","1300":"SPEI por identificar","2100":"Saldo a favor","2200":"Pozo de tanda","2400":"Pagos en tránsito","4100":"Ventas a crédito","5100":"Compras a proveedores","5900":"Diferencias" };
+const NAMES = { "1050":"Efectivo en caja","1100":"Cuenta operativa","1200":"CxC clientes","1300":"SPEI por identificar","2100":"Saldo a favor","2200":"Pozo de tanda","2400":"Pagos en tránsito","4100":"Ventas a crédito","5100":"Compras a proveedores","5900":"Diferencias" };
 const SUGG = ["Doña Lupe se llevó $185", "Cóbrale a Doña Lupe", "QR para Doña Lupe", "¿Quién me debe?", "Paga al de los refrescos $1,200", "¿Cuánto me queda del tope?", "Cobra la tanda", "¿Cómo va la tanda?", "Págale ya a la cuenta 012180015826225713 $5,000"];
 let last = { comercio: -1, cliente: -1 }, customers = [];
 
