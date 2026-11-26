@@ -1,7 +1,8 @@
 // Service worker del portal (/login). Solo guarda la "cáscara" de la página para que abra rápido
 // y sin internet muestre el aviso de conexión. NUNCA guarda /api/*: saldos, cobros y pagos
 // siempre se piden en vivo al servidor.
-const CACHE = "cuadra-portal-v22";
+const CACHE = "cuadra-portal-v23";
+// v23: identidad 2.0 (papel cuadriculado, Bricolage Grotesque en títulos, paleta ajustada y logo con los tonos nuevos).
 // v22: «Ya me pagó en efectivo» al cobrarle a un cliente.
 // v21: «Ya intentamos mandarte varios códigos» (el tope cuenta también los envíos rechazados).
 // v20: el campo del código cabe en el celular; tras un rechazo de WhatsApp el respaldo conserva el motivo.
@@ -26,7 +27,7 @@ const CACHE = "cuadra-portal-v22";
 const SHELL = [
   "/login", "/logo.svg", "/manifest.webmanifest", "/icons/icon-192.png", "/icons/icon-512.png",
   "/assets/cuadra.css", "/assets/icons.svg", "/assets/red.js",
-  "/assets/fonts/montserrat-latin-wght-normal.woff2", "/assets/fonts/noto-sans-latin-wght-normal.woff2",
+  "/assets/fonts/bricolage-grotesque-latin-wght-normal.woff2", "/assets/fonts/noto-sans-latin-wght-normal.woff2",
 ];
 
 self.addEventListener("install", (e) => {

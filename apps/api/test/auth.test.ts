@@ -99,7 +99,7 @@ describe("isPublicPath", () => {
       ["/", "GET"], ["/login", "GET"], ["/webhooks/pey", "POST"], ["/aprobar/x", "GET"], ["/api/proposal/x", "GET"],
       ["/api/approve/verify", "POST"], ["/api/auth/login", "POST"], ["/health", "GET"],
       // Diseño compartido: la página de entrada y la de aprobación lo necesitan sin sesión.
-      ["/assets/cuadra.css", "GET"], ["/assets/icons.svg", "GET"], ["/assets/fonts/montserrat-latin-wght-normal.woff2", "GET"],
+      ["/assets/cuadra.css", "GET"], ["/assets/icons.svg", "GET"], ["/assets/fonts/bricolage-grotesque-latin-wght-normal.woff2", "GET"],
     ] as const) expect(isPublicPath(p, m), `${m} ${p}`).toBe(true);
   });
   it("lo que solo se parece a /assets/ no es público", () => {

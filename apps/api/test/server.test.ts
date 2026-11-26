@@ -54,7 +54,7 @@ describe("login mínimo de la demo", () => {
     const fav = await a.inject({ url: "/favicon.ico" });
     expect(fav.statusCode).toBe(302);
     expect(fav.headers.location).toBe("/logo.svg");
-    expect((await a.inject({ url: "/logo.svg?v=1024a6e" })).statusCode).toBe(200);
+    expect((await a.inject({ url: "/logo.svg?v=id2" })).statusCode).toBe(200);
     const cookie = await registrar(a);
     expect((await a.inject({ url: "/api/state", headers: { cookie } })).statusCode).toBe(200);
   });

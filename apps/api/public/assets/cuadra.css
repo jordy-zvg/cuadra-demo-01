@@ -1,17 +1,19 @@
 /*
  * Cuadra · sistema de diseño compartido (tokens, tipografía y componentes base).
  *
- * El lenguaje visual toma como referencia la App CDMX 2026 (verde azulado profundo, superficies
- * menta, títulos cobre, botones de píldora, íconos en círculo) para que Cuadra se sienta familiar a
- * quien ya usa los sistemas de la ciudad. Cuadra es un proyecto independiente: no usa escudos,
- * emblemas ni personajes oficiales.
+ * Identidad 2.0 (nov-2026): la hoja cuadriculada de la libreta. Se queda el verde azulado y el
+ * dorado del logo; el fondo pasa a papel cálido con cuadrícula suave, los títulos a Bricolage
+ * Grotesque y los colores se usan con significado: verde para lo que cuadra, ámbar para lo que
+ * se debe. Conserva la estructura de la referencia anterior (banda de marca, botones de píldora,
+ * íconos en círculo). Cuadra es un proyecto independiente: no usa escudos, emblemas ni personajes
+ * oficiales.
  *
  * Todas las combinaciones de texto cumplen contraste AA (4.5:1) en claro y en oscuro.
  */
 
 @font-face{
-  font-family:"Montserrat";font-style:normal;font-weight:100 900;font-display:swap;
-  src:url("/assets/fonts/montserrat-latin-wght-normal.woff2") format("woff2");
+  font-family:"Bricolage Grotesque";font-style:normal;font-weight:200 800;font-display:swap;
+  src:url("/assets/fonts/bricolage-grotesque-latin-wght-normal.woff2") format("woff2");
 }
 @font-face{
   font-family:"Noto Sans";font-style:normal;font-weight:100 900;font-display:swap;
@@ -22,47 +24,52 @@
   color-scheme:light dark;
 
   /* Marca: verde azulado (de más profundo a más claro) */
-  --c-deep:#0D3336;
-  --c-teal-900:#0F4447;
-  --c-teal-800:#105658;
-  --c-teal-700:#126367;
-  --c-teal-600:#1B7479;
-  --c-teal-500:#1F8288;
+  --c-deep:#0A3236;             /* Verde noche */
+  --c-teal-900:#0C4549;
+  --c-teal-800:#0E5155;
+  --c-teal-700:#0F5A5E;         /* Verde Cuadra */
+  --c-teal-600:#1A6E72;
+  --c-teal-500:#1F7F84;
   --c-teal-400:#25A0A7;
   --c-emerald:#007F64;
   --c-mint-300:#B4E9D9;
-  --c-mint-200:#D3F0EA;
-  --c-mint-100:#DFFDFB;
-  --c-mint-50:#F0FEFE;
-  --c-copper:#8A5E3D;
-  --c-copper-soft:#F3E4D6;
+  --c-mint-200:#DDF2EA;         /* Menta */
+  --c-mint-100:#E8F6F0;
+  --c-mint-50:#F2FAF6;
+  --c-copper:#7A5520;           /* Dorado tinta (texto) */
+  --c-copper-soft:#F3EBDD;
+  --c-gold:#B0874A;             /* Dorado del logo: solo logo y cifras grandes, nunca texto chico */
+  --c-paper:#FAF8F2;            /* Papel */
 
   /* Semánticos (claro) */
-  --bg:#FFFFFF;                 /* fondo de página */
-  --bg-soft:#F4FBFB;            /* fondo alterno, muy sutil */
-  --surface:#F0FEFE;            /* tarjetas */
-  --surface-2:#DFFDFB;          /* círculos de ícono, realces */
+  --bg:#FAF8F2;                 /* fondo de página (papel) */
+  --bg-soft:#F3F0E6;            /* fondo alterno, muy sutil */
+  --surface:#FFFFFF;            /* tarjetas */
+  --surface-2:#DDF2EA;          /* círculos de ícono, realces */
   --surface-plain:#FFFFFF;      /* tarjetas neutras, campos */
-  --ink:#0A1E18;                /* texto principal */
-  --ink-2:#3B524E;              /* texto secundario */
-  --heading:#105658;            /* títulos de pantalla y de tarjeta */
-  --accent:#8A5E3D;             /* títulos de sección (cobre) */
-  --primary:#126367;            /* botón principal, íconos */
+  --ink:#0B1F1E;                /* texto principal (Tinta) */
+  --ink-2:#3E4F4C;              /* texto secundario */
+  --heading:#0A3236;            /* títulos de pantalla y de tarjeta */
+  --accent:#7A5520;             /* títulos de sección (dorado tinta) */
+  --primary:#0F5A5E;            /* botón principal, íconos */
   --primary-ink:#FFFFFF;
-  --primary-press:#0F4447;
+  --primary-press:#0A3236;
   --select:#007F64;             /* seleccionado, chips llenos, casillas */
   --select-ink:#FFFFFF;
   --link:#2D49A0;
-  --line:#C9DCDC;               /* divisores y bordes suaves */
+  --line:#D9E3DF;               /* divisores y bordes suaves */
   --line-strong:#6F8A8B;        /* bordes de campos (3:1) */
   --focus:#2D49A0;
-  --ok:#00694F;  --ok-bg:#DFF7EE;
+  --ok:#00694F;  --ok-bg:#DDF2EA;
   --bad:#A3261D; --bad-bg:#FDECEA;
-  --warn:#7A4A00;--warn-bg:#FFF3D6;
-  --on-brand:#FFFFFF;           /* texto sobre el degradado de marca */
-  --on-brand-accent:#B4E9D9;    /* realce sobre el degradado de marca */
-  --brand-gradient:linear-gradient(180deg,#0D3336 0%,#126367 62%,#1F8288 100%);
-  --brand-flat:#126367;
+  --warn:#8A3F10;--warn-bg:#FBEBDD;   /* ámbar: lo que se debe */
+  --on-brand:#FFFFFF;           /* texto sobre la banda de marca */
+  --on-brand-accent:#DDF2EA;    /* realce sobre la banda de marca */
+  --brand-gradient:linear-gradient(180deg,#0A3236 0%,#0C4549 70%,#0F5A5E 100%);
+  --brand-flat:#0F5A5E;
+  /* Hoja cuadriculada de la libreta (fondo de página en claro) */
+  --grid-line:rgba(15,90,94,.06);
+  --grid-size:24px;
   --shadow-1:0 1px 2px rgba(13,51,54,.10),0 1px 3px rgba(13,51,54,.08);
   --shadow-2:0 4px 14px rgba(13,51,54,.14);
 
@@ -70,7 +77,7 @@
   --r-sm:10px; --r-md:14px; --r-lg:18px; --r-xl:24px; --r-pill:999px;
 
   /* Tipografía */
-  --font-head:"Montserrat",system-ui,-apple-system,"Segoe UI",Roboto,sans-serif;
+  --font-head:"Bricolage Grotesque",system-ui,-apple-system,"Segoe UI",Roboto,sans-serif;
   --font-body:"Noto Sans",system-ui,-apple-system,"Segoe UI",Roboto,sans-serif;
   --font-mono:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;
 }
@@ -84,7 +91,8 @@
   --ink:#E6F4F3;
   --ink-2:#A3BFBD;
   --heading:#B4E9D9;
-  --accent:#E3B58C;
+  --accent:#E9D3AE;
+  --grid-line:rgba(180,233,217,.035);
   --primary:#1B7479;
   --primary-ink:#FFFFFF;
   --primary-press:#126367;
@@ -106,6 +114,11 @@
 
 *{box-sizing:border-box}
 body{margin:0;background:var(--bg);color:var(--ink);font-family:var(--font-body);-webkit-text-size-adjust:100%}
+/* La hoja cuadriculada: en la página y en las hojas que se montan sobre la banda de marca. */
+body,.sheet{
+  background-image:linear-gradient(var(--grid-line) 1px,transparent 1px),linear-gradient(90deg,var(--grid-line) 1px,transparent 1px);
+  background-size:var(--grid-size) var(--grid-size);
+}
 h1,h2,h3{font-family:var(--font-head);letter-spacing:-.01em}
 a{color:var(--link)}
 :focus-visible{outline:3px solid var(--focus);outline-offset:3px}
@@ -129,17 +142,17 @@ a{color:var(--link)}
  * ===================================================================================== */
 
 :root{
-  --glyph:#126367;              /* ícono sólido dentro del círculo menta */
-  --glyph-bg:#DFFDFB;           /* círculo menta */
-  --glyph-bg-hover:#C9F4EE;
-  --card-line:#D2ECE9;          /* borde suave de tarjetas menta */
+  --glyph:#0F5A5E;              /* ícono sólido dentro del círculo menta */
+  --glyph-bg:#DDF2EA;           /* círculo menta */
+  --glyph-bg-hover:#CBEADF;
+  --card-line:#D9E3DF;          /* borde suave de tarjetas */
   --chip-line:#6F8A8B;          /* borde de chips y botones delineados (3:1) */
-  --bubble-me:#D3F0EA;          /* globo propio en el chat */
+  --bubble-me:#DDF2EA;          /* globo propio en el chat */
   --key-bg:#FFFFFF;
-  --hero-ink:#105658;           /* cifra principal */
-  --band:linear-gradient(180deg,#0D3336 0,#105658 200px,#176C70 420px,#1F8288 640px);
+  --hero-ink:#0A3236;           /* cifra principal */
+  --band:linear-gradient(180deg,#0A3236 0,#0C4549 320px,#0F5A5E 640px);
   --pattern:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='72' height='72' viewBox='0 0 72 72'%3E%3Cg fill='none' stroke='%23B4E9D9' stroke-opacity='.075' stroke-width='1.5'%3E%3Crect x='6' y='6' width='26' height='26' rx='6'/%3E%3Crect x='40' y='6' width='26' height='26' rx='6'/%3E%3Crect x='6' y='40' width='26' height='26' rx='6'/%3E%3Cpath d='M40 53h13a13 13 0 0 0 13-13'/%3E%3C/g%3E%3C/svg%3E");
-  --pattern-ink:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='72' height='72' viewBox='0 0 72 72'%3E%3Cg fill='none' stroke='%23126367' stroke-opacity='.06' stroke-width='1.5'%3E%3Crect x='6' y='6' width='26' height='26' rx='6'/%3E%3Crect x='40' y='6' width='26' height='26' rx='6'/%3E%3Crect x='6' y='40' width='26' height='26' rx='6'/%3E%3Cpath d='M40 53h13a13 13 0 0 0 13-13'/%3E%3C/g%3E%3C/svg%3E");
+  --pattern-ink:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='72' height='72' viewBox='0 0 72 72'%3E%3Cg fill='none' stroke='%230F5A5E' stroke-opacity='.06' stroke-width='1.5'%3E%3Crect x='6' y='6' width='26' height='26' rx='6'/%3E%3Crect x='40' y='6' width='26' height='26' rx='6'/%3E%3Crect x='6' y='40' width='26' height='26' rx='6'/%3E%3Cpath d='M40 53h13a13 13 0 0 0 13-13'/%3E%3C/g%3E%3C/svg%3E");
   --on-brand-soft:rgba(255,255,255,.14);
   --on-brand-line:rgba(255,255,255,.78);
   --sheet-r:28px;
@@ -168,11 +181,11 @@ a{color:var(--link)}
   background-size:72px 72px,100% 100%;
 }
 .band :focus-visible,.on-band:focus-visible{outline-color:#FFFFFF}
-.sheet{background:var(--bg);border-radius:var(--sheet-r) var(--sheet-r) 0 0;position:relative}
+.sheet{background-color:var(--bg);border-radius:var(--sheet-r) var(--sheet-r) 0 0;position:relative}
 
 /* ---------- Títulos ---------- */
-.screen-title{font-family:var(--font-head);font-weight:600;color:var(--heading);line-height:1.2;letter-spacing:-.01em}
-.sec-title{font-family:var(--font-head);font-weight:600;color:var(--accent);line-height:1.25;letter-spacing:-.005em}
+.screen-title{font-family:var(--font-head);font-weight:800;color:var(--heading);line-height:1.15;letter-spacing:-.02em}
+.sec-title{font-family:var(--font-head);font-weight:700;color:var(--accent);line-height:1.25;letter-spacing:-.01em}
 .eyebrow{font-family:var(--font-head);font-weight:700;text-transform:uppercase;letter-spacing:.12em;font-size:.78em;color:var(--ink)}
 
 /* ---------- Botón de píldora ---------- */
@@ -290,6 +303,10 @@ a{color:var(--link)}
 
 /* Cifras de dinero */
 .money{font-variant-numeric:tabular-nums;font-feature-settings:"tnum" 1}
+/* Monto grande (saldo, total a cobrar): letra de títulos, cifras alineadas. */
+.money--big{font-family:var(--font-head);font-weight:800;letter-spacing:-.02em;line-height:1.05}
+/* Lo que se debe, en ámbar (siempre junto a un texto que lo diga, nunca solo el color). */
+.money--debe{color:var(--warn)}
 
 @media (prefers-reduced-motion: reduce){
   .btn,.svc .ic-circle{transition:none}
