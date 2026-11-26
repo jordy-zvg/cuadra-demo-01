@@ -303,6 +303,11 @@ export interface MessageAction {
   proposal_id?: string;
   url?: string;
   text?: string;
+  /** Solo en kind "qr": datos para la pantalla que el cliente ve en el celular del comercio. */
+  who?: string;
+  amount?: string;
+  reference?: string;
+  expires_at?: string;
 }
 
 export const messages = pgTable("messages", {

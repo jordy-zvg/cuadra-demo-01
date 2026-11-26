@@ -1279,7 +1279,16 @@ export class CuadraService {
       });
       const amount = formatMXN(balance);
       const actions: MessageAction[] = [
-        { kind: "qr", label: "QR CoDi", ...(qr.image_png_base64 ? { url: `data:image/png;base64,${qr.image_png_base64}` } : {}) },
+        {
+          kind: "qr",
+          label: "QR CoDi",
+          ...(qr.image_png_base64 ? { url: `data:image/png;base64,${qr.image_png_base64}` } : {}),
+          // Para la pantalla de cobro del portal: monto en centavos, a quién y hasta cuándo vale.
+          who: c.name,
+          amount: balance.toString(),
+          reference,
+          expires_at: new Date(now.getTime() + QR_TTL_S * 1000).toISOString(),
+        },
       ];
       if (this.d.gateway.simulated) actions.push({ kind: "pay", label: `Pagar como ${c.name}`, url: `/api/sim/pay/${chargeId}` });
       await this.say("comercio", `📱 Que ${c.name} escanee este QR con la app de su banco: ${amount}, ref. ${reference}. Vale ${QR_TTL_S / 60} min.`, actions);

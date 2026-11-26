@@ -1,7 +1,8 @@
 // Service worker del portal (/login). Solo guarda la "cáscara" de la página para que abra rápido
 // y sin internet muestre el aviso de conexión. NUNCA guarda /api/*: saldos, cobros y pagos
 // siempre se piden en vivo al servidor.
-const CACHE = "cuadra-portal-v24";
+const CACHE = "cuadra-portal-v25";
+// v25: pantalla de cobro con QR para el cliente (monto grande, cuenta regresiva y aviso de pagado).
 // v24: Inicio nuevo (tarjeta «Te deben» con lo que entró hoy, acciones grandes y quién te debe).
 // v23: identidad 2.0 (papel cuadriculado, Bricolage Grotesque en títulos, paleta ajustada y logo con los tonos nuevos).
 // v22: «Ya me pagó en efectivo» al cobrarle a un cliente.

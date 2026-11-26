@@ -243,7 +243,14 @@ describe("QR en mostrador y un solo cobro abierto", () => {
     const gw = f.gw as FakePey;
     expect(gw.qrs[0]).toMatchObject({ amount_cents: 18500n, metadata: { cuadra_charge_id: expect.stringMatching(/^ch_/) } });
     const msg = (await f.msgs()).at(-1)!;
-    expect(msg.actions?.[0]).toMatchObject({ kind: "qr", url: expect.stringMatching(/^data:image\/png;base64,/) });
+    expect(msg.actions?.[0]).toMatchObject({
+      kind: "qr",
+      url: expect.stringMatching(/^data:image\/png;base64,/),
+      who: "Doña Lupe",
+      amount: "18500",
+      reference: expect.stringMatching(/^\d{7}$/),
+      expires_at: expect.any(String),
+    });
 
     await f.svc.handleMerchantMessage("QR para Doña Lupe");
     expect((await f.msgs()).at(-1)!.body).toMatch(/ya tiene un QR abierto de \$185\.00 \(ref\. \d{7}\) que vence hoy a las 11:32/);

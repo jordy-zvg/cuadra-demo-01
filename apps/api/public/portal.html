@@ -182,6 +182,24 @@ button:focus-visible,a:focus-visible,input:focus-visible{outline:3px solid var(-
 .reply .go{white-space:normal;font-size:1.05rem;padding-left:.7em;padding-right:.7em}
 .listen{margin-top:.9rem;min-height:2.8rem;font-size:.95rem;padding:.4em 1.1em}
 .qr{display:block;width:100%;max-width:300px;aspect-ratio:1;margin:14px auto 0;background:#fff;border-radius:var(--r-md);padding:10px}
+/* Cobro con QR (identidad 2.0): lo que ve el cliente en el celular del comercio. */
+.qrpay{background:var(--surface);border:1px solid var(--card-line);border-radius:var(--r-xl);padding:1.2rem 1.1rem 1.15rem;text-align:center;box-shadow:var(--shadow-1)}
+.qp-store{margin:0;color:var(--ink-2);font-size:.9rem}
+.qp-store b{color:var(--ink)}
+.qp-who{margin:.7rem 0 0;font-size:1rem}
+.qp-v{font-size:2.9rem;color:var(--heading);margin:.05rem 0 .35rem;font-variant-numeric:tabular-nums}
+.qrpay .qr{max-width:min(300px,100%);margin:.3rem auto 0;border:1px solid var(--line)}
+.qp-how{margin:.8rem 0 0;font-size:.95rem;text-wrap:balance}
+.qp-exp{display:inline-flex;flex-wrap:wrap;justify-content:center;align-items:center;gap:.3rem;margin:.75rem 0 0;padding:.3rem .8rem;border-radius:var(--r-pill);background:var(--c-copper-soft);color:var(--accent);font-weight:700;font-size:.85rem;font-variant-numeric:tabular-nums}
+.qp-ref{font-weight:600}
+.qrpay.vencido .qr{opacity:.2}
+.qrpay.vencido .qp-exp{background:var(--bad-bg);color:var(--bad)}
+.qp-paid{display:flex;flex-direction:column;align-items:center;gap:.35rem;padding:1.4rem .5rem .6rem;color:var(--ok)}
+.qp-paid .ico{width:3.4rem;height:3.4rem}
+.qp-paid b{font-family:var(--font-head);font-size:1.6rem;font-weight:800}
+.qp-paid span{color:var(--ink-2);font-size:.95rem}
+.qp-safe{display:flex;align-items:flex-start;justify-content:center;gap:.5rem;margin:1rem 0 0;color:var(--ink-2);font-size:.85rem;text-align:left}
+.qp-safe .ico{color:var(--glyph);flex:none;margin-top:.1rem}
 .qr.sim{display:flex;align-items:center;justify-content:center;text-align:center;color:#0A1E18;border:3px dashed #6F8A8B;font-weight:700}
 .wait{display:flex;flex-direction:column;align-items:center;gap:.8rem;padding:2.5rem 0;color:var(--ink-2);font-size:1.05rem;text-align:center}
 .spin{width:3rem;height:3rem;border-radius:50%;border:5px solid var(--glyph-bg);border-top-color:var(--glyph);animation:sp 1s linear infinite}
@@ -970,6 +988,54 @@ function actionHtml(a, i, body = "") {
   return `<button class="${cls}" type="button" data-a="${i}">${label}</button>`;
 }
 
+/**
+ * Pantalla de cobro con QR (la que ve el cliente en la tienda): quién cobra, monto grande, el QR, el
+ * tiempo que le queda y el aviso de seguridad. Cada segundo baja la cuenta regresiva; cada 4 s vuelve a
+ * leer el estado y, si ese cobro ya se pagó, lo dice en la misma pantalla.
+ */
+function qrPay(q, replies) {
+  const store = state?.merchant?.name || "";
+  const sim = replies.flatMap((m) => m.actions || []).find((a) => a.kind === "pay");
+  const exp = q.expires_at ? Date.parse(q.expires_at) : 0;
+  app.innerHTML = `
+    <h1 class="sr-only">Cobro con QR para ${esc(q.who)}</h1>
+    <section class="qrpay">
+      ${store ? `<p class="qp-store">Cobro de <b>${esc(store)}</b></p>` : ""}
+      <p class="qp-who">${esc(q.who)}, tu saldo es</p>
+      <div class="qp-v money money--big">${esc(mxn(q.amount))}</div>
+      <div class="qp-code">${q.url ? `<img class="qr" alt="Código QR para pagar ${esc(mxn(q.amount))}" src="${esc(q.url)}">` : `<div class="qr sim">Código QR</div>`}
+        <p class="qp-how">Escanea este código con la app de tu banco y acepta el pago.</p>
+        <p class="qp-exp">${ic("schedule")}<span id="qp-cd">Vale 30 min</span>${q.reference ? `<span class="qp-ref">· ref. ${esc(q.reference)}</span>` : ""}</p>
+      </div>
+    </section>
+    <p class="qp-safe">${ic("lock")}<span>El pago va directo a la cuenta de la tienda. Cuadra nunca te pedirá tu NIP.</span></p>
+    ${sim ? `<button class="go btn btn--block" type="button" id="qp-sim">${esc(sim.label)}</button>` : ""}
+    <button class="go soft btn btn--outline btn--block" type="button" data-nav="home">${ic("home")}Volver al inicio</button>`;
+  $("#say").textContent = `${q.who}, tu saldo es ${mxn(q.amount)}. Escanea el código con la app de tu banco.`;
+  const s = $("#qp-sim"); if (s) s.onclick = () => { s.disabled = true; act(sim); };
+  const box = app.querySelector(".qrpay"), cd = $("#qp-cd");
+  let n = 0, done = false;
+  const paid = () => {
+    done = true; box.classList.add("pagado");
+    app.querySelector(".qp-code").innerHTML = `<div class="qp-paid">${ic("check_circle")}<b>¡Pagado!</b><span>Ya quedó anotado en la cuenta de ${esc(q.who)}.</span></div>`;
+    $("#say").textContent = `Pagado. Ya quedó anotado en la cuenta de ${q.who}.`;
+  };
+  const tick = async () => {
+    if (done) return;
+    if (exp) {
+      const left = Math.max(0, exp - Date.now());
+      if (left === 0) { box.classList.add("vencido"); cd.textContent = "Este código ya venció"; }
+      else cd.textContent = `Vence en ${Math.floor(left / 60000)}:${String(Math.floor((left % 60000) / 1000)).padStart(2, "0")}`;
+    }
+    if (q.reference && ++n % 4 === 0) {
+      try { await load(); window.cuadraNet?.ok(); } catch { window.cuadraNet?.fail(); return; }
+      if ((state.charges || []).some((c) => c.reference === q.reference && c.status === "paid")) paid();
+    }
+  };
+  tick();
+  pollTimer = setInterval(tick, 1000);
+}
+
 // Quita los códigos de regla “(R05)”: sirven al equipo, no a quien usa el portal.
 const plain = (body) => String(body).replace(/\s*\(R\d{2}\)/g, "");
 
@@ -985,6 +1051,9 @@ SCREENS.respuesta = ({ pending, replies, error, done, cancelled } = {}) => {
       : `<h1>Cuadra está tardando</h1><p class="lead">Tu mensaje sí llegó. En un momento revisa tus avisos (la campana de arriba).</p>${navHtml(false)}`;
     return;
   }
+  // Cobro con QR: pantalla propia, pensada para voltear el celular hacia el cliente.
+  const qrA = replies.flatMap((m) => m.actions || []).find((a) => a.kind === "qr" && a.amount);
+  if (qrA) { qrPay(qrA, replies); return; }
   const actions = [];
   const cards = replies.map((m) => {
     const acts = (m.actions || []).map((a) => { actions.push(a); return actionHtml(a, actions.length - 1, m.body); }).join("");
