@@ -97,15 +97,32 @@ button:focus-visible,a:focus-visible,input:focus-visible{outline:3px solid var(-
 /* Con letra grande en celulares angostos los dos botones bajan a dos renglones en vez de salirse. */
 .nav button{flex:1 1 8.5rem;min-width:0;min-height:2.9rem;padding:.4em .8em;font-size:1rem}
 
-/* Inicio */
-.total{padding:1.05rem 1.1rem 1.15rem;text-align:center}
-.total .l{font-family:var(--font-head);font-weight:700;text-transform:uppercase;letter-spacing:.12em;font-size:.78rem;color:var(--ink)}
-.total .v{font-family:var(--font-head);font-weight:800;font-size:2.9rem;line-height:1.1;margin:.3rem 0 .25rem;color:var(--hero-ink);font-variant-numeric:tabular-nums;letter-spacing:-.02em}
-.total .s{display:block;color:var(--ink-2);font-size:.95rem;text-align:center;text-wrap:balance}
-.total .s .ico{color:var(--glyph);margin-right:.35rem}
-.svc-grid{font-size:.92rem}
-.svc{min-height:2.8rem}
-.svc .ic-circle{width:3.7rem;height:3.7rem}
+/* Inicio (identidad 2.0): tarjeta "Te deben", acciones grandes y quién te debe. */
+.owe-card{background:var(--c-deep);color:#FFFFFF;border-radius:var(--r-xl);padding:1.05rem 1.15rem 1.1rem;box-shadow:var(--shadow-2)}
+.owe-card .l{font-size:.9rem;color:#DDF2EA}
+.owe-card .v{font-size:2.6rem;margin:.15rem 0 .25rem;color:#FFFFFF;font-variant-numeric:tabular-nums}
+.owe-card .s{display:flex;align-items:center;gap:.35rem;font-size:.88rem;color:#DDF2EA;text-wrap:balance}
+.owe-card .s .ico{color:#DDF2EA}
+.owe-card .today{display:flex;align-items:center;justify-content:space-between;gap:.6rem;margin-top:.85rem;padding:.6rem .8rem;border-radius:var(--r-md);background:rgba(221,242,234,.12);font-size:.92rem}
+.owe-card .today b{font-family:var(--font-head);font-weight:800;font-size:1.2rem;color:#E9D3AE;white-space:nowrap}
+@media (prefers-color-scheme: dark){:root:not([data-theme="light"]) .owe-card{border:1px solid var(--line)}}
+.acts{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:.6rem;margin-top:1rem}
+.act{display:flex;align-items:center;gap:.55rem;min-height:3.5rem;padding:.55rem .8rem;border-radius:var(--r-lg);border:1.5px solid var(--card-line);background:var(--surface);color:var(--ink);font-weight:700;font-size:.95rem;line-height:1.2;text-align:left;box-shadow:var(--shadow-1)}
+.act .ico{width:1.45rem;height:1.45rem;color:var(--glyph)}
+.act--main{background:var(--primary);border-color:var(--primary);color:var(--primary-ink)}
+.act--main .ico{color:currentColor}
+.act--wide{grid-column:1 / -1}
+@media (hover:hover) and (pointer:fine){.act:hover{border-color:var(--primary)}.act--main:hover{background:var(--primary-press)}}
+.act:active{transform:translateY(1px)}
+/* Letra grande en un celular angosto: una acción por renglón para que nada se corte. */
+@media (max-width:480px){:root[data-size="xl"] .acts{grid-template-columns:minmax(0,1fr)}}
+.who-head{display:flex;flex-wrap:wrap;align-items:baseline;justify-content:space-between;gap:0 .6rem}
+.linkish{min-height:2.75rem;padding:.3rem .2rem;border:0;background:none;color:var(--link);font-weight:700;text-decoration:underline;text-underline-offset:3px;white-space:nowrap}
+/* Renglón de cliente en el Inicio: nombre arriba con todo el ancho; abajo su estado y lo que debe. */
+.opt .t .row2{display:flex;flex-wrap:wrap;align-items:center;justify-content:space-between;gap:.3rem .6rem;margin-top:.3rem}
+.opt .t .st{font-size:.78rem}
+.opt .amt.amt--debe{color:var(--warn);font-size:1.05rem}
+.empty .ico{color:var(--ok)}
 .aviso{display:flex;align-items:flex-start;gap:.75rem;padding:.85rem 1rem;margin-bottom:.7rem}
 /* Verificación por WhatsApp */
 .code{font-family:var(--font-head);font-weight:800;font-size:min(2.6rem,11vw);letter-spacing:.28em;white-space:nowrap;text-align:center;padding:1rem .5rem 1rem .9rem;margin:.6rem 0 1rem;font-variant-numeric:tabular-nums;color:var(--heading)}
@@ -225,7 +242,6 @@ button,.opt,.keys button{touch-action:manipulation}
 @media (min-width:700px) and (max-width:959px){
   :root{--gut:max(24px, calc(50% - 320px))}
   header .wrap{max-width:none;padding-left:var(--gut);padding-right:var(--gut)}
-  .svc-grid > *{flex-basis:calc((100% - 2em) / 6)}
 }
 /* Laptop y escritorio: el encabezado se abre a lo ancho y el Inicio pasa a dos columnas
    (cifra y acciones a la izquierda, avisos a la derecha). Las demás pantallas siguen siendo
@@ -523,8 +539,24 @@ SCREENS.home = async () => {
     offline(home); return;
   }
   const owes = state.customers.reduce((a, c) => a + BigInt(c.owes), 0n);
-  const debtors = state.customers.filter((c) => BigInt(c.owes) > 0n).length;
+  // Quién debe, de más a menos. "Cobro enviado": tiene una solicitud CoDi viva (no vencida ni pagada).
+  const openFor = new Set((state.charges || []).filter((ch) => ch.status === "open").map((ch) => ch.customer_id));
+  const deudores = state.customers
+    .filter((c) => BigInt(c.owes) > 0n)
+    .sort((a, b) => (BigInt(b.owes) > BigInt(a.owes) ? 1 : BigInt(b.owes) < BigInt(a.owes) ? -1 : a.name.localeCompare(b.name)));
+  const debtors = deudores.length;
+  const enviados = deudores.filter((c) => openFor.has(c.id)).length;
+  const paidToday = state.paid_today?.total ?? "0";
   const frozen = state.risk?.kill_switch || state.risk?.frozen;
+  const resumen = debtors === 0 ? "Nadie te debe. ¡Todo al corriente!"
+    : `${debtors === 1 ? "1 cliente te debe" : `${debtors} clientes te deben`}${enviados ? ` · ${enviados} con cobro enviado` : ""}`;
+  const top = deudores.slice(0, 3).map((c) => {
+    const env = openFor.has(c.id);
+    return `<button class="opt" type="button" data-cli="${esc(c.id)}">
+      <span class="av" aria-hidden="true">${esc(initials(c.name))}</span>
+      <span class="t">${esc(c.name)}<span class="row2"><span class="st ${env ? "" : "st--warn"}">${ic(env ? "send" : "schedule")}${env ? "Cobro enviado" : "Debe"}</span><span class="amt amt--debe money">${esc(mxn(c.owes))}</span></span></span>
+      ${ic("chevron_right")}</button>`;
+  }).join("");
   app.innerHTML = `
     <section class="hero">
       <h1>Hola${me ? ", " + esc(firstName(me.name)) : ""}</h1>
@@ -532,22 +564,27 @@ SCREENS.home = async () => {
     </section>
     <div class="sheet sheet--home">
     <div class="home-main">
-    <div class="total card card--pattern" aria-label="Te deben en total ${esc(mxn(owes))}">
-      <div class="l">Te deben en total</div>
-      <div class="v">${esc(mxn(owes))}</div>
-      <div class="s">${debtors === 0 ? `${ic("check_circle")}Nadie te debe. ¡Todo al corriente!` : debtors === 1 ? `${ic("groups")}1 cliente te debe` : `${ic("groups")}${debtors} clientes te deben`}</div>
-    </div>
+    <section class="owe-card" aria-label="Te deben en total ${esc(mxn(owes))}">
+      <div class="l">Te deben</div>
+      <div class="v money money--big">${esc(mxn(owes))}</div>
+      <div class="s">${debtors === 0 ? ic("check_circle") : ""}${esc(resumen)}</div>
+      <div class="today"><span>Hoy te pagaron</span><b class="money">${esc(mxn(paidToday))}</b></div>
+    </section>
     ${frozen ? `<div class="alert">${ic("block")}<span>Por seguridad, los pagos a proveedores están detenidos. Los cobros siguen funcionando.</span></div>` : ""}
-    <h2 class="sec-title">¿Qué quieres hacer?</h2>
-    <div class="grid svc-grid">
-      <button class="big svc" type="button" data-go="fiado"><span class="ic-circle">${ic("edit_note")}</span>Anotar fiado</button>
-      <button class="big svc" type="button" data-go="cobrar"><span class="ic-circle">${ic("payments")}</span>Cobrar</button>
-      <button class="big alt svc" type="button" data-go="deben"><span class="ic-circle">${ic("groups")}</span>¿Quién me debe?</button>
-      <button class="big alt svc" type="button" data-go="nuevoCliente"><span class="ic-circle">${ic("person_add")}</span>Agregar cliente</button>
-      <button class="big alt svc" type="button" data-go="pagar"><span class="ic-circle">${ic("local_shipping")}</span>Pagar a proveedor</button>
-      <button class="big wide alt svc" type="button" data-go="voz"><span class="ic-circle">${ic("mic")}</span>Decirlo con mi voz</button>
-      <button class="big wide alt svc" type="button" id="install" hidden><span class="ic-circle">${ic("install_mobile")}</span>Poner Cuadra en mi pantalla</button>
+    <h2 class="sr-only">¿Qué quieres hacer?</h2>
+    <div class="acts">
+      <button class="act act--main" type="button" data-go="fiado">${ic("edit_note")}Anotar fiado</button>
+      <button class="act" type="button" data-go="cobrar">${ic("payments")}Cobrar</button>
+      <button class="act" type="button" data-go="pagar">${ic("local_shipping")}Pagar a proveedor</button>
+      <button class="act" type="button" data-go="nuevoCliente">${ic("person_add")}Agregar cliente</button>
+      <button class="act act--wide" type="button" data-go="voz">${ic("mic")}Decirlo con mi voz</button>
+      <button class="act act--wide" type="button" id="install" hidden>${ic("install_mobile")}Poner Cuadra en mi pantalla</button>
     </div>
+    <div class="who-head">
+      <h2 class="sec-title">Quién te debe</h2>
+      ${debtors ? `<button class="linkish" type="button" data-go="deben">${debtors > 3 ? `Ver todos (${debtors})` : "Ver todos"}</button>` : ""}
+    </div>
+    ${debtors ? `<div class="list">${top}</div>` : `<p class="empty">${ic("check_circle")} Nadie te debe ahorita.</p>`}
     </div>
     <div class="home-side">
     <div id="debo"></div>
@@ -556,6 +593,8 @@ SCREENS.home = async () => {
     </div>`;
   $("#logout").onclick = logout;
   app.querySelectorAll("[data-go]").forEach((b) => (b.onclick = () => go(b.dataset.go)));
+  // Tocar a un cliente de la lista lleva directo a cobrarle, igual que en "¿Quién me debe?".
+  app.querySelectorAll("[data-cli]").forEach((b) => (b.onclick = () => go("como", state.customers.find((c) => c.id === b.dataset.cli))));
   renderDebo();
   showInstall();
   pollTimer = setInterval(async () => { try { await load(); window.cuadraNet?.ok(); } catch { window.cuadraNet?.fail(); } }, 4000);

@@ -1,10 +1,11 @@
-import { type AccountCode, ACCOUNTS, checkBalance, potCents } from "@cuadra/core";
+import { type AccountCode, ACCOUNTS, checkBalance, mxPeriodStart, potCents } from "@cuadra/core";
 import { CHARGE_EXPIRY_GRACE_MS, type Db, bankSimBalance, inFlightCents, ledgerBalance, schema, tandaMembersOf, tandaRoundStatus } from "@cuadra/db";
 import { and, desc, eq, sql } from "drizzle-orm";
 
 const s = (v: bigint) => v.toString();
 
-export async function panelState(db: Db, merchantId: string, opts: { gateway: string; simulated: boolean; bankSim: boolean }) {
+/** `now` solo para pruebas: define qué es "hoy" (en hora de CDMX) para `paid_today`. */
+export async function panelState(db: Db, merchantId: string, opts: { gateway: string; simulated: boolean; bankSim: boolean; now?: Date }) {
   const [merchant] = await db.select().from(schema.merchants).where(eq(schema.merchants.id, merchantId));
   const accounts: Record<string, string> = {};
   for (const code of Object.keys(ACCOUNTS) as AccountCode[]) accounts[code] = s(await ledgerBalance(db, merchantId, code));
@@ -79,6 +80,20 @@ export async function panelState(db: Db, merchantId: string, opts: { gateway: st
   `)) as unknown as { rows: Array<Record<string, unknown>> };
   const im = impact.rows[0] ?? {};
 
+  // Lo que entró hoy (desde las 00:00 de CDMX): depósitos por CoDi/SPEI, identificados o no, y efectivo
+  // neto anotado en caja (1050; un reverso del mismo día lo resta). Solo se muestra; no mueve nada.
+  const dayStart = mxPeriodStart(opts.now ?? new Date(), "day").toISOString();
+  const today = (await db.execute(sql`
+    SELECT
+      coalesce((SELECT sum(amount_cents) FROM deposits
+                WHERE merchant_id = ${merchantId} AND received_at >= ${dayStart}::timestamptz), 0)::text AS digital,
+      coalesce((SELECT sum(l.debit) - sum(l.credit) FROM journal_lines l JOIN journal_entries e ON e.id = l.entry_id
+                WHERE e.merchant_id = ${merchantId} AND l.account = '1050' AND e.created_at >= ${dayStart}::timestamptz), 0)::text AS cash
+  `)) as unknown as { rows: Array<Record<string, unknown>> };
+  const td = today.rows[0] ?? {};
+  const paidDigital = BigInt(String(td.digital ?? "0"));
+  const paidCash = BigInt(String(td.cash ?? "0"));
+
   const t = (totals as unknown as { rows: Array<Record<string, unknown>> }).rows[0] ?? {};
   return {
     merchant: { id: merchantId, name: merchant?.name },
@@ -96,6 +111,7 @@ export async function panelState(db: Db, merchantId: string, opts: { gateway: st
       clientes_al_corriente: customerRows.filter((c) => c.owes === "0").length,
       clientes: customerRows.length,
     },
+    paid_today: { digital: s(paidDigital), cash: s(paidCash), total: s(paidDigital + paidCash) },
     customers: customerRows,
     entries: entryRows,
     // Un cobro abierto que ya pasó su vigencia se muestra vencido aunque nadie lo haya tocado aún.
