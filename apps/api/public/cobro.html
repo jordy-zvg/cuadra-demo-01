@@ -1,0 +1,130 @@
+<!doctype html>
+<html lang="es-MX">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="robots" content="noindex, nofollow">
+<meta name="referrer" content="no-referrer">
+<meta name="theme-color" content="#FAF8F2">
+<title>Tu cobro · Cuadra</title>
+<link rel="icon" href="/logo.svg?v=id2" type="image/svg+xml">
+<link rel="stylesheet" href="/assets/cuadra.css">
+<style>
+/* Cobro que recibe el cliente (identidad 2.0). Página pública de solo lectura: el cliente la abre desde
+   el enlace de su mensaje. Dice a qué tienda le debe, cuánto, y si su solicitud sigue viva, ya se pagó
+   o venció. No cobra ni mueve dinero: pagar siempre es en la app de su banco. */
+body{background-color:var(--bg);font:17px/1.5 var(--font-body);margin:0}
+main{max-width:30rem;margin:0 auto;padding:20px 16px 32px;display:flex;flex-direction:column;gap:14px}
+.top{display:flex;align-items:center;gap:10px;color:var(--ink-2);font-size:15px}
+.top img{width:34px;height:34px;flex:none}
+.top b{color:var(--ink)}
+.card{padding:22px 22px 20px;border-radius:24px}
+.who{margin:0;color:var(--ink-2);font-size:16px}
+.v{font-size:clamp(44px,14vw,58px);color:var(--heading);margin:2px 0 4px}
+.ref{margin:0;color:var(--ink-2);font-size:15px;font-variant-numeric:tabular-nums}
+.pay{border-radius:24px;background:var(--c-deep);color:#FFFFFF;padding:20px 22px;display:flex;flex-direction:column;gap:10px}
+.pay h2{margin:0;font-size:19px;font-weight:700;color:#FFFFFF}
+.pay p{margin:0;color:#DDF2EA;font-size:16px}
+.pay-head{display:flex;align-items:center;justify-content:space-between;gap:10px;flex-wrap:wrap}
+.chip-t{padding:4px 11px;border-radius:999px;background:rgba(233,211,174,.16);color:#E9D3AE;font-size:14px;font-weight:700;font-variant-numeric:tabular-nums;white-space:nowrap}
+.steps{margin:4px 0 0;padding:0 0 0 1.2em;color:#DDF2EA;font-size:15px}
+.steps li{margin:2px 0}
+.state{display:flex;flex-direction:column;align-items:center;text-align:center;gap:6px;padding:22px 18px}
+.state .ico{width:56px;height:56px}
+.state h2{margin:2px 0 0;font-size:26px;font-weight:800}
+.state p{margin:0;color:var(--ink-2)}
+.state.ok{color:var(--ok)}
+.state.warn{color:var(--warn)}
+.state.bad{color:var(--bad)}
+.safe{display:flex;gap:8px;align-items:flex-start;margin:6px 0 0;color:var(--ink-2);font-size:14px}
+.safe .ico{color:var(--glyph);margin-top:2px}
+footer{text-align:center;font-size:14px;color:var(--ink-2)}
+footer a{color:var(--link)}
+@media (prefers-color-scheme: dark){:root:not([data-theme="light"]) .pay{border:1px solid var(--line)}}
+</style>
+</head>
+<body>
+<main id="app" aria-live="polite">
+  <div class="cargando">Cargando tu cobro…</div>
+</main>
+<script>
+// Solo lectura: lee /api/cobro/<token> y lo pinta. Todo el texto que viene del servidor pasa por esc().
+const app = document.getElementById("app");
+const token = decodeURIComponent(location.pathname.split("/").filter(Boolean)[1] || "");
+const esc = (s) => String(s).replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" })[c]);
+const ic = (n) => `<svg class="ico" aria-hidden="true"><use href="/assets/icons.svg#i-${n}"/></svg>`;
+const mxn = (cents) => (Number(BigInt(cents)) / 100).toLocaleString("es-MX", { style: "currency", currency: "MXN" });
+const safe = `<p class="safe">${ic("lock")}<span>Tu pago va directo a la cuenta de la tienda. Cuadra nunca te pedirá tu NIP por llamada ni por WhatsApp.</span></p>
+  <footer><a href="/privacidad">Aviso de privacidad</a></footer>`;
+let timer = null, c = null;
+
+function head(v) {
+  // La frase cambia con el estado: después de pagar ya no "va en" ese monto.
+  const lead = v.status === "paid" ? "pagaste" : v.status === "open" ? "tu cuenta va en" : "este cobro era de";
+  return `<div class="top"><img src="/logo.svg?v=id2" alt="Cuadra"><span>Cobro de <b>${esc(v.store)}</b></span></div>
+  <section class="card" aria-label="${esc(v.who)}, ${lead} ${esc(mxn(v.amount))}">
+    <p class="who">${esc(v.who)}, ${lead}</p>
+    <div class="v money money--big">${esc(mxn(v.amount))}</div>
+    <p class="ref">Referencia ${esc(v.reference)}</p>
+  </section>`;
+}
+
+function body(v) {
+  if (v.status === "paid") return `<section class="card state ok">${ic("check_circle")}<h2>¡Pagado!</h2><p>Gracias. Tu pago ya quedó anotado en tu cuenta de ${esc(v.store)}.</p></section>`;
+  if (v.status === "cancelled") return `<section class="card state">${ic("info")}<h2>Cobro cancelado</h2><p>Este cobro ya no está activo. Si tienes dudas, pregúntale a la tienda.</p></section>`;
+  if (v.status === "expired") return `<section class="card state warn">${ic("schedule")}<h2>Esta solicitud ya venció</h2><p>No pasa nada. Pídele a la tienda que te la vuelva a mandar, o paga en la tienda con su QR.</p></section>`;
+  if (v.channel === "codi_pn") return `<section class="pay">
+      <div class="pay-head"><h2>Paga desde tu banco</h2><span class="chip-t" id="cd"></span></div>
+      <p>Te llegó una solicitud de cobro CoDi a la app de tu banco.</p>
+      <ol class="steps"><li>Abre la app de tu banco.</li><li>Revisa que diga ${esc(mxn(v.amount))}.</li><li>Acéptala. No necesitas capturar CLABE.</li></ol>
+    </section>`;
+  if (v.channel === "codi_qr") return `<section class="pay">
+      <div class="pay-head"><h2>Paga con el QR de la tienda</h2><span class="chip-t" id="cd"></span></div>
+      <p>Escanea el código que te muestra la tienda con la app de tu banco y acepta el pago.</p>
+    </section>`;
+  return `<section class="pay">
+      <h2>¿Cómo pagar?</h2>
+      <p>Pídele a la tienda que te mande la solicitud a tu celular, o paga ahí con su QR. Si transfieres, usa la referencia ${esc(v.reference)}.</p>
+    </section>`;
+}
+
+function tick() {
+  const el = document.getElementById("cd");
+  if (!el || !c || !c.expires_at) return;
+  const left = Math.max(0, Date.parse(c.expires_at) - Date.now());
+  if (left === 0) { el.textContent = "Venció"; return; }
+  const m = Math.floor(left / 60000), s = Math.floor((left % 60000) / 1000);
+  el.textContent = m >= 60 ? "Vigente" : `Vence en ${m}:${String(s).padStart(2, "0")}`;
+}
+
+async function load(first) {
+  try {
+    const r = await fetch(`/api/cobro/${encodeURIComponent(token)}`, { cache: "no-store" });
+    if (r.status === 404) {
+      clearInterval(timer);
+      app.innerHTML = `<div class="top"><img src="/logo.svg?v=id2" alt="Cuadra"><span>Cuadra</span></div>
+        <section class="card state">${ic("help")}<h2>No encontramos este cobro</h2><p>Revisa que el enlace esté completo o pregúntale a la tienda.</p></section>${safe}`;
+      return;
+    }
+    if (!r.ok) throw new Error(String(r.status));
+    const v = await r.json();
+    const changed = !c || c.status !== v.status;
+    c = v;
+    if (first || changed) {
+      app.innerHTML = head(v) + body(v) + safe;
+      document.title = `Tu cobro de ${v.store} · Cuadra`;
+    }
+    tick();
+    if (v.status !== "open") clearInterval(timer);
+  } catch {
+    if (first) app.innerHTML = `<section class="card state bad">${ic("wifi_off")}<h2>No hay conexión</h2><p>Revisa tu internet y vuelve a abrir el enlace.</p></section>`;
+  }
+}
+
+load(true);
+// Mientras siga abierto: la cuenta regresiva cada segundo y el estado cada 10 s (por si ya pagó).
+let n = 0;
+timer = setInterval(() => { tick(); if (++n % 10 === 0) load(false); }, 1000);
+</script>
+</body>
+</html>

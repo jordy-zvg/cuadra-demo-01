@@ -100,7 +100,11 @@ describe("isPublicPath", () => {
       ["/api/approve/verify", "POST"], ["/api/auth/login", "POST"], ["/health", "GET"],
       // Diseño compartido: la página de entrada y la de aprobación lo necesitan sin sesión.
       ["/assets/cuadra.css", "GET"], ["/assets/icons.svg", "GET"], ["/assets/fonts/bricolage-grotesque-latin-wght-normal.woff2", "GET"],
+      // Enlace público de un cobro: solo lectura.
+      ["/cobro/AbCdEfGhIjKlMnOpQrStUv", "GET"], ["/api/cobro/AbCdEfGhIjKlMnOpQrStUv", "GET"],
     ] as const) expect(isPublicPath(p, m), `${m} ${p}`).toBe(true);
+    // Solo lectura: cualquier otro método a esa ruta sí pide sesión.
+    expect(isPublicPath("/api/cobro/AbCdEfGhIjKlMnOpQrStUv", "POST")).toBe(false);
   });
   it("lo que solo se parece a /assets/ no es público", () => {
     expect(isPublicPath("/assetsx/a", "GET")).toBe(false);

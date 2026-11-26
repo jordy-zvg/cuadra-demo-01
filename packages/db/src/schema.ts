@@ -271,6 +271,8 @@ export const charges = pgTable("charges", {
   expiresAt: ts("expires_at"),
   /** Si es un reenvío de una solicitud vencida: el recordatorio original. */
   resendOf: text("resend_of"),
+  /** Token aleatorio del enlace público /cobro/<token> (solo lectura). NULL en cobros anteriores. */
+  publicToken: text("public_token"),
   createdAt: ts("created_at").notNull().defaultNow(),
 });
 

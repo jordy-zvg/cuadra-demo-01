@@ -6,7 +6,7 @@ import { z } from "zod";
 import type { Db } from "@cuadra/db";
 import { schema } from "@cuadra/db";
 import { and, eq } from "drizzle-orm";
-import { debtsOfPhone } from "@cuadra/db";
+import { debtsOfPhone, publicChargeView } from "@cuadra/db";
 import { PortalAuth } from "./auth.js";
 import type { ChargeGateway } from "./gateway.js";
 import { registerPasskeyRoutes } from "./passkey.js";
@@ -89,6 +89,14 @@ export function buildServer(o: ServerOpts): FastifyInstance {
   app.get("/", async (_req, reply) => reply.type("text/html; charset=utf-8").sendFile("landing.html"));
   app.get("/panel", async (_req, reply) => reply.type("text/html; charset=utf-8").sendFile("index.html"));
   app.get("/privacidad", async (_req, reply) => reply.type("text/html; charset=utf-8").sendFile("privacidad.html"));
+  // Enlace público de un cobro: el cliente lo abre desde su mensaje. Solo lectura; sin sesión.
+  app.get("/cobro/:token", async (_req, reply) =>
+    reply.header("x-robots-tag", "noindex").header("referrer-policy", "no-referrer").type("text/html; charset=utf-8").sendFile("cobro.html"));
+  app.get("/api/cobro/:token", async (req, reply) => {
+    const v = await publicChargeView(o.db, (req.params as { token: string }).token, new Date());
+    reply.header("cache-control", "no-store").header("x-robots-tag", "noindex");
+    return v ? v : reply.code(404).send({ error: "No encontramos ese cobro." });
+  });
   // Algunos navegadores piden /favicon.ico por su cuenta (sin leer el <link rel="icon">): el logo de Cuadra.
   app.get("/favicon.ico", async (_req, reply) => reply.redirect("/logo.svg"));
   // Portal sencillo para el comercio (letra grande, un paso por pantalla). Usa la misma API que el chat.

@@ -1,10 +1,10 @@
-import { randomInt } from "node:crypto";
+import { randomBytes, randomInt } from "node:crypto";
 import { type Centavos, abonoIdentificado } from "@cuadra/core";
 import { and, eq, or } from "drizzle-orm";
 import type { Db } from "./client.js";
 import { recordDeposit, type DepositOutcome } from "./deposits.js";
 import { ledgerBalance, postEntries } from "./ledger-repo.js";
-import { charges, customers, deposits } from "./schema.js";
+import { charges, customers, deposits, merchants } from "./schema.js";
 import { lockMerchant } from "./transfers.js";
 
 /** Referencia numérica de 7 dígitos sin cero inicial (CoDi numRef / SPEI referencia). */
@@ -43,7 +43,9 @@ export async function insertCharge(
      */
     via?: { provider: string; channel: "codi_pn" | "codi_qr" | "payment_link"; expiresAt: Date };
   },
-): Promise<void> {
+): Promise<{ publicToken: string }> {
+  // 128 bits aleatorios: el enlace no se puede adivinar ni recorrer. 22 caracteres base64url.
+  const publicToken = randomBytes(16).toString("base64url");
   await db.insert(charges).values({
     id: c.id,
     merchantId: c.merchantId,
@@ -53,8 +55,57 @@ export async function insertCharge(
     createdAt: c.now,
     expiresAt: c.via?.expiresAt ?? new Date(c.now.getTime() + CHARGE_DEFAULT_TTL_MS),
     resendOf: c.resendOf ?? null,
+    publicToken,
     ...(c.via ? { provider: c.via.provider, channel: c.via.channel } : {}),
   });
+  return { publicToken };
+}
+
+/** Forma válida de un token de enlace público (22 caracteres base64url). */
+export const PUBLIC_TOKEN_RE = /^[A-Za-z0-9_-]{22}$/;
+
+export interface PublicChargeView {
+  store: string;
+  who: string;
+  amount: string;
+  reference: string;
+  status: "open" | "paid" | "expired" | "cancelled";
+  channel: "codi_pn" | "codi_qr" | "payment_link" | null;
+  expires_at: string | null;
+}
+
+/**
+ * Lo que ve el cliente en /cobro/<token>: tienda, su nombre como lo anotó la tienda, el monto de ese
+ * cobro, la referencia y el estado. Nada más: ni celular, ni CLABE, ni otros clientes, ni ids internos.
+ * Un cobro abierto que ya pasó su vigencia se muestra vencido (mismo margen que el panel).
+ */
+export async function publicChargeView(db: Db, token: string, now: Date): Promise<PublicChargeView | null> {
+  if (!PUBLIC_TOKEN_RE.test(token)) return null;
+  const [r] = await db
+    .select({
+      store: merchants.name,
+      who: customers.name,
+      amount: charges.amountCents,
+      reference: charges.reference,
+      status: charges.status,
+      channel: charges.channel,
+      expiresAt: charges.expiresAt,
+    })
+    .from(charges)
+    .innerJoin(customers, eq(customers.id, charges.customerId))
+    .innerJoin(merchants, eq(merchants.id, charges.merchantId))
+    .where(eq(charges.publicToken, token));
+  if (!r || r.amount === null) return null;
+  const expired = r.status === "open" && r.expiresAt !== null && r.expiresAt.getTime() + CHARGE_EXPIRY_GRACE_MS < now.getTime();
+  return {
+    store: r.store,
+    who: r.who,
+    amount: r.amount.toString(),
+    reference: r.reference,
+    status: expired ? "expired" : r.status,
+    channel: r.channel ?? null,
+    expires_at: r.expiresAt?.toISOString() ?? null,
+  };
 }
 
 /**

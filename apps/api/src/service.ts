@@ -1073,7 +1073,7 @@ export class CuadraService {
     const expiresAt = new Date(now.getTime() + PN_TTL_S * 1000);
     // Con celular, el cobro nace marcado como solicitud CoDi (proveedor, canal, 6 min): si algo falla
     // después de llamar a pey, igual bloquea otra solicitud o un QR hasta que venza.
-    await insertCharge(this.d.db, {
+    const { publicToken } = await insertCharge(this.d.db, {
       id: chargeId,
       merchantId: this.d.merchantId,
       customerId,
@@ -1204,6 +1204,9 @@ export class CuadraService {
         (pushed
           ? `Te mandamos la solicitud de cobro a tu celular: la abres en la app de tu banco y la apruebas, sin capturar CLABE ni pagar comisión. Ref. ${reference}.\n`
           : `Ref. ${reference}.\n`) +
+        // Enlace de solo lectura para ver el cobro (la plantilla de Meta no lleva enlaces: solo va en
+        // el mensaje normal, dentro de la ventana de 24 h, y en el chat de prueba).
+        (this.d.publicUrl ? `Ve tu cobro aquí: ${this.d.publicUrl}/cobro/${publicToken}\n` : "") +
         "Si hoy no se puede, no pasa nada: dinos cuándo te queda bien. ¡Gracias por tu confianza!",
       simPay,
       undefined,

@@ -130,6 +130,8 @@ export function isPublicPath(path: string, method: string): boolean {
   if (path === "/llave-cdmx/autorizar") return true; // página simulada de Llave CDMX (demo)
   // Aprobación con passkey (enlace de un solo uso que llega por WhatsApp).
   if (path.startsWith("/aprobar/") || path === "/aprobar.html") return true;
+  // Enlace público de un cobro (solo lectura, token aleatorio de 128 bits).
+  if (method === "GET" && (path.startsWith("/cobro/") || path.startsWith("/api/cobro/"))) return true;
   if (method === "GET" && (path === "/api/passkey/status" || path.startsWith("/api/proposal/"))) return true;
   if (method === "POST" && (path === "/api/approve/options" || path === "/api/approve/verify")) return true;
   return false;

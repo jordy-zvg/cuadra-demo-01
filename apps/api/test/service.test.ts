@@ -1,6 +1,6 @@
 import { type PeyTransaction, signPeyWebhook } from "@cuadra/adapters";
 import { RuleInterpreter } from "@cuadra/agents";
-import { DEMO, ledgerBalance, runReconciliation, schema, seedDemo } from "@cuadra/db";
+import { DEMO, ledgerBalance, publicChargeView, runReconciliation, schema, seedDemo } from "@cuadra/db";
 import { createTestDb } from "@cuadra/db/testing";
 import { eq } from "drizzle-orm";
 import { beforeEach, describe, expect, it } from "vitest";
@@ -8,6 +8,8 @@ import type { ChargeGateway } from "../src/gateway.js";
 import { SimulatedGateway } from "../src/gateway.js";
 import { seedHistory } from "../src/seed-history.js";
 import { CuadraService } from "../src/service.js";
+import { buildServer } from "../src/server.js";
+import { createStoreRegistry } from "../src/app.js";
 
 const NOW = new Date("2026-11-14T11:00:00-06:00");
 const SECRET = `whsec_${Buffer.from("secreto-de-prueba-32-bytes-xxxxx").toString("base64")}`;
@@ -510,5 +512,72 @@ describe("abonos en efectivo", () => {
     await f.svc.handleMerchantMessage("Doña Lupe me pagó $100 en efectivo");
     expect(await body(f)).toMatch(/tiene un cobro por CoDi que todavía puede pagar/);
     expect(await entries(f)).toHaveLength(0);
+  });
+});
+
+describe("enlace público del cobro (/cobro/<token>)", () => {
+  it("llega en el mensaje al cliente; muestra solo tienda, nombre, monto, referencia y estado; abierto → vencido → pagado", async () => {
+    const f = await setup(undefined, { publicUrl: "https://cuadra.test" });
+    await f.svc.handleMerchantMessage("Doña Lupe se llevó $185");
+    await f.svc.confirm(await f.lastAction());
+    await f.svc.handleMerchantMessage("Cóbrale a Doña Lupe");
+    await f.svc.confirm(await f.lastAction());
+
+    const toClient = (await f.msgs("c_lupe")).at(-1)!.body;
+    const m = /https:\/\/cuadra\.test\/cobro\/([A-Za-z0-9_-]{22})\n/.exec(toClient);
+    expect(m, toClient).not.toBeNull();
+    const token = m![1]!;
+    const [ch] = await f.db.select().from(schema.charges).where(eq(schema.charges.customerId, "c_lupe"));
+    expect(ch!.publicToken).toBe(token);
+
+    const open = await publicChargeView(f.db, token, NOW);
+    expect(open).toEqual({
+      store: expect.any(String), who: "Doña Lupe", amount: "18500", reference: ch!.reference,
+      status: "open", channel: "codi_pn", expires_at: ch!.expiresAt!.toISOString(),
+    });
+    // Nada de celular, CLABE ni ids internos.
+    expect(JSON.stringify(open)).not.toMatch(/5512345678|ch_|c_lupe|m_esquina/);
+    expect((await publicChargeView(f.db, token, new Date(NOW.getTime() + 10 * 60_000)))!.status).toBe("expired");
+
+    // Tokens que no existen o con otra forma: nada.
+    expect(await publicChargeView(f.db, "A".repeat(22), NOW)).toBeNull();
+    expect(await publicChargeView(f.db, "../../etc", NOW)).toBeNull();
+
+    // Ya pagado: lo dice, aunque haya pasado la vigencia.
+    (f.gw as FakePey).pay("01TX1");
+    const [raw, h] = webhook({ type: "codi.pn.payment_received", transactionId: "01TX1", amount: 185 }, "msg_pub");
+    await f.svc.handlePeyWebhook(raw, h);
+    expect((await publicChargeView(f.db, token, new Date(NOW.getTime() + 60 * 60_000)))!.status).toBe("paid");
+
+    // Rutas: públicas (sin sesión), sin caché; un token desconocido da 404.
+    const registry = createStoreRegistry({
+      db: f.db, liveGateway: new SimulatedGateway(f.db), interpreters: [new RuleInterpreter()], verify: async () => false,
+      now: () => NOW, publicUrl: null, peyWebhookSecret: null, bankSim: false, udi: null, log: () => {},
+    });
+    const server = await buildServer({
+      db: f.db, registry, liveMerchantId: M, liveGateway: new SimulatedGateway(f.db), peyWebhookSecret: null, bankSim: false,
+      demoPassword: null, log: () => {}, portalAuth: { shopCode: null, secureCookies: false },
+      passkey: { rpID: "localhost", origins: ["http://localhost"], now: () => NOW },
+    });
+    const api = await server.inject({ url: `/api/cobro/${token}` });
+    expect(api.statusCode).toBe(200);
+    expect(api.headers["cache-control"]).toBe("no-store");
+    expect(api.json()).toMatchObject({ who: "Doña Lupe", amount: "18500", status: "paid" });
+    expect((await server.inject({ url: `/api/cobro/${"B".repeat(22)}` })).statusCode).toBe(404);
+    const page = await server.inject({ url: `/cobro/${token}` });
+    expect(page.statusCode).toBe(200);
+    expect(page.headers["x-robots-tag"]).toBe("noindex");
+    expect(page.body).toMatch(/Tu cobro · Cuadra/);
+    // Solo lectura: no hay forma de cambiar nada por esa ruta.
+    expect((await server.inject({ method: "POST", url: `/api/cobro/${token}`, payload: {} })).statusCode).not.toBe(200);
+  });
+
+  it("sin PUBLIC_URL el mensaje no lleva enlace", async () => {
+    const f = await setup();
+    await f.svc.handleMerchantMessage("Doña Lupe se llevó $185");
+    await f.svc.confirm(await f.lastAction());
+    await f.svc.handleMerchantMessage("Cóbrale a Doña Lupe");
+    await f.svc.confirm(await f.lastAction());
+    expect((await f.msgs("c_lupe")).at(-1)!.body).not.toMatch(/\/cobro\//);
   });
 });
